@@ -18,7 +18,7 @@ import katexStyles from "katex/dist/katex.min.css?inline";
 import Toolbar from "./components/Toolbar";
 import StatusBar from "./components/StatusBar";
 import FindReplaceBar from "./components/FindReplaceBar";
-import MarkdownPreview from "./components/MarkdownPreview";
+import MarkdownPreview, { renderPreviewHtml } from "./components/MarkdownPreview";
 import PreferencesDialog from "./components/PreferencesDialog";
 
 const editorMarked = new Marked({
@@ -202,15 +202,21 @@ function countStats(markdown) {
     .replace(/```[\s\S]*?```/g, " ")
     .replace(/`[^`]*`/g, " ")
     .replace(/[#>*_\-\[\]()!]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
+    .replace(/\s+/g, " ");
 
-  const wordCount = text ? text.split(" ").length : 0;
+  const latinWords = text.match(/[A-Za-z0-9_]+(?:['-][A-Za-z0-9_]+)*/g) || [];
+  const cjkChars = text.match(/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/gu) || [];
+  const wordCount = latinWords.length + cjkChars.length;
+
   return {
     wordCount,
     charCount: markdown.length,
     readingMinutes: Math.max(1, Math.ceil((wordCount || 1) / 220))
   };
+}
+
+function isMarkdownFilePath(filePath) {
+  return /\.(md|markdown|mdown|mkd|txt)$/i.test(filePath || "");
 }
 
 function findMatches(markdown, query) {
@@ -249,6 +255,7 @@ function getLineStartIndex(markdown, lineNumber) {
 export default function App() {
   const [filePath, setFilePath] = useState(null);
   const [markdownText, setMarkdownText] = useState(initialMarkdown);
+  const [documentSessionKey, setDocumentSessionKey] = useState(0);
   const [outline, setOutline] = useState(extractOutlineFromMarkdown(initialMarkdown));
   const [activeOutlineId, setActiveOutlineId] = useState(null);
   const [isDirty, setIsDirty] = useState(false);
@@ -259,10 +266,12 @@ export default function App() {
   const [replaceValue, setReplaceValue] = useState("");
   const [matchIndex, setMatchIndex] = useState(0);
   const [renderedPreviewHtml, setRenderedPreviewHtml] = useState("");
+  const [statusMessage, setStatusMessage] = useState("就绪");
   const sourceRef = useRef(null);
   const programmaticEditorSyncRef = useRef(false);
   const programmaticMarkdownSyncRef = useRef(false);
   const editorHeadingsRef = useRef([]);
+  const statusTimerRef = useRef(null);
 
   const deferredMarkdown = useDeferredValue(markdownText);
   const matches = useMemo(() => findMatches(markdownText, findQuery), [markdownText, findQuery]);
@@ -272,72 +281,75 @@ export default function App() {
     [deferredMarkdown, filePath]
   );
 
-  const editor = useEditor({
-    extensions: [
-      StarterKit.configure({
-        heading: { levels: [1, 2, 3, 4, 5, 6] }
-      }),
-      Underline,
-      Link.configure({
-        openOnClick: true,
-        autolink: true,
-        defaultProtocol: "https"
-      }),
-      Image.configure({
-        inline: false,
-        allowBase64: true
-      }),
-      Placeholder.configure({
-        placeholder: "开始写作，像 Typora 一样在正文里直接编辑 Markdown 内容。"
-      }),
-      TaskList,
-      TaskItem.configure({
-        nested: true
-      }),
-      Table.configure({
-        resizable: true
-      }),
-      TableRow,
-      TableHeader,
-      TableCell
-    ],
-    content: renderMarkdownForEditor(initialMarkdown, null),
-    editorProps: {
-      attributes: {
-        class: "editor-surface"
+  const editor = useEditor(
+    {
+      extensions: [
+        StarterKit.configure({
+          heading: { levels: [1, 2, 3, 4, 5, 6] }
+        }),
+        Underline,
+        Link.configure({
+          openOnClick: true,
+          autolink: true,
+          defaultProtocol: "https"
+        }),
+        Image.configure({
+          inline: false,
+          allowBase64: true
+        }),
+        Placeholder.configure({
+          placeholder: "开始写作，像 Typora 一样在正文里直接编辑 Markdown 内容。"
+        }),
+        TaskList,
+        TaskItem.configure({
+          nested: true
+        }),
+        Table.configure({
+          resizable: true
+        }),
+        TableRow,
+        TableHeader,
+        TableCell
+      ],
+      content: renderMarkdownForEditor(markdownText, filePath),
+      editorProps: {
+        attributes: {
+          class: "editor-surface"
+        }
+      },
+      onCreate({ editor: instance }) {
+        editorHeadingsRef.current = buildEditorHeadingPositions(instance);
+      },
+      onUpdate({ editor: instance }) {
+        editorHeadingsRef.current = buildEditorHeadingPositions(instance);
+
+        if (programmaticEditorSyncRef.current) {
+          programmaticEditorSyncRef.current = false;
+          return;
+        }
+
+        programmaticMarkdownSyncRef.current = true;
+        const nextMarkdown = turndown.turndown(instance.getHTML()).trimStart();
+        startTransition(() => {
+          setMarkdownText(nextMarkdown);
+          setOutline(extractOutlineFromMarkdown(nextMarkdown));
+        });
+        setIsDirty(true);
+      },
+      onSelectionUpdate({ editor: instance }) {
+        const currentPos = instance.state.selection.from;
+        const currentHeadingIndex = editorHeadingsRef.current.findIndex((heading, index) => {
+          const nextHeading = editorHeadingsRef.current[index + 1];
+          return currentPos >= heading.pos && (!nextHeading || currentPos < nextHeading.pos);
+        });
+
+        if (currentHeadingIndex >= 0 && outline[currentHeadingIndex]) {
+          setActiveOutlineId(outline[currentHeadingIndex].id);
+        }
       }
     },
-    onCreate({ editor: instance }) {
-      editorHeadingsRef.current = buildEditorHeadingPositions(instance);
-    },
-    onUpdate({ editor: instance }) {
-      editorHeadingsRef.current = buildEditorHeadingPositions(instance);
-
-      if (programmaticEditorSyncRef.current) {
-        programmaticEditorSyncRef.current = false;
-        return;
-      }
-
-      programmaticMarkdownSyncRef.current = true;
-      const nextMarkdown = turndown.turndown(instance.getHTML()).trimStart();
-      startTransition(() => {
-        setMarkdownText(nextMarkdown);
-        setOutline(extractOutlineFromMarkdown(nextMarkdown));
-      });
-      setIsDirty(true);
-    },
-    onSelectionUpdate({ editor: instance }) {
-      const currentPos = instance.state.selection.from;
-      const currentHeadingIndex = editorHeadingsRef.current.findIndex((heading, index) => {
-        const nextHeading = editorHeadingsRef.current[index + 1];
-        return currentPos >= heading.pos && (!nextHeading || currentPos < nextHeading.pos);
-      });
-
-      if (currentHeadingIndex >= 0 && outline[currentHeadingIndex]) {
-        setActiveOutlineId(outline[currentHeadingIndex].id);
-      }
-    }
-  });
+    [documentSessionKey]
+  );
 
   useEffect(() => {
     window.editorApi.loadPreferences().then((loaded) => {
@@ -346,6 +358,14 @@ export default function App() {
         ...loaded
       }));
     });
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (statusTimerRef.current) {
+        window.clearTimeout(statusTimerRef.current);
+      }
+    };
   }, []);
 
   useEffect(() => {
@@ -397,9 +417,7 @@ export default function App() {
     const unsubscribe = window.editorApi.onMenuAction(async (action) => {
       switch (action.type) {
         case "new-file":
-          setMarkdownText("");
-          setFilePath(null);
-          setIsDirty(false);
+          await createNewDocument();
           break;
         case "open-file":
           await openDocument();
@@ -440,19 +458,33 @@ export default function App() {
   }, [editor, filePath, markdownText, preferences]);
 
   useEffect(() => {
+    if (!findOpen || !sourceRef.current || matches.length === 0 || preferences.viewMode !== "source") {
+      return;
+    }
+
+    selectMatch(matchIndex);
+  }, [findOpen, matchIndex, matches, preferences.viewMode]);
+
+  useEffect(() => {
     if (!editor) {
       return undefined;
     }
 
     const handleDrop = async (event) => {
       const files = Array.from(event.dataTransfer?.files || []);
+      const markdownFile = files.find((file) => isMarkdownFilePath(file.path));
       const imageFile = files.find((file) => file.type.startsWith("image/"));
-      if (!imageFile) {
+      if (!markdownFile && !imageFile) {
         return;
       }
 
       event.preventDefault();
-      await insertImageFromFile(imageFile.path, imageFile.name);
+      if (markdownFile) {
+        await openDocumentFromPath(markdownFile.path);
+        return;
+      }
+
+      await insertImageFromFile(imageFile.path);
     };
 
     const handlePaste = async (event) => {
@@ -502,15 +534,100 @@ export default function App() {
     return parts[parts.length - 1];
   }, [filePath]);
 
+  function applyDocumentState(nextMarkdown, nextFilePath) {
+    console.log("[renderer] applyDocumentState", {
+      filePath: nextFilePath,
+      markdownLength: nextMarkdown.length
+    });
+    const nextOutline = extractOutlineFromMarkdown(nextMarkdown);
+    programmaticMarkdownSyncRef.current = false;
+    programmaticEditorSyncRef.current = false;
+    setFilePath(nextFilePath);
+    setMarkdownText(nextMarkdown);
+    setOutline(nextOutline);
+    setActiveOutlineId(nextOutline[0]?.id ?? null);
+    setDocumentSessionKey((current) => current + 1);
+  }
+
   async function openDocument() {
+    console.log("[renderer] openDocument:start", { isDirty });
+    if (!(await confirmDiscardChanges())) {
+      console.log("[renderer] openDocument:cancelled-by-discard-check");
+      return;
+    }
+
     const result = await window.editorApi.openMarkdown();
+    console.log("[renderer] openDocument:result", result);
     if (result.canceled || result.content === undefined) {
       return;
     }
 
-    setFilePath(result.filePath);
-    setMarkdownText(result.content);
+    applyDocumentState(result.content, result.filePath);
     setIsDirty(false);
+    setFindOpen(false);
+    setFindQuery("");
+    setReplaceValue("");
+    setMatchIndex(0);
+    setStatus(`已打开 ${result.filePath.split(/[\\/]/).pop()}`);
+  }
+
+  async function openDocumentFromPath(targetPath) {
+    console.log("[renderer] openDocumentFromPath:start", { targetPath, isDirty });
+    if (!(await confirmDiscardChanges())) {
+      console.log("[renderer] openDocumentFromPath:cancelled-by-discard-check");
+      return;
+    }
+
+    const result = await window.editorApi.openMarkdownPath(targetPath);
+    console.log("[renderer] openDocumentFromPath:result", result);
+    if (result.canceled || result.content === undefined) {
+      return;
+    }
+
+    applyDocumentState(result.content, result.filePath);
+    setIsDirty(false);
+    setFindOpen(false);
+    setFindQuery("");
+    setReplaceValue("");
+    setMatchIndex(0);
+    setStatus(`已打开 ${result.filePath.split(/[\\/]/).pop()}`);
+  }
+
+  async function createNewDocument() {
+    console.log("[renderer] createNewDocument:start", { isDirty });
+    if (!(await confirmDiscardChanges())) {
+      console.log("[renderer] createNewDocument:cancelled-by-discard-check");
+      return;
+    }
+
+    applyDocumentState("", null);
+    setIsDirty(false);
+    setFindOpen(false);
+    setFindQuery("");
+    setReplaceValue("");
+    setMatchIndex(0);
+    setStatus("已新建空白文档");
+  }
+
+  async function confirmDiscardChanges() {
+    if (!isDirty) {
+      console.log("[renderer] confirmDiscardChanges:clean-document");
+      return true;
+    }
+
+    const result = await window.editorApi.confirmDiscardChanges();
+    console.log("[renderer] confirmDiscardChanges:result", result);
+    return Boolean(result?.shouldContinue);
+  }
+
+  function setStatus(message) {
+    setStatusMessage(message);
+    if (statusTimerRef.current) {
+      window.clearTimeout(statusTimerRef.current);
+    }
+    statusTimerRef.current = window.setTimeout(() => {
+      setStatusMessage("就绪");
+    }, 3200);
   }
 
   async function saveDocument(forceSaveAs) {
@@ -522,17 +639,26 @@ export default function App() {
     if (!result.canceled) {
       setFilePath(result.filePath);
       setIsDirty(false);
+      setStatus(`已保存到 ${result.filePath.split(/[\\/]/).pop()}`);
     }
   }
 
   async function exportHtml() {
-    const html = buildStandaloneHtml(documentTitle, renderedPreviewHtml || previewHtml, preferences.theme);
-    await window.editorApi.saveHtml({ html });
+    const preparedPreviewHtml = await renderPreviewHtml(previewHtml);
+    const html = buildStandaloneHtml(documentTitle, preparedPreviewHtml, preferences.theme);
+    const result = await window.editorApi.saveHtml({ html });
+    if (!result.canceled) {
+      setStatus(`已导出 HTML: ${result.filePath.split(/[\\/]/).pop()}`);
+    }
   }
 
   async function exportPdf() {
-    const html = buildStandaloneHtml(documentTitle, renderedPreviewHtml || previewHtml, preferences.theme);
-    await window.editorApi.savePdf({ html });
+    const preparedPreviewHtml = await renderPreviewHtml(previewHtml);
+    const html = buildStandaloneHtml(documentTitle, preparedPreviewHtml, preferences.theme);
+    const result = await window.editorApi.savePdf({ html });
+    if (!result.canceled) {
+      setStatus(`已导出 PDF: ${result.filePath.split(/[\\/]/).pop()}`);
+    }
   }
 
   async function insertImage() {
@@ -547,11 +673,13 @@ export default function App() {
   async function insertImageFromFile(imagePath) {
     const persisted = await window.editorApi.persistImageFile(imagePath);
     insertMarkdownImage(persisted.markdownPath, persisted.absolutePath);
+    setStatus(`已插入图片 ${persisted.absolutePath.split(/[\\/]/).pop()}`);
   }
 
   function insertMarkdownImage(markdownPath, absolutePath) {
     const alt = absolutePath.split(/[\\/]/).pop() || "image";
-    const nextMarkdown = `${markdownText.trimEnd()}\n\n![${alt}](${markdownPath})\n`;
+    const prefix = markdownText.trimEnd();
+    const nextMarkdown = `${prefix}${prefix ? "\n\n" : ""}![${alt}](${markdownPath})\n`;
     setMarkdownText(nextMarkdown);
     setIsDirty(true);
     editor?.chain().focus().setImage({ src: window.editorApi.toFileUrl(absolutePath), alt }).run();
@@ -563,6 +691,7 @@ export default function App() {
       .focus()
       .insertTable({ rows: 3, cols: 3, withHeaderRow: true })
       .run();
+    setStatus("已插入表格");
   }
 
   function updatePreferences(patch) {
@@ -591,8 +720,8 @@ export default function App() {
 
   function openFindReplace() {
     setFindOpen(true);
-    if (preferences.viewMode === "editor") {
-      updatePreferences({ viewMode: "split" });
+    if (preferences.viewMode !== "source") {
+      updatePreferences({ viewMode: "source" });
     }
   }
 
@@ -637,6 +766,7 @@ export default function App() {
 
     setMarkdownText(nextMarkdown);
     setIsDirty(true);
+    setStatus("已替换当前匹配");
   }
 
   function replaceAllMatches() {
@@ -646,6 +776,7 @@ export default function App() {
 
     setMarkdownText(markdownText.split(findQuery).join(replaceValue));
     setIsDirty(true);
+    setStatus(`已替换全部 ${matches.length} 处匹配`);
   }
 
   function handleSourceChange(event) {
@@ -663,16 +794,24 @@ export default function App() {
     }
   }
 
-  const showEditor = preferences.viewMode !== "source";
-  const showSource = preferences.viewMode !== "editor";
+  const showEditor = preferences.viewMode === "editor" || preferences.viewMode === "split";
+  const showSource = preferences.viewMode === "source";
+  const showPreview = preferences.viewMode === "split" || preferences.viewMode === "preview";
+  const findSummary =
+    findOpen && findQuery
+      ? `${matches.length === 0 ? "0" : `${matchIndex + 1}/${matches.length}`} 匹配`
+      : null;
 
   return (
     <div className="app-shell">
       <Toolbar
         editor={editor}
+        onNew={createNewDocument}
+        onOpen={openDocument}
         onInsertImage={insertImage}
         onInsertTable={insertTable}
         onSave={() => saveDocument(false)}
+        onSaveAs={() => saveDocument(true)}
         onExport={exportHtml}
         onExportPdf={exportPdf}
         onOpenFind={openFindReplace}
@@ -747,7 +886,7 @@ export default function App() {
             </section>
           ) : null}
 
-          {showSource ? (
+          {showPreview ? (
             <section className="side-pane preview-pane">
               <div className="side-pane-header">Preview</div>
               <MarkdownPreview html={previewHtml} onRendered={setRenderedPreviewHtml} />
@@ -758,11 +897,15 @@ export default function App() {
 
       <StatusBar
         filePath={filePath}
+        documentTitle={documentTitle}
+        isDirty={isDirty}
         wordCount={stats.wordCount}
         charCount={stats.charCount}
         readingMinutes={stats.readingMinutes}
         viewMode={preferences.viewMode}
         theme={preferences.theme}
+        statusMessage={statusMessage}
+        findSummary={findSummary}
       />
 
       <PreferencesDialog

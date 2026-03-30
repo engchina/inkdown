@@ -7,6 +7,36 @@ mermaid.initialize({
   securityLevel: "loose"
 });
 
+async function renderMermaidNodes(nodes) {
+  await Promise.all(
+    nodes.map(async (node, index) => {
+      const source = node.textContent || "";
+      const renderId = `inkdown-mermaid-${Date.now()}-${index}`;
+
+      try {
+        const { svg } = await mermaid.render(renderId, source);
+        node.classList.remove("mermaid-error");
+        node.innerHTML = svg;
+      } catch (error) {
+        node.classList.add("mermaid-error");
+        node.innerHTML = `<pre>${String(error.message || error)}</pre>`;
+      }
+    })
+  );
+}
+
+export async function renderPreviewHtml(html) {
+  const container = document.createElement("div");
+  container.innerHTML = html;
+  const nodes = Array.from(container.querySelectorAll(".mermaid"));
+
+  if (nodes.length > 0) {
+    await renderMermaidNodes(nodes);
+  }
+
+  return container.innerHTML;
+}
+
 export default function MarkdownPreview({ html, onRendered }) {
   const containerRef = useRef(null);
 
@@ -20,14 +50,7 @@ export default function MarkdownPreview({ html, onRendered }) {
 
       const nodes = Array.from(containerRef.current.querySelectorAll(".mermaid"));
       if (nodes.length > 0) {
-        try {
-          await mermaid.run({ nodes });
-        } catch (error) {
-          nodes.forEach((node) => {
-            node.classList.add("mermaid-error");
-            node.innerHTML = `<pre>${String(error.message || error)}</pre>`;
-          });
-        }
+        await renderMermaidNodes(nodes);
       }
 
       if (!cancelled && onRendered && containerRef.current) {

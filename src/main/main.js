@@ -27,6 +27,11 @@ function updateWindowTitle(window) {
   window.setTitle(`${name}${dirtySuffix} - Inkdown`);
 }
 
+function emitMenuAction(window, payload) {
+  console.log("[main] menu-action", payload);
+  window.webContents.send("menu-action", payload);
+}
+
 function sanitizeFileName(value) {
   return value
     .replace(/[<>:"/\\|?*\u0000-\u001f]/g, "-")
@@ -75,6 +80,21 @@ async function maybeContinueWithUnsavedChanges(window) {
   });
 
   return result.response === 0;
+}
+
+async function openMarkdownFile(window, filePath) {
+  const content = await fs.readFile(filePath, "utf8");
+  state.currentFilePath = filePath;
+  state.isDirty = false;
+  if (window) {
+    updateWindowTitle(window);
+  }
+
+  return {
+    canceled: false,
+    filePath,
+    content
+  };
 }
 
 async function createPdfFromHtml(window, payload) {
@@ -187,6 +207,7 @@ async function createWindow() {
     autoHideMenuBar: false,
     webPreferences: {
       preload: path.join(__dirname, "../preload/preload.js"),
+      sandbox: false,
       contextIsolation: true,
       nodeIntegration: false,
       spellcheck: true
@@ -228,47 +249,34 @@ async function createWindow() {
         {
           label: "新建",
           accelerator: "CmdOrCtrl+N",
-          click: async () => {
-            if (!(await maybeContinueWithUnsavedChanges(mainWindow))) {
-              return;
-            }
-            state.currentFilePath = null;
-            state.isDirty = false;
-            updateWindowTitle(mainWindow);
-            mainWindow.webContents.send("menu-action", { type: "new-file" });
-          }
+          click: () => emitMenuAction(mainWindow, { type: "new-file" })
         },
         {
           label: "打开",
           accelerator: "CmdOrCtrl+O",
-          click: async () => {
-            if (!(await maybeContinueWithUnsavedChanges(mainWindow))) {
-              return;
-            }
-            mainWindow.webContents.send("menu-action", { type: "open-file" });
-          }
+          click: () => emitMenuAction(mainWindow, { type: "open-file" })
         },
         { type: "separator" },
         {
           label: "保存",
           accelerator: "CmdOrCtrl+S",
-          click: () => mainWindow.webContents.send("menu-action", { type: "save-file" })
+          click: () => emitMenuAction(mainWindow, { type: "save-file" })
         },
         {
           label: "另存为",
           accelerator: "CmdOrCtrl+Shift+S",
-          click: () => mainWindow.webContents.send("menu-action", { type: "save-file-as" })
+          click: () => emitMenuAction(mainWindow, { type: "save-file-as" })
         },
         { type: "separator" },
         {
           label: "导出 HTML",
           accelerator: "CmdOrCtrl+Shift+E",
-          click: () => mainWindow.webContents.send("menu-action", { type: "export-html" })
+          click: () => emitMenuAction(mainWindow, { type: "export-html" })
         },
         {
           label: "导出 PDF",
           accelerator: "CmdOrCtrl+Shift+P",
-          click: () => mainWindow.webContents.send("menu-action", { type: "export-pdf" })
+          click: () => emitMenuAction(mainWindow, { type: "export-pdf" })
         },
         { type: "separator" },
         { role: "quit", label: "退出" }
@@ -283,7 +291,7 @@ async function createWindow() {
         {
           label: "查找与替换",
           accelerator: "CmdOrCtrl+F",
-          click: () => mainWindow.webContents.send("menu-action", { type: "open-find" })
+          click: () => emitMenuAction(mainWindow, { type: "open-find" })
         },
         { type: "separator" },
         { role: "cut", label: "剪切" },
@@ -298,12 +306,12 @@ async function createWindow() {
         {
           label: "图片",
           accelerator: "CmdOrCtrl+Shift+I",
-          click: () => mainWindow.webContents.send("menu-action", { type: "insert-image" })
+          click: () => emitMenuAction(mainWindow, { type: "insert-image" })
         },
         {
           label: "表格",
           accelerator: "CmdOrCtrl+Alt+T",
-          click: () => mainWindow.webContents.send("menu-action", { type: "insert-table" })
+          click: () => emitMenuAction(mainWindow, { type: "insert-table" })
         }
       ]
     },
@@ -313,23 +321,28 @@ async function createWindow() {
         {
           label: "仅编辑",
           accelerator: "CmdOrCtrl+1",
-          click: () => mainWindow.webContents.send("menu-action", { type: "set-view-mode", mode: "editor" })
+          click: () => emitMenuAction(mainWindow, { type: "set-view-mode", mode: "editor" })
         },
         {
           label: "分栏",
           accelerator: "CmdOrCtrl+2",
-          click: () => mainWindow.webContents.send("menu-action", { type: "set-view-mode", mode: "split" })
+          click: () => emitMenuAction(mainWindow, { type: "set-view-mode", mode: "split" })
         },
         {
           label: "仅源码",
           accelerator: "CmdOrCtrl+3",
-          click: () => mainWindow.webContents.send("menu-action", { type: "set-view-mode", mode: "source" })
+          click: () => emitMenuAction(mainWindow, { type: "set-view-mode", mode: "source" })
+        },
+        {
+          label: "仅预览",
+          accelerator: "CmdOrCtrl+4",
+          click: () => emitMenuAction(mainWindow, { type: "set-view-mode", mode: "preview" })
         },
         { type: "separator" },
         {
           label: "偏好设置",
           accelerator: "CmdOrCtrl+,",
-          click: () => mainWindow.webContents.send("menu-action", { type: "open-preferences" })
+          click: () => emitMenuAction(mainWindow, { type: "open-preferences" })
         },
         { type: "separator" },
         { role: "reload", label: "重新加载" },
@@ -362,6 +375,7 @@ app.on("activate", () => {
 });
 
 ipcMain.handle("dialog:open-markdown", async () => {
+  console.log("[main] dialog:open-markdown");
   const window = BrowserWindow.getFocusedWindow();
   const result = await dialog.showOpenDialog(window, {
     title: "打开 Markdown 文档",
@@ -375,17 +389,19 @@ ipcMain.handle("dialog:open-markdown", async () => {
     return { canceled: true };
   }
 
-  const filePath = result.filePaths[0];
-  const content = await fs.readFile(filePath, "utf8");
-  state.currentFilePath = filePath;
-  state.isDirty = false;
-  if (window) {
-    updateWindowTitle(window);
-  }
-  return { canceled: false, filePath, content };
+  return openMarkdownFile(window, result.filePaths[0]);
+});
+
+ipcMain.handle("dialog:confirm-discard-changes", async () => {
+  console.log("[main] dialog:confirm-discard-changes", { isDirty: state.isDirty });
+  const window = BrowserWindow.getFocusedWindow();
+  return {
+    shouldContinue: await maybeContinueWithUnsavedChanges(window)
+  };
 });
 
 ipcMain.handle("dialog:pick-image", async () => {
+  console.log("[main] dialog:pick-image");
   const window = BrowserWindow.getFocusedWindow();
   const result = await dialog.showOpenDialog(window, {
     title: "插入图片",
@@ -401,6 +417,7 @@ ipcMain.handle("dialog:pick-image", async () => {
 });
 
 ipcMain.handle("file:save-markdown", async (_, payload) => {
+  console.log("[main] file:save-markdown", { requestedFilePath: payload.filePath || state.currentFilePath });
   const window = BrowserWindow.getFocusedWindow();
   let targetPath = payload.filePath || state.currentFilePath;
 
@@ -428,6 +445,7 @@ ipcMain.handle("file:save-markdown", async (_, payload) => {
 });
 
 ipcMain.handle("file:save-html", async (_, payload) => {
+  console.log("[main] file:save-html");
   const window = BrowserWindow.getFocusedWindow();
   const defaultName = state.currentFilePath
     ? `${path.basename(state.currentFilePath, path.extname(state.currentFilePath))}.html`
@@ -448,8 +466,15 @@ ipcMain.handle("file:save-html", async (_, payload) => {
 });
 
 ipcMain.handle("file:save-pdf", async (_, payload) => {
+  console.log("[main] file:save-pdf");
   const window = BrowserWindow.getFocusedWindow();
   return createPdfFromHtml(window, payload);
+});
+
+ipcMain.handle("file:open-markdown-path", async (_, filePath) => {
+  console.log("[main] file:open-markdown-path", { filePath });
+  const window = BrowserWindow.getFocusedWindow();
+  return openMarkdownFile(window, filePath);
 });
 
 ipcMain.handle("file:persist-image-file", async (_, sourcePath) => {
@@ -469,6 +494,7 @@ ipcMain.handle("preferences:save", async (_, preferences) => {
 });
 
 ipcMain.handle("document:set-dirty", (_, value) => {
+  console.log("[main] document:set-dirty", { value: Boolean(value) });
   const window = BrowserWindow.getFocusedWindow();
   state.isDirty = Boolean(value);
   if (window) {
@@ -478,6 +504,7 @@ ipcMain.handle("document:set-dirty", (_, value) => {
 });
 
 ipcMain.handle("document:set-file-path", (_, filePath) => {
+  console.log("[main] document:set-file-path", { filePath: filePath || null });
   const window = BrowserWindow.getFocusedWindow();
   state.currentFilePath = filePath || null;
   if (window) {

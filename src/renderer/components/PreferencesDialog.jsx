@@ -38,6 +38,7 @@ export default function PreferencesDialog({ open, preferences, onChange, onClose
             <option value="editor">仅编辑</option>
             <option value="split">分栏</option>
             <option value="source">仅源码</option>
+            <option value="preview">仅预览</option>
           </select>
         </label>
 

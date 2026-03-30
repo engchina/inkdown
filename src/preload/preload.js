@@ -8,6 +8,8 @@ function isWebLike(value) {
 
 contextBridge.exposeInMainWorld("editorApi", {
   openMarkdown: () => ipcRenderer.invoke("dialog:open-markdown"),
+  openMarkdownPath: (filePath) => ipcRenderer.invoke("file:open-markdown-path", filePath),
+  confirmDiscardChanges: () => ipcRenderer.invoke("dialog:confirm-discard-changes"),
   saveMarkdown: (payload) => ipcRenderer.invoke("file:save-markdown", payload),
   saveHtml: (payload) => ipcRenderer.invoke("file:save-html", payload),
   savePdf: (payload) => ipcRenderer.invoke("file:save-pdf", payload),

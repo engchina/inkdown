@@ -6,7 +6,10 @@ function ToolButton({ active = false, onClick, children, title }) {
       className={`tool-button${active ? " active" : ""}`}
       type="button"
       title={title}
-      onClick={onClick}
+      onClick={() => {
+        console.log("[renderer] toolbar-click", title);
+        onClick?.();
+      }}
     >
       {children}
     </button>
@@ -15,9 +18,12 @@ function ToolButton({ active = false, onClick, children, title }) {
 
 export default function Toolbar({
   editor,
+  onNew,
+  onOpen,
   onInsertImage,
   onInsertTable,
   onSave,
+  onSaveAs,
   onExport,
   onExportPdf,
   onOpenFind,
@@ -31,6 +37,21 @@ export default function Toolbar({
 
   return (
     <div className="toolbar">
+      <div className="toolbar-group">
+        <ToolButton title="新建文档" onClick={onNew}>
+          New
+        </ToolButton>
+        <ToolButton title="打开文档" onClick={onOpen}>
+          Open
+        </ToolButton>
+        <ToolButton title="保存" onClick={onSave}>
+          Save
+        </ToolButton>
+        <ToolButton title="另存为" onClick={onSaveAs}>
+          Save As
+        </ToolButton>
+      </div>
+
       <div className="toolbar-group">
         <ToolButton title="正文" onClick={() => editor.chain().focus().setParagraph().run()}>
           P
@@ -165,6 +186,9 @@ export default function Toolbar({
         <ToolButton title="仅源码" active={viewMode === "source"} onClick={() => onSetViewMode("source")}>
           Src
         </ToolButton>
+        <ToolButton title="仅预览" active={viewMode === "preview"} onClick={() => onSetViewMode("preview")}>
+          Preview
+        </ToolButton>
       </div>
 
       <div className="toolbar-group toolbar-actions">
@@ -173,9 +197,6 @@ export default function Toolbar({
         </ToolButton>
         <ToolButton title="偏好设置" onClick={onOpenPreferences}>
           Pref
-        </ToolButton>
-        <ToolButton title="保存" onClick={onSave}>
-          Save
         </ToolButton>
         <ToolButton title="导出 HTML" onClick={onExport}>
           HTML
