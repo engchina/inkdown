@@ -2,15 +2,7 @@ import React from "react";
 
 function ToolButton({ active = false, onClick, children, title }) {
   return (
-    <button
-      className={`tool-button${active ? " active" : ""}`}
-      type="button"
-      title={title}
-      onClick={() => {
-        console.log("[renderer] toolbar-click", title);
-        onClick?.();
-      }}
-    >
+    <button className={`tool-button${active ? " active" : ""}`} type="button" title={title} onClick={onClick}>
       {children}
     </button>
   );
@@ -22,6 +14,7 @@ export default function Toolbar({
   onOpen,
   onInsertImage,
   onInsertTable,
+  onApplyFormat,
   onSave,
   onSaveAs,
   onExport,
@@ -53,27 +46,27 @@ export default function Toolbar({
       </div>
 
       <div className="toolbar-group">
-        <ToolButton title="正文" onClick={() => editor.chain().focus().setParagraph().run()}>
+        <ToolButton title="正文" onClick={() => onApplyFormat("paragraph")}>
           P
         </ToolButton>
         <ToolButton
           title="一级标题"
           active={editor.isActive("heading", { level: 1 })}
-          onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
+          onClick={() => onApplyFormat("heading-1")}
         >
           H1
         </ToolButton>
         <ToolButton
           title="二级标题"
           active={editor.isActive("heading", { level: 2 })}
-          onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
+          onClick={() => onApplyFormat("heading-2")}
         >
           H2
         </ToolButton>
         <ToolButton
           title="三级标题"
           active={editor.isActive("heading", { level: 3 })}
-          onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
+          onClick={() => onApplyFormat("heading-3")}
         >
           H3
         </ToolButton>
@@ -83,35 +76,35 @@ export default function Toolbar({
         <ToolButton
           title="加粗"
           active={editor.isActive("bold")}
-          onClick={() => editor.chain().focus().toggleBold().run()}
+          onClick={() => onApplyFormat("bold")}
         >
           B
         </ToolButton>
         <ToolButton
           title="斜体"
           active={editor.isActive("italic")}
-          onClick={() => editor.chain().focus().toggleItalic().run()}
+          onClick={() => onApplyFormat("italic")}
         >
           I
         </ToolButton>
         <ToolButton
           title="下划线"
           active={editor.isActive("underline")}
-          onClick={() => editor.chain().focus().toggleUnderline().run()}
+          onClick={() => onApplyFormat("underline")}
         >
           U
         </ToolButton>
         <ToolButton
           title="删除线"
           active={editor.isActive("strike")}
-          onClick={() => editor.chain().focus().toggleStrike().run()}
+          onClick={() => onApplyFormat("strike")}
         >
           S
         </ToolButton>
         <ToolButton
           title="行内代码"
           active={editor.isActive("code")}
-          onClick={() => editor.chain().focus().toggleCode().run()}
+          onClick={() => onApplyFormat("inline-code")}
         >
           {"</>"}
         </ToolButton>
@@ -121,51 +114,42 @@ export default function Toolbar({
         <ToolButton
           title="引用"
           active={editor.isActive("blockquote")}
-          onClick={() => editor.chain().focus().toggleBlockquote().run()}
+          onClick={() => onApplyFormat("blockquote")}
         >
           "
         </ToolButton>
         <ToolButton
           title="无序列表"
           active={editor.isActive("bulletList")}
-          onClick={() => editor.chain().focus().toggleBulletList().run()}
+          onClick={() => onApplyFormat("bullet-list")}
         >
           •
         </ToolButton>
         <ToolButton
           title="有序列表"
           active={editor.isActive("orderedList")}
-          onClick={() => editor.chain().focus().toggleOrderedList().run()}
+          onClick={() => onApplyFormat("ordered-list")}
         >
           1.
         </ToolButton>
         <ToolButton
           title="任务列表"
           active={editor.isActive("taskList")}
-          onClick={() => editor.chain().focus().toggleTaskList().run()}
+          onClick={() => onApplyFormat("task-list")}
         >
           ☑
         </ToolButton>
         <ToolButton
           title="代码块"
           active={editor.isActive("codeBlock")}
-          onClick={() => editor.chain().focus().toggleCodeBlock().run()}
+          onClick={() => onApplyFormat("code-block")}
         >
           {`{ }`}
         </ToolButton>
       </div>
 
       <div className="toolbar-group">
-        <ToolButton
-          title="插入链接"
-          onClick={() => {
-            const href = window.prompt("输入链接地址");
-            if (!href) {
-              return;
-            }
-            editor.chain().focus().extendMarkRange("link").setLink({ href }).run();
-          }}
-        >
+        <ToolButton title="插入链接" onClick={() => onApplyFormat("link")}>
           Link
         </ToolButton>
         <ToolButton title="插入图片" onClick={onInsertImage}>

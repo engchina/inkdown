@@ -1,12 +1,38 @@
-const { app, BrowserWindow, Menu, dialog, ipcMain } = require("electron");
+const { app, BrowserWindow, Menu, dialog, ipcMain, net, protocol, shell } = require("electron");
 const path = require("node:path");
 const fs = require("node:fs/promises");
+const { fileURLToPath, pathToFileURL } = require("node:url");
 
 const isDev = Boolean(process.env.VITE_DEV_SERVER_URL);
+const ASSET_PROTOCOL = "inkdown-asset";
+const MARKDOWN_EXTENSIONS = new Set([".md", ".markdown", ".mdown", ".mkd", ".txt"]);
+const IGNORED_WORKSPACE_DIRS = new Set([".git", "node_modules", "dist", "release", "build", "coverage"]);
+const HELP_LINKS = {
+  quickStart: "https://support.typora.io/Quick-Start/",
+  markdownReference: "https://support.typora.io/Markdown-Reference/",
+  customThemes: "https://support.typora.io/Custom-Themes/",
+  whatsNew: "https://support.typora.io/what's-new/",
+  website: "https://typora.io/"
+};
+
 const state = {
   currentFilePath: null,
-  isDirty: false
+  isDirty: false,
+  preferences: getDefaultPreferences()
 };
+
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: ASSET_PROTOCOL,
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      corsEnabled: true,
+      stream: true
+    }
+  }
+]);
 
 function getPreferencesPath() {
   return path.join(app.getPath("userData"), "preferences.json");
@@ -17,7 +43,12 @@ function getDefaultPreferences() {
     theme: "paper",
     viewMode: "editor",
     fontSize: 18,
-    lineWidth: 900
+    lineWidth: 900,
+    sidebarVisible: true,
+    sidebarTab: "outline",
+    focusMode: false,
+    typewriterMode: false,
+    workspaceRoot: null
   };
 }
 
@@ -28,7 +59,6 @@ function updateWindowTitle(window) {
 }
 
 function emitMenuAction(window, payload) {
-  console.log("[main] menu-action", payload);
   window.webContents.send("menu-action", payload);
 }
 
@@ -41,8 +71,16 @@ function sanitizeFileName(value) {
     .toLowerCase();
 }
 
-function isWebLike(value) {
-  return /^(https?:|data:|file:|blob:)/i.test(value || "");
+function isExternalSource(value) {
+  return /^(https?:|data:|blob:)/i.test(value || "");
+}
+
+function isFileUrl(value) {
+  return /^file:/i.test(value || "");
+}
+
+function isMarkdownFilePath(filePath) {
+  return MARKDOWN_EXTENSIONS.has(path.extname(filePath || "").toLowerCase());
 }
 
 async function loadPreferences() {
@@ -65,6 +103,11 @@ async function savePreferences(preferences) {
 
   await fs.mkdir(app.getPath("userData"), { recursive: true });
   await fs.writeFile(getPreferencesPath(), JSON.stringify(nextPreferences, null, 2), "utf8");
+  state.preferences = nextPreferences;
+  const window = BrowserWindow.getAllWindows()[0];
+  if (window) {
+    rebuildMenu(window);
+  }
   return nextPreferences;
 }
 
@@ -124,8 +167,7 @@ async function createPdfFromHtml(window, payload) {
   });
 
   try {
-    const html = payload.html;
-    await previewWindow.loadURL(`data:text/html;charset=UTF-8,${encodeURIComponent(html)}`);
+    await previewWindow.loadURL(`data:text/html;charset=UTF-8,${encodeURIComponent(payload.html)}`);
     await new Promise((resolve) => setTimeout(resolve, 350));
     const pdf = await previewWindow.webContents.printToPDF({
       printBackground: true,
@@ -191,18 +233,73 @@ async function ensureUniqueFileName(directoryPath, fileName) {
   return nextFileName;
 }
 
+function buildAssetResponse(targetPath) {
+  return net.fetch(pathToFileURL(targetPath).toString());
+}
+
+function registerAssetProtocol() {
+  protocol.handle(ASSET_PROTOCOL, async (request) => {
+    try {
+      const requestUrl = new URL(request.url);
+      const targetPath = requestUrl.searchParams.get("path");
+      if (!targetPath) {
+        return new Response("Missing asset path.", { status: 400 });
+      }
+
+      return buildAssetResponse(path.normalize(targetPath));
+    } catch (error) {
+      return new Response(`Invalid asset request: ${error.message}`, { status: 400 });
+    }
+  });
+}
+
 function normalizeAssetPath(assetPath) {
   return decodeURIComponent(String(assetPath || "").trim()).replace(/\\/g, "/");
+}
+
+function unwrapMarkdownDestination(value) {
+  const normalized = String(value || "").trim();
+  if (normalized.startsWith("<") && normalized.endsWith(">")) {
+    return normalized.slice(1, -1);
+  }
+
+  return normalized;
+}
+
+function formatMarkdownDestination(value) {
+  const normalized = String(value || "").trim();
+  if (!normalized) {
+    return "";
+  }
+
+  return /[\s()]/.test(normalized) ? `<${normalized}>` : normalized;
 }
 
 function isRelativeImagesPath(assetPath) {
   return /^(?:\.\/)?images\/.+/i.test(assetPath);
 }
 
+function getMarkdownImageMatches(markdown) {
+  const imagePattern =
+    /!\[([^\]]*)\]\(\s*(<[^>\r\n]+>|(?:\\.|[^\\\s)])+)(?:\s+((?:"(?:\\.|[^"])*"|'(?:\\.|[^'])*'|\((?:\\.|[^)])*\))))?\s*\)/g;
+
+  return Array.from(markdown.matchAll(imagePattern)).map((match) => ({
+    alt: match[1],
+    title: match[3] || "",
+    source: unwrapMarkdownDestination(match[2]),
+    start: match.index,
+    end: match.index + match[0].length
+  }));
+}
+
 async function resolveMarkdownImageSourcePath(assetPath, sourceDocumentPath) {
   const normalizedPath = normalizeAssetPath(assetPath);
-  if (!normalizedPath || isWebLike(normalizedPath)) {
+  if (!normalizedPath || isExternalSource(normalizedPath)) {
     return null;
+  }
+
+  if (isFileUrl(normalizedPath)) {
+    return fileURLToPath(normalizedPath);
   }
 
   if (path.isAbsolute(normalizedPath)) {
@@ -245,31 +342,35 @@ async function relocateMarkdownImages(markdown, documentPath) {
     return markdown;
   }
 
-  const imagePattern = /!\[([^\]]*)\]\(([^)\r\n]+)\)/g;
   const sourceDocumentPath = state.currentFilePath;
   const replacements = await Promise.all(
-    Array.from(markdown.matchAll(imagePattern)).map(async (match) => {
-      const originalPath = match[2].trim();
-      if (!originalPath || isWebLike(originalPath)) {
+    getMarkdownImageMatches(markdown).map(async (match) => {
+      if (!match.source || isExternalSource(match.source)) {
         return null;
       }
 
-      const sourcePath = await resolveMarkdownImageSourcePath(originalPath, sourceDocumentPath);
+      const sourcePath = await resolveMarkdownImageSourcePath(match.source, sourceDocumentPath);
       if (!sourcePath || !(await pathExists(sourcePath))) {
         return null;
       }
 
       const persisted = await copyImageToDocumentDirectory(sourcePath, documentPath);
       return {
-        from: match[0],
-        to: `![${match[1]}](${persisted.markdownPath})`
+        start: match.start,
+        end: match.end,
+        replacement: `![${match.alt}](${formatMarkdownDestination(persisted.markdownPath)}${match.title ? ` ${match.title}` : ""})`
       };
     })
   );
 
-  return replacements.filter(Boolean).reduce((nextMarkdown, replacement) => {
-    return nextMarkdown.replace(replacement.from, replacement.to);
-  }, markdown);
+  return replacements
+    .filter(Boolean)
+    .sort((left, right) => right.start - left.start)
+    .reduce(
+      (nextMarkdown, replacement) =>
+        `${nextMarkdown.slice(0, replacement.start)}${replacement.replacement}${nextMarkdown.slice(replacement.end)}`,
+      markdown
+    );
 }
 
 async function persistImageFromPath(sourcePath) {
@@ -305,6 +406,392 @@ async function persistImageFromBuffer(bytes, extension = ".png") {
   };
 }
 
+function compareFileNodes(left, right) {
+  if (left.type !== right.type) {
+    return left.type === "directory" ? -1 : 1;
+  }
+
+  return left.name.localeCompare(right.name, "zh-CN", { numeric: true, sensitivity: "base" });
+}
+
+async function buildWorkspaceNode(targetPath, isRoot = false) {
+  const entryName = path.basename(targetPath);
+  const stats = await fs.stat(targetPath);
+
+  if (!stats.isDirectory()) {
+    if (!isMarkdownFilePath(targetPath)) {
+      return null;
+    }
+
+    return {
+      type: "file",
+      name: entryName,
+      path: targetPath
+    };
+  }
+
+  if (IGNORED_WORKSPACE_DIRS.has(entryName)) {
+    return null;
+  }
+
+  const entries = await fs.readdir(targetPath, { withFileTypes: true });
+  const visibleEntries = entries.filter((entry) => !entry.name.startsWith("."));
+  const children = (
+    await Promise.all(
+      visibleEntries.map(async (entry) => buildWorkspaceNode(path.join(targetPath, entry.name)))
+    )
+  )
+    .filter(Boolean)
+    .sort(compareFileNodes);
+
+  if (!isRoot && children.length === 0) {
+    return null;
+  }
+
+  return {
+    type: "directory",
+    name: entryName,
+    path: targetPath,
+    children
+  };
+}
+
+async function listWorkspaceTree(rootPath) {
+  if (!rootPath) {
+    return null;
+  }
+
+  if (!(await pathExists(rootPath))) {
+    return null;
+  }
+
+  return buildWorkspaceNode(rootPath, true);
+}
+
+function sendThemeAction(window, theme) {
+  state.preferences = {
+    ...state.preferences,
+    theme
+  };
+  rebuildMenu(window);
+  emitMenuAction(window, { type: "set-theme", theme });
+}
+
+function sendPreferenceToggle(window, key) {
+  const nextValue = !state.preferences[key];
+  state.preferences = {
+    ...state.preferences,
+    [key]: nextValue
+  };
+  rebuildMenu(window);
+  emitMenuAction(window, { type: "set-preference", patch: { [key]: nextValue } });
+}
+
+function rebuildMenu(window) {
+  const preferences = state.preferences;
+  const template = [
+    {
+      label: "文件",
+      submenu: [
+        {
+          label: "新建",
+          accelerator: "CmdOrCtrl+N",
+          click: () => emitMenuAction(window, { type: "new-file" })
+        },
+        {
+          label: "打开...",
+          accelerator: "CmdOrCtrl+O",
+          click: () => emitMenuAction(window, { type: "open-file" })
+        },
+        {
+          label: "打开文件夹...",
+          accelerator: "CmdOrCtrl+Shift+O",
+          click: () => emitMenuAction(window, { type: "pick-workspace" })
+        },
+        {
+          label: "在文件夹中显示",
+          accelerator: "CmdOrCtrl+Shift+R",
+          enabled: Boolean(state.currentFilePath),
+          click: () => emitMenuAction(window, { type: "reveal-current-file" })
+        },
+        { type: "separator" },
+        {
+          label: "保存",
+          accelerator: "CmdOrCtrl+S",
+          click: () => emitMenuAction(window, { type: "save-file" })
+        },
+        {
+          label: "另存为",
+          accelerator: "CmdOrCtrl+Shift+S",
+          click: () => emitMenuAction(window, { type: "save-file-as" })
+        },
+        { type: "separator" },
+        {
+          label: "导出 HTML",
+          accelerator: "CmdOrCtrl+Shift+E",
+          click: () => emitMenuAction(window, { type: "export-html" })
+        },
+        {
+          label: "导出 PDF",
+          accelerator: "CmdOrCtrl+Shift+P",
+          click: () => emitMenuAction(window, { type: "export-pdf" })
+        },
+        { type: "separator" },
+        {
+          label: "偏好设置...",
+          accelerator: "CmdOrCtrl+,",
+          click: () => emitMenuAction(window, { type: "open-preferences" })
+        },
+        { type: "separator" },
+        { role: "close", label: "关闭" }
+      ]
+    },
+    {
+      label: "编辑",
+      submenu: [
+        { role: "undo", label: "撤销" },
+        { role: "redo", label: "重做" },
+        { type: "separator" },
+        { role: "cut", label: "剪切" },
+        { role: "copy", label: "复制" },
+        { role: "paste", label: "粘贴" },
+        { role: "selectAll", label: "全选" },
+        { type: "separator" },
+        {
+          label: "查找与替换",
+          accelerator: "CmdOrCtrl+F",
+          click: () => emitMenuAction(window, { type: "open-find" })
+        }
+      ]
+    },
+    {
+      label: "段落",
+      submenu: [
+        {
+          label: "正文",
+          accelerator: "CmdOrCtrl+Alt+0",
+          click: () => emitMenuAction(window, { type: "apply-format", format: "paragraph" })
+        },
+        {
+          label: "一级标题",
+          accelerator: "CmdOrCtrl+1",
+          click: () => emitMenuAction(window, { type: "apply-format", format: "heading-1" })
+        },
+        {
+          label: "二级标题",
+          accelerator: "CmdOrCtrl+2",
+          click: () => emitMenuAction(window, { type: "apply-format", format: "heading-2" })
+        },
+        {
+          label: "三级标题",
+          accelerator: "CmdOrCtrl+3",
+          click: () => emitMenuAction(window, { type: "apply-format", format: "heading-3" })
+        },
+        { type: "separator" },
+        {
+          label: "无序列表",
+          accelerator: "CmdOrCtrl+Shift+7",
+          click: () => emitMenuAction(window, { type: "apply-format", format: "bullet-list" })
+        },
+        {
+          label: "有序列表",
+          accelerator: "CmdOrCtrl+Shift+8",
+          click: () => emitMenuAction(window, { type: "apply-format", format: "ordered-list" })
+        },
+        {
+          label: "任务列表",
+          accelerator: "CmdOrCtrl+Shift+9",
+          click: () => emitMenuAction(window, { type: "apply-format", format: "task-list" })
+        },
+        {
+          label: "引用块",
+          accelerator: "CmdOrCtrl+Shift+Q",
+          click: () => emitMenuAction(window, { type: "apply-format", format: "blockquote" })
+        },
+        {
+          label: "代码块",
+          accelerator: "CmdOrCtrl+Alt+C",
+          click: () => emitMenuAction(window, { type: "apply-format", format: "code-block" })
+        },
+        {
+          label: "水平线",
+          accelerator: "CmdOrCtrl+Alt+-",
+          click: () => emitMenuAction(window, { type: "apply-format", format: "horizontal-rule" })
+        },
+        {
+          label: "表格",
+          accelerator: "CmdOrCtrl+Alt+T",
+          click: () => emitMenuAction(window, { type: "insert-table" })
+        }
+      ]
+    },
+    {
+      label: "格式",
+      submenu: [
+        {
+          label: "加粗",
+          accelerator: "CmdOrCtrl+B",
+          click: () => emitMenuAction(window, { type: "apply-format", format: "bold" })
+        },
+        {
+          label: "斜体",
+          accelerator: "CmdOrCtrl+I",
+          click: () => emitMenuAction(window, { type: "apply-format", format: "italic" })
+        },
+        {
+          label: "下划线",
+          accelerator: "CmdOrCtrl+U",
+          click: () => emitMenuAction(window, { type: "apply-format", format: "underline" })
+        },
+        {
+          label: "删除线",
+          accelerator: "CmdOrCtrl+Shift+5",
+          click: () => emitMenuAction(window, { type: "apply-format", format: "strike" })
+        },
+        {
+          label: "行内代码",
+          accelerator: "CmdOrCtrl+Shift+`",
+          click: () => emitMenuAction(window, { type: "apply-format", format: "inline-code" })
+        },
+        { type: "separator" },
+        {
+          label: "超链接",
+          accelerator: "CmdOrCtrl+K",
+          click: () => emitMenuAction(window, { type: "apply-format", format: "link" })
+        },
+        {
+          label: "图片",
+          accelerator: "CmdOrCtrl+Shift+I",
+          click: () => emitMenuAction(window, { type: "insert-image" })
+        }
+      ]
+    },
+    {
+      label: "视图",
+      submenu: [
+        {
+          label: "显示侧边栏",
+          type: "checkbox",
+          checked: preferences.sidebarVisible,
+          accelerator: "CmdOrCtrl+Shift+L",
+          click: () => sendPreferenceToggle(window, "sidebarVisible")
+        },
+        {
+          label: "文件列表",
+          accelerator: "CmdOrCtrl+Shift+2",
+          click: () => emitMenuAction(window, { type: "set-sidebar-tab", tab: "files" })
+        },
+        {
+          label: "大纲",
+          accelerator: "CmdOrCtrl+Shift+1",
+          click: () => emitMenuAction(window, { type: "set-sidebar-tab", tab: "outline" })
+        },
+        { type: "separator" },
+        {
+          label: "仅编辑",
+          type: "radio",
+          checked: preferences.viewMode === "editor",
+          click: () => emitMenuAction(window, { type: "set-view-mode", mode: "editor" })
+        },
+        {
+          label: "分栏",
+          type: "radio",
+          checked: preferences.viewMode === "split",
+          click: () => emitMenuAction(window, { type: "set-view-mode", mode: "split" })
+        },
+        {
+          label: "仅源码",
+          type: "radio",
+          checked: preferences.viewMode === "source",
+          click: () => emitMenuAction(window, { type: "set-view-mode", mode: "source" })
+        },
+        {
+          label: "仅预览",
+          type: "radio",
+          checked: preferences.viewMode === "preview",
+          click: () => emitMenuAction(window, { type: "set-view-mode", mode: "preview" })
+        },
+        { type: "separator" },
+        {
+          label: "专注模式",
+          type: "checkbox",
+          checked: preferences.focusMode,
+          accelerator: "F8",
+          click: () => sendPreferenceToggle(window, "focusMode")
+        },
+        {
+          label: "打字机模式",
+          type: "checkbox",
+          checked: preferences.typewriterMode,
+          accelerator: "F9",
+          click: () => sendPreferenceToggle(window, "typewriterMode")
+        },
+        { type: "separator" },
+        { role: "togglefullscreen", label: "切换全屏", accelerator: "F11" },
+        { role: "resetZoom", label: "实际大小" },
+        { role: "zoomIn", label: "放大" },
+        { role: "zoomOut", label: "缩小" },
+        { type: "separator" },
+        { role: "reload", label: "重新加载" },
+        { role: "toggleDevTools", label: "开发者工具" }
+      ]
+    },
+    {
+      label: "主题",
+      submenu: [
+        {
+          label: "Paper",
+          type: "radio",
+          checked: preferences.theme === "paper",
+          click: () => sendThemeAction(window, "paper")
+        },
+        {
+          label: "Forest",
+          type: "radio",
+          checked: preferences.theme === "forest",
+          click: () => sendThemeAction(window, "forest")
+        },
+        {
+          label: "Midnight",
+          type: "radio",
+          checked: preferences.theme === "midnight",
+          click: () => sendThemeAction(window, "midnight")
+        }
+      ]
+    },
+    {
+      label: "帮助",
+      submenu: [
+        {
+          label: "Quick Start",
+          click: () => shell.openExternal(HELP_LINKS.quickStart)
+        },
+        {
+          label: "Markdown Reference",
+          click: () => shell.openExternal(HELP_LINKS.markdownReference)
+        },
+        {
+          label: "Custom Themes",
+          click: () => shell.openExternal(HELP_LINKS.customThemes)
+        },
+        {
+          label: "更新日志",
+          click: () => shell.openExternal(HELP_LINKS.whatsNew)
+        },
+        { type: "separator" },
+        {
+          label: "官方网站",
+          click: () => shell.openExternal(HELP_LINKS.website)
+        },
+        { type: "separator" },
+        { role: "about", label: "关于 Inkdown" }
+      ]
+    }
+  ];
+
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
 async function createWindow() {
   const mainWindow = new BrowserWindow({
     width: 1440,
@@ -329,6 +816,7 @@ async function createWindow() {
     await mainWindow.loadFile(path.join(app.getAppPath(), "dist/index.html"));
   }
 
+  rebuildMenu(mainWindow);
   updateWindowTitle(mainWindow);
   mainWindow.on("focus", () => updateWindowTitle(mainWindow));
   mainWindow.on("close", (event) => {
@@ -350,126 +838,13 @@ async function createWindow() {
       event.preventDefault();
     }
   });
-
-  const menu = Menu.buildFromTemplate([
-    {
-      label: "文件",
-      submenu: [
-        {
-          label: "新建",
-          accelerator: "CmdOrCtrl+N",
-          click: () => emitMenuAction(mainWindow, { type: "new-file" })
-        },
-        {
-          label: "打开",
-          accelerator: "CmdOrCtrl+O",
-          click: () => emitMenuAction(mainWindow, { type: "open-file" })
-        },
-        { type: "separator" },
-        {
-          label: "保存",
-          accelerator: "CmdOrCtrl+S",
-          click: () => emitMenuAction(mainWindow, { type: "save-file" })
-        },
-        {
-          label: "另存为",
-          accelerator: "CmdOrCtrl+Shift+S",
-          click: () => emitMenuAction(mainWindow, { type: "save-file-as" })
-        },
-        { type: "separator" },
-        {
-          label: "导出 HTML",
-          accelerator: "CmdOrCtrl+Shift+E",
-          click: () => emitMenuAction(mainWindow, { type: "export-html" })
-        },
-        {
-          label: "导出 PDF",
-          accelerator: "CmdOrCtrl+Shift+P",
-          click: () => emitMenuAction(mainWindow, { type: "export-pdf" })
-        },
-        { type: "separator" },
-        { role: "quit", label: "退出" }
-      ]
-    },
-    {
-      label: "编辑",
-      submenu: [
-        { role: "undo", label: "撤销" },
-        { role: "redo", label: "重做" },
-        { type: "separator" },
-        {
-          label: "查找与替换",
-          accelerator: "CmdOrCtrl+F",
-          click: () => emitMenuAction(mainWindow, { type: "open-find" })
-        },
-        { type: "separator" },
-        { role: "cut", label: "剪切" },
-        { role: "copy", label: "复制" },
-        { role: "paste", label: "粘贴" },
-        { role: "selectAll", label: "全选" }
-      ]
-    },
-    {
-      label: "插入",
-      submenu: [
-        {
-          label: "图片",
-          accelerator: "CmdOrCtrl+Shift+I",
-          click: () => emitMenuAction(mainWindow, { type: "insert-image" })
-        },
-        {
-          label: "表格",
-          accelerator: "CmdOrCtrl+Alt+T",
-          click: () => emitMenuAction(mainWindow, { type: "insert-table" })
-        }
-      ]
-    },
-    {
-      label: "视图",
-      submenu: [
-        {
-          label: "仅编辑",
-          accelerator: "CmdOrCtrl+1",
-          click: () => emitMenuAction(mainWindow, { type: "set-view-mode", mode: "editor" })
-        },
-        {
-          label: "分栏",
-          accelerator: "CmdOrCtrl+2",
-          click: () => emitMenuAction(mainWindow, { type: "set-view-mode", mode: "split" })
-        },
-        {
-          label: "仅源码",
-          accelerator: "CmdOrCtrl+3",
-          click: () => emitMenuAction(mainWindow, { type: "set-view-mode", mode: "source" })
-        },
-        {
-          label: "仅预览",
-          accelerator: "CmdOrCtrl+4",
-          click: () => emitMenuAction(mainWindow, { type: "set-view-mode", mode: "preview" })
-        },
-        { type: "separator" },
-        {
-          label: "偏好设置",
-          accelerator: "CmdOrCtrl+,",
-          click: () => emitMenuAction(mainWindow, { type: "open-preferences" })
-        },
-        { type: "separator" },
-        { role: "reload", label: "重新加载" },
-        { role: "toggleDevTools", label: "开发者工具" },
-        { type: "separator" },
-        { role: "resetZoom", label: "实际大小" },
-        { role: "zoomIn", label: "放大" },
-        { role: "zoomOut", label: "缩小" },
-        { type: "separator" },
-        { role: "togglefullscreen", label: "全屏" }
-      ]
-    }
-  ]);
-
-  Menu.setApplicationMenu(menu);
 }
 
-app.whenReady().then(createWindow);
+app.whenReady().then(async () => {
+  state.preferences = await loadPreferences();
+  registerAssetProtocol();
+  await createWindow();
+});
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {
@@ -484,14 +859,11 @@ app.on("activate", () => {
 });
 
 ipcMain.handle("dialog:open-markdown", async () => {
-  console.log("[main] dialog:open-markdown");
   const window = BrowserWindow.getFocusedWindow();
   const result = await dialog.showOpenDialog(window, {
     title: "打开 Markdown 文档",
     properties: ["openFile"],
-    filters: [
-      { name: "Markdown", extensions: ["md", "markdown", "mdown", "mkd", "txt"] }
-    ]
+    filters: [{ name: "Markdown", extensions: ["md", "markdown", "mdown", "mkd", "txt"] }]
   });
 
   if (result.canceled || result.filePaths.length === 0) {
@@ -501,8 +873,24 @@ ipcMain.handle("dialog:open-markdown", async () => {
   return openMarkdownFile(window, result.filePaths[0]);
 });
 
+ipcMain.handle("dialog:pick-workspace", async () => {
+  const window = BrowserWindow.getFocusedWindow();
+  const result = await dialog.showOpenDialog(window, {
+    title: "打开文件夹",
+    properties: ["openDirectory"]
+  });
+
+  if (result.canceled || result.filePaths.length === 0) {
+    return { canceled: true };
+  }
+
+  return {
+    canceled: false,
+    directoryPath: result.filePaths[0]
+  };
+});
+
 ipcMain.handle("dialog:confirm-discard-changes", async () => {
-  console.log("[main] dialog:confirm-discard-changes", { isDirty: state.isDirty });
   const window = BrowserWindow.getFocusedWindow();
   return {
     shouldContinue: await maybeContinueWithUnsavedChanges(window)
@@ -510,7 +898,6 @@ ipcMain.handle("dialog:confirm-discard-changes", async () => {
 });
 
 ipcMain.handle("dialog:pick-image", async () => {
-  console.log("[main] dialog:pick-image");
   const window = BrowserWindow.getFocusedWindow();
   const result = await dialog.showOpenDialog(window, {
     title: "插入图片",
@@ -526,7 +913,6 @@ ipcMain.handle("dialog:pick-image", async () => {
 });
 
 ipcMain.handle("file:save-markdown", async (_, payload) => {
-  console.log("[main] file:save-markdown", { requestedFilePath: payload.filePath || state.currentFilePath });
   const window = BrowserWindow.getFocusedWindow();
   let targetPath = payload.filePath || state.currentFilePath;
 
@@ -548,14 +934,15 @@ ipcMain.handle("file:save-markdown", async (_, payload) => {
   await fs.writeFile(targetPath, normalizedMarkdown, "utf8");
   state.currentFilePath = targetPath;
   state.isDirty = false;
+  rebuildMenu(window);
   if (window) {
     updateWindowTitle(window);
   }
+
   return { canceled: false, filePath: targetPath, markdown: normalizedMarkdown };
 });
 
 ipcMain.handle("file:save-html", async (_, payload) => {
-  console.log("[main] file:save-html");
   const window = BrowserWindow.getFocusedWindow();
   const defaultName = state.currentFilePath
     ? `${path.basename(state.currentFilePath, path.extname(state.currentFilePath))}.html`
@@ -576,35 +963,42 @@ ipcMain.handle("file:save-html", async (_, payload) => {
 });
 
 ipcMain.handle("file:save-pdf", async (_, payload) => {
-  console.log("[main] file:save-pdf");
   const window = BrowserWindow.getFocusedWindow();
   return createPdfFromHtml(window, payload);
 });
 
 ipcMain.handle("file:open-markdown-path", async (_, filePath) => {
-  console.log("[main] file:open-markdown-path", { filePath });
   const window = BrowserWindow.getFocusedWindow();
   return openMarkdownFile(window, filePath);
 });
 
-ipcMain.handle("file:persist-image-file", async (_, sourcePath) => {
-  return persistImageFromPath(sourcePath);
+ipcMain.handle("file:list-workspace-tree", async (_, rootPath) => {
+  return listWorkspaceTree(rootPath);
 });
 
-ipcMain.handle("file:persist-image-buffer", async (_, payload) => {
-  return persistImageFromBuffer(payload.bytes, payload.extension);
+ipcMain.handle("file:persist-image-file", async (_, sourcePath) => persistImageFromPath(sourcePath));
+
+ipcMain.handle("file:persist-image-buffer", async (_, payload) =>
+  persistImageFromBuffer(payload.bytes, payload.extension)
+);
+
+ipcMain.handle("preferences:load", async () => state.preferences);
+
+ipcMain.handle("preferences:save", async (_, preferences) => savePreferences(preferences));
+
+ipcMain.handle("shell:open-external", async (_, targetUrl) => {
+  await shell.openExternal(targetUrl);
+  return { ok: true };
 });
 
-ipcMain.handle("preferences:load", async () => {
-  return loadPreferences();
-});
-
-ipcMain.handle("preferences:save", async (_, preferences) => {
-  return savePreferences(preferences);
+ipcMain.handle("shell:show-item-in-folder", async (_, filePath) => {
+  if (filePath) {
+    shell.showItemInFolder(filePath);
+  }
+  return { ok: true };
 });
 
 ipcMain.handle("document:set-dirty", (_, value) => {
-  console.log("[main] document:set-dirty", { value: Boolean(value) });
   const window = BrowserWindow.getFocusedWindow();
   state.isDirty = Boolean(value);
   if (window) {
@@ -614,10 +1008,10 @@ ipcMain.handle("document:set-dirty", (_, value) => {
 });
 
 ipcMain.handle("document:set-file-path", (_, filePath) => {
-  console.log("[main] document:set-file-path", { filePath: filePath || null });
   const window = BrowserWindow.getFocusedWindow();
   state.currentFilePath = filePath || null;
   if (window) {
+    rebuildMenu(window);
     updateWindowTitle(window);
   }
   return { ok: true };

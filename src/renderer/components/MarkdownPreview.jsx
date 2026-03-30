@@ -1,13 +1,22 @@
 import React, { useEffect, useRef } from "react";
-import mermaid from "mermaid";
 
-mermaid.initialize({
-  startOnLoad: false,
-  theme: "neutral",
-  securityLevel: "loose"
-});
+let mermaidLoader;
 
-async function renderMermaidNodes(nodes) {
+async function loadMermaid() {
+  if (!mermaidLoader) {
+    mermaidLoader = import("mermaid").then(({ default: mermaid }) => mermaid);
+  }
+
+  return mermaidLoader;
+}
+
+async function renderMermaidNodes(nodes, theme = "paper") {
+  const mermaid = await loadMermaid();
+  mermaid.initialize({
+    startOnLoad: false,
+    theme: theme === "midnight" ? "dark" : theme === "forest" ? "forest" : "default",
+    securityLevel: "loose"
+  });
   await Promise.all(
     nodes.map(async (node, index) => {
       const source = node.textContent || "";
@@ -25,24 +34,22 @@ async function renderMermaidNodes(nodes) {
   );
 }
 
-export async function renderPreviewHtml(html) {
+export async function renderPreviewHtml(html, theme = "paper") {
   const container = document.createElement("div");
   container.innerHTML = html;
   const nodes = Array.from(container.querySelectorAll(".mermaid"));
 
   if (nodes.length > 0) {
-    await renderMermaidNodes(nodes);
+    await renderMermaidNodes(nodes, theme);
   }
 
   return container.innerHTML;
 }
 
-export default function MarkdownPreview({ html, onRendered }) {
+export default function MarkdownPreview({ html, theme }) {
   const containerRef = useRef(null);
 
   useEffect(() => {
-    let cancelled = false;
-
     async function renderMermaid() {
       if (!containerRef.current) {
         return;
@@ -50,20 +57,12 @@ export default function MarkdownPreview({ html, onRendered }) {
 
       const nodes = Array.from(containerRef.current.querySelectorAll(".mermaid"));
       if (nodes.length > 0) {
-        await renderMermaidNodes(nodes);
-      }
-
-      if (!cancelled && onRendered && containerRef.current) {
-        onRendered(containerRef.current.innerHTML);
+        await renderMermaidNodes(nodes, theme);
       }
     }
 
     renderMermaid();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [html, onRendered]);
+  }, [html, theme]);
 
   return (
     <div
