@@ -233,8 +233,13 @@ async function ensureUniqueFileName(directoryPath, fileName) {
   return nextFileName;
 }
 
-function buildAssetResponse(targetPath) {
-  return net.fetch(pathToFileURL(targetPath).toString());
+async function buildAssetResponse(targetPath) {
+  const absolutePath = path.resolve(targetPath);
+  if (!(await pathExists(absolutePath))) {
+    return new Response("Asset not found.", { status: 404 });
+  }
+
+  return net.fetch(pathToFileURL(absolutePath).toString());
 }
 
 function registerAssetProtocol() {
@@ -793,13 +798,12 @@ function rebuildMenu(window) {
 }
 
 async function createWindow() {
-  const mainWindow = new BrowserWindow({
+  const browserWindowOptions = {
     width: 1440,
     height: 920,
     minWidth: 1080,
     minHeight: 720,
     backgroundColor: "#f5f0e7",
-    titleBarStyle: "hiddenInset",
     autoHideMenuBar: false,
     webPreferences: {
       preload: path.join(__dirname, "../preload/preload.js"),
@@ -808,7 +812,13 @@ async function createWindow() {
       nodeIntegration: false,
       spellcheck: true
     }
-  });
+  };
+
+  if (process.platform === "darwin") {
+    browserWindowOptions.titleBarStyle = "hiddenInset";
+  }
+
+  const mainWindow = new BrowserWindow(browserWindowOptions);
 
   if (isDev) {
     await mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);

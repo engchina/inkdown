@@ -83,11 +83,20 @@ body {
   background: transparent;
 }
 
+.toolbar,
+.find-bar,
+.sidebar-panel,
+.preferences-dialog,
+.status-bar {
+  -webkit-app-region: no-drag;
+}
+
 button,
 input,
 textarea,
 select {
   font: inherit;
+  -webkit-app-region: no-drag;
 }
 
 .app-shell {
@@ -141,6 +150,7 @@ select {
     transform 120ms ease,
     border-color 120ms ease,
     background 120ms ease;
+  -webkit-app-region: no-drag;
 }
 
 .tool-button:hover {
@@ -537,6 +547,26 @@ select {
   border-bottom: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
 }
 
+.editor-surface mark,
+.preview-surface mark {
+  padding: 0.08em 0.32em;
+  border-radius: 0.36em;
+  background: color-mix(in srgb, #ffe08a 78%, white);
+  color: inherit;
+}
+
+:root[data-theme="midnight"] .editor-surface mark,
+:root[data-theme="midnight"] .preview-surface mark {
+  background: color-mix(in srgb, #ffd166 30%, #422800);
+}
+
+.editor-surface sub,
+.editor-surface sup,
+.preview-surface sub,
+.preview-surface sup {
+  font-size: 0.78em;
+}
+
 .editor-surface blockquote,
 .preview-surface blockquote {
   margin: var(--content-block-gap-lg) 0;
@@ -687,6 +717,112 @@ select {
 .toc-item.level-5,
 .toc-item.level-6 {
   padding-left: 36px;
+}
+
+.yaml-front-matter {
+  margin: 0 0 1.2em;
+  padding: 16px 18px;
+  border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--panel-strong) 92%, transparent);
+}
+
+.yaml-front-matter-title,
+.footnotes-title {
+  margin-bottom: 10px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-soft);
+}
+
+.yaml-front-matter pre {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--text);
+  white-space: pre-wrap;
+}
+
+.yaml-front-matter code {
+  padding: 0;
+  background: transparent;
+  color: inherit;
+}
+
+.callout {
+  position: relative;
+  padding: 14px 16px 14px 18px;
+  border-left-width: 0;
+  border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--panel-strong) 94%, transparent);
+}
+
+.callout::before {
+  content: "";
+  position: absolute;
+  inset: 10px auto 10px 0;
+  width: 4px;
+  border-radius: 999px;
+  background: var(--accent);
+}
+
+.callout-title {
+  margin-bottom: 6px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.callout > :last-child {
+  margin-bottom: 0;
+}
+
+.callout-note::before {
+  background: #3b82f6;
+}
+
+.callout-tip::before {
+  background: #16a34a;
+}
+
+.callout-important::before {
+  background: #7c3aed;
+}
+
+.callout-warning::before {
+  background: #d97706;
+}
+
+.callout-caution::before {
+  background: #dc2626;
+}
+
+.footnotes {
+  margin-top: 2.1em;
+  padding-top: 1.2em;
+  border-top: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+}
+
+.footnotes ol {
+  margin: 0;
+  padding-left: 1.4em;
+}
+
+.footnotes li {
+  margin: 0.45em 0;
+}
+
+.footnote-ref a,
+.footnote-backref {
+  text-decoration: none;
+}
+
+.footnote-backref {
+  margin-left: 0.4em;
+  font-size: 0.92em;
 }
 
 .preview-surface .mermaid {

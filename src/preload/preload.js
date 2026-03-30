@@ -1,8 +1,10 @@
 const { contextBridge, ipcRenderer } = require("electron");
+const os = require("node:os");
 const path = require("node:path");
 const { fileURLToPath, pathToFileURL } = require("node:url");
 
 const ASSET_PROTOCOL = "inkdown-asset";
+const TEMP_IMAGE_DIR = path.join(os.tmpdir(), "inkdown-images");
 
 function isExternalSource(value) {
   return /^(https?:|data:|blob:)/i.test(value);
@@ -10,6 +12,10 @@ function isExternalSource(value) {
 
 function isFileUrl(value) {
   return /^file:/i.test(value);
+}
+
+function isRelativeImagesPath(assetPath) {
+  return /^(?:\.\/)?images\/.+/i.test(assetPath || "");
 }
 
 function toAssetUrl(filePath) {
@@ -30,7 +36,11 @@ function resolveAbsoluteAssetPath(documentPath, assetPath) {
   }
 
   if (!documentPath) {
-    return assetPath;
+    if (isRelativeImagesPath(assetPath)) {
+      const relativeImagePath = assetPath.replace(/^(?:\.\/)?images\//i, "");
+      return path.join(TEMP_IMAGE_DIR, ...relativeImagePath.split("/"));
+    }
+    return null;
   }
 
   return path.resolve(path.dirname(documentPath), assetPath);
@@ -67,7 +77,7 @@ contextBridge.exposeInMainWorld("editorApi", {
     }
 
     const absolutePath = resolveAbsoluteAssetPath(documentPath, assetPath);
-    return absolutePath ? toAssetUrl(absolutePath) : assetPath;
+    return absolutePath ? toAssetUrl(absolutePath) : "";
   },
   resolveMarkdownAssetForExport: (documentPath, assetPath) => {
     if (!assetPath || isExternalSource(assetPath)) {
@@ -75,6 +85,6 @@ contextBridge.exposeInMainWorld("editorApi", {
     }
 
     const absolutePath = resolveAbsoluteAssetPath(documentPath, assetPath);
-    return absolutePath ? pathToFileURL(absolutePath).href : assetPath;
+    return absolutePath ? pathToFileURL(absolutePath).href : "";
   }
 });

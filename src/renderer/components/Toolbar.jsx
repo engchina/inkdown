@@ -102,6 +102,27 @@ export default function Toolbar({
           S
         </ToolButton>
         <ToolButton
+          title="高亮"
+          active={editor.isActive("highlight")}
+          onClick={() => onApplyFormat("highlight")}
+        >
+          Mark
+        </ToolButton>
+        <ToolButton
+          title="下标"
+          active={editor.isActive("subscript")}
+          onClick={() => onApplyFormat("subscript")}
+        >
+          Sub
+        </ToolButton>
+        <ToolButton
+          title="上标"
+          active={editor.isActive("superscript")}
+          onClick={() => onApplyFormat("superscript")}
+        >
+          Sup
+        </ToolButton>
+        <ToolButton
           title="行内代码"
           active={editor.isActive("code")}
           onClick={() => onApplyFormat("inline-code")}

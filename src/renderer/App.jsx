@@ -1,4 +1,5 @@
 import React, { startTransition, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import { Mark, mergeAttributes } from "@tiptap/core";
 import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Underline from "@tiptap/extension-underline";
@@ -71,6 +72,15 @@ tags:
 - 图片、表格、任务列表
 - Mermaid、数学公式与导出
 
+## 扩展 Markdown
+
+==高亮==、H~2~O、x^2^ 与脚注引用[^inkdown] 现在都能预览。
+
+> [!NOTE]
+> 现在支持 Typora 参考页里的 GitHub 风格 Callout。
+
+[^inkdown]: 这里是脚注内容，支持 **Markdown** 内联格式。
+
 ## 数学与图表
 
 行内公式：\\(E = mc^2\\)
@@ -104,6 +114,52 @@ const MarkdownImage = Image.extend({
     };
   }
 });
+
+function capitalize(value) {
+  return String(value || "").charAt(0).toUpperCase() + String(value || "").slice(1);
+}
+
+function createInlineTagMark(name, tagName) {
+  const commandSuffix = capitalize(name);
+  return Mark.create({
+    name,
+    inclusive: false,
+    parseHTML() {
+      return [{ tag: tagName }];
+    },
+    renderHTML({ HTMLAttributes }) {
+      return [tagName, mergeAttributes(HTMLAttributes), 0];
+    },
+    addCommands() {
+      return {
+        [`set${commandSuffix}`]:
+          () =>
+          ({ commands }) =>
+            commands.setMark(this.name),
+        [`toggle${commandSuffix}`]:
+          () =>
+          ({ commands }) =>
+            commands.toggleMark(this.name),
+        [`unset${commandSuffix}`]:
+          () =>
+          ({ commands }) =>
+            commands.unsetMark(this.name)
+      };
+    }
+  });
+}
+
+const Highlight = createInlineTagMark("highlight", "mark");
+const Subscript = createInlineTagMark("subscript", "sub");
+const Superscript = createInlineTagMark("superscript", "sup");
+
+const calloutLabels = {
+  note: "Note",
+  tip: "Tip",
+  important: "Important",
+  warning: "Warning",
+  caution: "Caution"
+};
 
 function basenamePath(filePath) {
   if (!filePath) {
@@ -140,6 +196,14 @@ function escapeHtml(value) {
     .replace(/"/g, "&quot;");
 }
 
+function sanitizeDomIdFragment(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^\p{Letter}\p{Number}_-]+/gu, "-")
+    .replace(/^-+|-+$/g, "") || "note";
+}
+
 function slugifyHeading(text, slugCounts) {
   const baseSlug =
     String(text || "")
@@ -153,7 +217,123 @@ function slugifyHeading(text, slugCounts) {
   return nextCount === 1 ? baseSlug : `${baseSlug}-${nextCount}`;
 }
 
-function preprocessMarkdownSyntax(markdown) {
+function replaceOutsideCodeSpans(value, transform) {
+  return String(value || "")
+    .split(/(`+[^`]*`+)/g)
+    .map((segment) => (segment.startsWith("`") ? segment : transform(segment)))
+    .join("");
+}
+
+function applyExtendedInlineSyntax(value) {
+  return replaceOutsideCodeSpans(value, (segment) =>
+    segment
+      .replace(/==(?=\S)([\s\S]*?\S)==/g, "<mark>$1</mark>")
+      .replace(/(^|[^~])~(?=\S)([^~\n]+?\S)~(?!~)/g, (_, prefix, content) => `${prefix}<sub>${content}</sub>`)
+      .replace(/\^(?=\S)([^^\n]+?\S)\^/g, "<sup>$1</sup>")
+  );
+}
+
+function extractYamlFrontMatter(markdown) {
+  const value = String(markdown || "");
+  const match = /^(---\r?\n[\s\S]*?\r?\n(?:---|\.\.\.))(\r?\n+|$)/.exec(value);
+  if (!match) {
+    return { raw: "", content: "", body: value };
+  }
+  const raw = `${match[1]}${match[2] || "\n\n"}`;
+  const content = match[1]
+    .replace(/^---\r?\n/, "")
+    .replace(/\r?\n(?:---|\.\.\.)$/, "");
+  return {
+    raw,
+    content,
+    body: value.slice(raw.length)
+  };
+}
+
+function prependFrontMatter(rawFrontMatter, markdownBody) {
+  const body = String(markdownBody || "").trimStart();
+  if (!rawFrontMatter) {
+    return body;
+  }
+  if (!body) {
+    return rawFrontMatter.trimEnd();
+  }
+  return `${rawFrontMatter}${body}`;
+}
+
+function extractFootnotes(markdown) {
+  const lines = String(markdown || "").split(/\r?\n/);
+  const bodyLines = [];
+  const definitions = new Map();
+  let inFence = false;
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (/^```/.test(line)) {
+      inFence = !inFence;
+      bodyLines.push(line);
+      continue;
+    }
+
+    if (!inFence) {
+      const definitionMatch = /^\[\^([^\]]+)\]:\s*(.*)$/.exec(line);
+      if (definitionMatch) {
+        const id = definitionMatch[1].trim();
+        const definitionLines = [definitionMatch[2]];
+        let nextIndex = index + 1;
+        while (nextIndex < lines.length) {
+          const nextLine = lines[nextIndex];
+          if (/^(?:\s{2,}|\t)/.test(nextLine)) {
+            definitionLines.push(nextLine.replace(/^(?:\t| {1,4})/, ""));
+            nextIndex += 1;
+            continue;
+          }
+          if (nextLine.trim() === "" && nextIndex + 1 < lines.length && /^(?:\s{2,}|\t)/.test(lines[nextIndex + 1])) {
+            definitionLines.push("");
+            nextIndex += 1;
+            continue;
+          }
+          break;
+        }
+        definitions.set(id, definitionLines.join("\n").trim());
+        index = nextIndex - 1;
+        continue;
+      }
+    }
+
+    bodyLines.push(line);
+  }
+
+  return {
+    body: bodyLines.join("\n").trimEnd(),
+    definitions
+  };
+}
+
+function applyFootnoteReferences(markdown, definitions) {
+  const numbering = new Map();
+  const order = [];
+  const body = replaceOutsideCodeSpans(markdown, (segment) =>
+    segment.replace(/\[\^([^\]]+)\]/g, (match, rawId) => {
+      const id = String(rawId || "").trim();
+      if (!definitions.has(id)) {
+        return match;
+      }
+      if (!numbering.has(id)) {
+        numbering.set(id, order.length + 1);
+        order.push(id);
+      }
+      const number = numbering.get(id);
+      const domId = sanitizeDomIdFragment(id);
+      return `<sup class="footnote-ref" id="fnref-${domId}"><a href="#fn-${domId}">${number}</a></sup>`;
+    })
+  );
+
+  return { body, order, numbering };
+}
+
+function preprocessMarkdownSyntax(markdown, options = {}) {
+  const { enableExtendedInlineSyntax = false } = options;
   const lines = String(markdown || "").split(/\r?\n/);
   const parts = [];
   let normalLines = [];
@@ -166,11 +346,16 @@ function preprocessMarkdownSyntax(markdown) {
       .replace(/\\\[((?:.|\r?\n)*?)\\\]/g, (_, content) => `\n$$\n${content.trim()}\n$$\n`)
       .replace(/\\\((.+?)\\\)/g, (_, content) => `$${content.trim()}$`);
 
+  const normalizeInlineSyntax = (value) => {
+    const normalized = normalizeMathSyntax(value);
+    return enableExtendedInlineSyntax ? applyExtendedInlineSyntax(normalized) : normalized;
+  };
+
   const flushNormal = () => {
     if (normalLines.length === 0) {
       return;
     }
-    parts.push(normalizeMathSyntax(normalLines.join("\n")));
+    parts.push(normalizeInlineSyntax(normalLines.join("\n")));
     normalLines = [];
   };
 
@@ -311,7 +496,86 @@ function resolveImageSources(html, currentFilePath, resolveAsset) {
   return temp;
 }
 
-function decorateRenderedHtml(container, outline) {
+function buildYamlFrontMatterElement(content) {
+  const wrapper = document.createElement("section");
+  wrapper.className = "yaml-front-matter";
+
+  const title = document.createElement("div");
+  title.className = "yaml-front-matter-title";
+  title.textContent = "Front Matter";
+  wrapper.appendChild(title);
+
+  const pre = document.createElement("pre");
+  const code = document.createElement("code");
+  code.textContent = String(content || "");
+  pre.appendChild(code);
+  wrapper.appendChild(pre);
+
+  return wrapper;
+}
+
+function decorateCalloutBlockquotes(container) {
+  Array.from(container.querySelectorAll("blockquote")).forEach((blockquote) => {
+    const firstParagraph = blockquote.querySelector(":scope > p:first-child");
+    const firstLine = firstParagraph?.textContent?.trim() || "";
+    const match = /^\[!([A-Z]+)\]\s*(.*)$/.exec(firstLine);
+    if (!match) {
+      return;
+    }
+
+    const type = match[1].toLowerCase();
+    if (!calloutLabels[type]) {
+      return;
+    }
+
+    blockquote.classList.add("callout", `callout-${type}`);
+    const title = document.createElement("div");
+    title.className = "callout-title";
+    title.textContent = match[2] || calloutLabels[type];
+    blockquote.insertBefore(title, blockquote.firstChild);
+    firstParagraph.remove();
+  });
+}
+
+function renderMarkdownFragment(markdown, currentFilePath, resolveAsset) {
+  const container = resolveImageSources(
+    previewMarked.parse(preprocessMarkdownSyntax(markdown, { enableExtendedInlineSyntax: true })),
+    currentFilePath,
+    resolveAsset
+  );
+  decorateCalloutBlockquotes(container);
+  return container.innerHTML;
+}
+
+function buildFootnotesElement(definitions, order, currentFilePath, resolveAsset) {
+  if (!order.length) {
+    return null;
+  }
+
+  const section = document.createElement("section");
+  section.className = "footnotes";
+  section.innerHTML = '<div class="footnotes-title">Footnotes</div>';
+
+  const list = document.createElement("ol");
+  order.forEach((id) => {
+    const domId = sanitizeDomIdFragment(id);
+    const item = document.createElement("li");
+    item.id = `fn-${domId}`;
+    item.innerHTML = `${renderMarkdownFragment(definitions.get(id) || "", currentFilePath, resolveAsset)} <a class="footnote-backref" href="#fnref-${domId}">↩</a>`;
+    list.appendChild(item);
+  });
+  section.appendChild(list);
+
+  return section;
+}
+
+function decorateRenderedHtml(container, outline, options = {}) {
+  const { frontMatterContent = "", enableCallouts = false, footnotes = null, currentFilePath = null, resolveAsset } = options;
+
+  if (frontMatterContent) {
+    container.prepend(buildYamlFrontMatterElement(frontMatterContent));
+  }
+
   Array.from(container.querySelectorAll("h1, h2, h3, h4, h5, h6")).forEach((heading, index) => {
     const item = outline[index];
     if (!item) {
@@ -334,25 +598,49 @@ function decorateRenderedHtml(container, outline) {
     node.parentElement.replaceWith(wrapper);
   });
 
+  if (enableCallouts) {
+    decorateCalloutBlockquotes(container);
+  }
+
+  if (footnotes?.order?.length && resolveAsset) {
+    const footnotesElement = buildFootnotesElement(footnotes.definitions, footnotes.order, currentFilePath, resolveAsset);
+    if (footnotesElement) {
+      container.appendChild(footnotesElement);
+    }
+  }
+
   return container.innerHTML;
 }
 
 function renderMarkdownForEditor(markdown, currentFilePath, outline) {
+  const { content: frontMatterContent, body } = extractYamlFrontMatter(markdown);
   const container = resolveImageSources(
-    editorMarked.parse(preprocessMarkdownSyntax(markdown)),
+    editorMarked.parse(preprocessMarkdownSyntax(body, { enableExtendedInlineSyntax: true })),
     currentFilePath,
     window.editorApi.resolveMarkdownAsset
   );
-  return decorateRenderedHtml(container, outline);
+  return decorateRenderedHtml(container, outline, { frontMatterContent });
 }
 
 function renderMarkdownForPreview(markdown, currentFilePath, outline, resolveAsset = window.editorApi.resolveMarkdownAsset) {
+  const { content: frontMatterContent, body: withoutFrontMatter } = extractYamlFrontMatter(markdown);
+  const { body: withoutFootnotes, definitions } = extractFootnotes(withoutFrontMatter);
+  const { body, order } = applyFootnoteReferences(
+    preprocessMarkdownSyntax(withoutFootnotes, { enableExtendedInlineSyntax: true }),
+    definitions
+  );
   const container = resolveImageSources(
-    previewMarked.parse(preprocessMarkdownSyntax(markdown)),
+    previewMarked.parse(body),
     currentFilePath,
     resolveAsset
   );
-  return decorateRenderedHtml(container, outline);
+  return decorateRenderedHtml(container, outline, {
+    frontMatterContent,
+    enableCallouts: true,
+    footnotes: { definitions, order },
+    currentFilePath,
+    resolveAsset
+  });
 }
 
 function buildStandaloneHtml(title, bodyHtml, theme) {
@@ -376,6 +664,8 @@ function buildStandaloneHtml(title, bodyHtml, theme) {
       img { max-width: 100%; border-radius: 12px; }
       pre { overflow-x: auto; padding: 16px; border-radius: 14px; background: ${theme === "midnight" ? "#1c2434" : "#22252b"}; color: #f5f7fa; }
       code { font-family: "Cascadia Code", "JetBrains Mono", monospace; }
+      mark { padding: 0.08em 0.32em; border-radius: 0.36em; background: ${theme === "midnight" ? "#5a4300" : "#ffe08a"}; color: inherit; }
+      sub, sup { font-size: 0.78em; }
       blockquote { margin-left: 0; padding-left: 18px; border-left: 4px solid #d0b896; color: ${theme === "midnight" ? "#d3dbe8" : "#69553f"}; }
       table { width: 100%; border-collapse: collapse; }
       th, td { border: 1px solid rgba(160, 160, 160, 0.3); padding: 10px 12px; }
@@ -385,6 +675,20 @@ function buildStandaloneHtml(title, bodyHtml, theme) {
       .toc-item.level-2 { padding-left: 12px; }
       .toc-item.level-3 { padding-left: 24px; }
       .toc-item.level-4, .toc-item.level-5, .toc-item.level-6 { padding-left: 36px; }
+      .yaml-front-matter { margin-bottom: 24px; padding: 16px 18px; border: 1px solid rgba(160, 160, 160, 0.24); border-radius: 14px; background: rgba(255, 255, 255, 0.6); }
+      .yaml-front-matter-title, .footnotes-title { margin-bottom: 10px; font-size: 12px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: ${theme === "midnight" ? "#b8c7d9" : "#69553f"}; }
+      .yaml-front-matter pre { margin: 0; padding: 0; background: transparent; color: inherit; white-space: pre-wrap; }
+      .yaml-front-matter code { padding: 0; background: transparent; color: inherit; }
+      .callout { position: relative; padding: 14px 16px 14px 18px; border: 1px solid rgba(160, 160, 160, 0.24); border-radius: 16px; background: rgba(255, 255, 255, 0.6); }
+      .callout::before { content: ""; position: absolute; inset: 10px auto 10px 0; width: 4px; border-radius: 999px; background: #9a5a26; }
+      .callout-title { margin-bottom: 6px; font-size: 13px; font-weight: 700; color: inherit; }
+      .callout-note::before { background: #3b82f6; }
+      .callout-tip::before { background: #16a34a; }
+      .callout-important::before { background: #7c3aed; }
+      .callout-warning::before { background: #d97706; }
+      .callout-caution::before { background: #dc2626; }
+      .footnotes { margin-top: 32px; padding-top: 20px; border-top: 1px solid rgba(160, 160, 160, 0.24); }
+      .footnote-backref { margin-left: 6px; text-decoration: none; }
       .mermaid { margin: 1.5rem 0; }
     </style>
   </head>
@@ -520,12 +824,48 @@ turndown.addRule("images", {
   }
 });
 
+turndown.addRule("yamlFrontMatter", {
+  filter(node) {
+    return node.nodeType === Node.ELEMENT_NODE && node.classList?.contains("yaml-front-matter");
+  },
+  replacement() {
+    return "\n";
+  }
+});
+
 turndown.addRule("tableOfContents", {
   filter(node) {
     return node.nodeType === Node.ELEMENT_NODE && node.classList?.contains("table-of-contents");
   },
   replacement() {
     return "\n\n[TOC]\n\n";
+  }
+});
+
+turndown.addRule("highlight", {
+  filter(node) {
+    return node.nodeName === "MARK";
+  },
+  replacement(content) {
+    return `==${content}==`;
+  }
+});
+
+turndown.addRule("subscript", {
+  filter(node) {
+    return node.nodeName === "SUB";
+  },
+  replacement(content) {
+    return `~${content}~`;
+  }
+});
+
+turndown.addRule("superscript", {
+  filter(node) {
+    return node.nodeName === "SUP" && !node.classList?.contains("footnote-ref");
+  },
+  replacement(content) {
+    return `^${content}^`;
   }
 });
 
@@ -586,6 +926,9 @@ export default function App() {
       extensions: [
         StarterKit.configure({ heading: { levels: [1, 2, 3, 4, 5, 6] } }),
         Underline,
+        Highlight,
+        Subscript,
+        Superscript,
         Link.configure({ openOnClick: true, autolink: true, defaultProtocol: "https" }),
         MarkdownImage.configure({ inline: false, allowBase64: true }),
         Placeholder.configure({ placeholder: "开始写作，像 Typora 一样在正文里直接编辑 Markdown 内容。" }),
@@ -612,7 +955,10 @@ export default function App() {
           return;
         }
         programmaticMarkdownSyncRef.current = true;
-        const nextMarkdown = turndown.turndown(instance.getHTML()).trimStart();
+        const nextMarkdown = prependFrontMatter(
+          extractYamlFrontMatter(markdownText).raw,
+          turndown.turndown(instance.getHTML())
+        );
         startTransition(() => {
           const nextOutline = extractOutlineFromMarkdown(nextMarkdown);
           setMarkdownText(nextMarkdown);
@@ -1212,6 +1558,15 @@ export default function App() {
         case "strike":
           wrapSourceSelection("~~", "~~", "strike");
           break;
+        case "highlight":
+          wrapSourceSelection("==", "==", "highlight");
+          break;
+        case "subscript":
+          wrapSourceSelection("~", "~", "sub");
+          break;
+        case "superscript":
+          wrapSourceSelection("^", "^", "sup");
+          break;
         case "inline-code":
           wrapSourceSelection("`", "`", "code");
           break;
@@ -1274,6 +1629,15 @@ export default function App() {
         break;
       case "strike":
         editor.chain().focus().toggleStrike().run();
+        break;
+      case "highlight":
+        editor.chain().focus().toggleHighlight().run();
+        break;
+      case "subscript":
+        editor.chain().focus().toggleSubscript().run();
+        break;
+      case "superscript":
+        editor.chain().focus().toggleSuperscript().run();
         break;
       case "inline-code":
         editor.chain().focus().toggleCode().run();
