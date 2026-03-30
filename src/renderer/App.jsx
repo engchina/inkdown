@@ -45,6 +45,46 @@ const turndown = new TurndownService({
   emDelimiter: "*"
 });
 
+function escapeTableCell(content) {
+  const normalized = content
+    .replace(/\r?\n/g, "<br>")
+    .replace(/\|/g, "\\|")
+    .trim();
+
+  return normalized || " ";
+}
+
+function serializeTableCell(cell) {
+  const markdown = turndown.turndown(cell.innerHTML || "").trim();
+  return escapeTableCell(markdown || cell.textContent || "");
+}
+
+function serializeTable(node) {
+  const rows = Array.from(node.rows || []);
+  if (rows.length === 0) {
+    return "";
+  }
+
+  const columnCount = Math.max(...rows.map((row) => row.cells.length));
+  if (columnCount === 0) {
+    return "";
+  }
+
+  const toMarkdownRow = (row) => {
+    const cells = Array.from(row.cells || []);
+    const values = Array.from({ length: columnCount }, (_, index) =>
+      cells[index] ? serializeTableCell(cells[index]) : " "
+    );
+    return `| ${values.join(" | ")} |`;
+  };
+
+  const headerRow = toMarkdownRow(rows[0]);
+  const dividerRow = `| ${Array.from({ length: columnCount }, () => "---").join(" | ")} |`;
+  const bodyRows = rows.slice(1).map(toMarkdownRow);
+
+  return `\n\n${[headerRow, dividerRow, ...bodyRows].join("\n")}\n\n`;
+}
+
 turndown.addRule("taskListItems", {
   filter(node) {
     return node.nodeName === "LI" && node.getAttribute("data-type") === "taskItem";
@@ -52,6 +92,15 @@ turndown.addRule("taskListItems", {
   replacement(content, node) {
     const checked = node.getAttribute("data-checked") === "true";
     return `- [${checked ? "x" : " "}] ${content.trim()}\n`;
+  }
+});
+
+turndown.addRule("tables", {
+  filter(node) {
+    return node.nodeName === "TABLE";
+  },
+  replacement(content, node) {
+    return serializeTable(node);
   }
 });
 
@@ -207,8 +256,10 @@ function countStats(markdown) {
   const latinWords = text.match(/[A-Za-z0-9_]+(?:['-][A-Za-z0-9_]+)*/g) || [];
   const cjkChars = text.match(/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/gu) || [];
   const wordCount = latinWords.length + cjkChars.length;
+  const lineCount = Math.max(1, markdown.split(/\r?\n/).length);
 
   return {
+    lineCount,
     wordCount,
     charCount: markdown.length,
     readingMinutes: Math.max(1, Math.ceil((wordCount || 1) / 220))
@@ -638,6 +689,9 @@ export default function App() {
 
     if (!result.canceled) {
       setFilePath(result.filePath);
+      if (typeof result.markdown === "string" && result.markdown !== markdownText) {
+        setMarkdownText(result.markdown);
+      }
       setIsDirty(false);
       setStatus(`已保存到 ${result.filePath.split(/[\\/]/).pop()}`);
     }
@@ -896,14 +950,13 @@ export default function App() {
       </div>
 
       <StatusBar
-        filePath={filePath}
         documentTitle={documentTitle}
         isDirty={isDirty}
+        lineCount={stats.lineCount}
         wordCount={stats.wordCount}
         charCount={stats.charCount}
         readingMinutes={stats.readingMinutes}
         viewMode={preferences.viewMode}
-        theme={preferences.theme}
         statusMessage={statusMessage}
         findSummary={findSummary}
       />

@@ -41,6 +41,10 @@ function sanitizeFileName(value) {
     .toLowerCase();
 }
 
+function isWebLike(value) {
+  return /^(https?:|data:|file:|blob:)/i.test(value || "");
+}
+
 async function loadPreferences() {
   try {
     const raw = await fs.readFile(getPreferencesPath(), "utf8");
@@ -141,16 +145,13 @@ async function createPdfFromHtml(window, payload) {
   }
 }
 
-async function getImageTargetDirectory() {
-  if (state.currentFilePath) {
-    const documentDir = path.dirname(state.currentFilePath);
-    const documentName = path.basename(state.currentFilePath, path.extname(state.currentFilePath));
-    const assetsFolderName = `${sanitizeFileName(documentName) || "document"}.assets`;
-    const absoluteDir = path.join(documentDir, assetsFolderName);
+async function getImageTargetDirectory(documentPath = state.currentFilePath) {
+  if (documentPath) {
+    const absoluteDir = path.join(path.dirname(documentPath), "images");
     await fs.mkdir(absoluteDir, { recursive: true });
     return {
       absoluteDir,
-      relativeDir: assetsFolderName
+      relativeDir: "./images"
     };
   }
 
@@ -158,7 +159,7 @@ async function getImageTargetDirectory() {
   await fs.mkdir(tempDir, { recursive: true });
   return {
     absoluteDir: tempDir,
-    relativeDir: null
+    relativeDir: "./images"
   };
 }
 
@@ -167,7 +168,115 @@ function getTimestampedImageName(extension) {
   return `image-${stamp}${extension}`;
 }
 
+async function pathExists(targetPath) {
+  try {
+    await fs.access(targetPath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function ensureUniqueFileName(directoryPath, fileName) {
+  const extension = path.extname(fileName);
+  const baseName = path.basename(fileName, extension);
+  let nextFileName = fileName;
+  let duplicateIndex = 1;
+
+  while (await pathExists(path.join(directoryPath, nextFileName))) {
+    nextFileName = `${baseName}-${duplicateIndex}${extension}`;
+    duplicateIndex += 1;
+  }
+
+  return nextFileName;
+}
+
+function normalizeAssetPath(assetPath) {
+  return decodeURIComponent(String(assetPath || "").trim()).replace(/\\/g, "/");
+}
+
+function isRelativeImagesPath(assetPath) {
+  return /^(?:\.\/)?images\/.+/i.test(assetPath);
+}
+
+async function resolveMarkdownImageSourcePath(assetPath, sourceDocumentPath) {
+  const normalizedPath = normalizeAssetPath(assetPath);
+  if (!normalizedPath || isWebLike(normalizedPath)) {
+    return null;
+  }
+
+  if (path.isAbsolute(normalizedPath)) {
+    return normalizedPath;
+  }
+
+  if (sourceDocumentPath) {
+    return path.resolve(path.dirname(sourceDocumentPath), normalizedPath);
+  }
+
+  if (isRelativeImagesPath(normalizedPath)) {
+    const { absoluteDir } = await getImageTargetDirectory(null);
+    const relativeImagePath = normalizedPath.replace(/^(?:\.\/)?images\//i, "");
+    return path.join(absoluteDir, ...relativeImagePath.split("/"));
+  }
+
+  return null;
+}
+
+async function copyImageToDocumentDirectory(sourcePath, documentPath) {
+  const { absoluteDir, relativeDir } = await getImageTargetDirectory(documentPath);
+  const parsedSource = path.parse(sourcePath);
+  const extension = parsedSource.ext || ".png";
+  const normalizedBaseName = sanitizeFileName(parsedSource.name) || "image";
+  const targetFileName = await ensureUniqueFileName(absoluteDir, `${normalizedBaseName}${extension}`);
+  const destinationPath = path.join(absoluteDir, targetFileName);
+
+  if (path.resolve(sourcePath) !== path.resolve(destinationPath)) {
+    await fs.copyFile(sourcePath, destinationPath);
+  }
+
+  return {
+    absolutePath: destinationPath,
+    markdownPath: path.posix.join(relativeDir, targetFileName)
+  };
+}
+
+async function relocateMarkdownImages(markdown, documentPath) {
+  if (!documentPath) {
+    return markdown;
+  }
+
+  const imagePattern = /!\[([^\]]*)\]\(([^)\r\n]+)\)/g;
+  const sourceDocumentPath = state.currentFilePath;
+  const replacements = await Promise.all(
+    Array.from(markdown.matchAll(imagePattern)).map(async (match) => {
+      const originalPath = match[2].trim();
+      if (!originalPath || isWebLike(originalPath)) {
+        return null;
+      }
+
+      const sourcePath = await resolveMarkdownImageSourcePath(originalPath, sourceDocumentPath);
+      if (!sourcePath || !(await pathExists(sourcePath))) {
+        return null;
+      }
+
+      const persisted = await copyImageToDocumentDirectory(sourcePath, documentPath);
+      return {
+        from: match[0],
+        to: `![${match[1]}](${persisted.markdownPath})`
+      };
+    })
+  );
+
+  return replacements.filter(Boolean).reduce((nextMarkdown, replacement) => {
+    return nextMarkdown.replace(replacement.from, replacement.to);
+  }, markdown);
+}
+
 async function persistImageFromPath(sourcePath) {
+  if (state.currentFilePath) {
+    return copyImageToDocumentDirectory(sourcePath, state.currentFilePath);
+  }
+
   const { absoluteDir, relativeDir } = await getImageTargetDirectory();
   const extension = path.extname(sourcePath) || ".png";
   const originalBaseName = sanitizeFileName(path.basename(sourcePath, extension));
@@ -178,7 +287,7 @@ async function persistImageFromPath(sourcePath) {
 
   return {
     absolutePath: destinationPath,
-    markdownPath: relativeDir ? path.posix.join(relativeDir, fileName) : destinationPath
+    markdownPath: path.posix.join(relativeDir, fileName)
   };
 }
 
@@ -192,7 +301,7 @@ async function persistImageFromBuffer(bytes, extension = ".png") {
 
   return {
     absolutePath: destinationPath,
-    markdownPath: relativeDir ? path.posix.join(relativeDir, fileName) : destinationPath
+    markdownPath: path.posix.join(relativeDir, fileName)
   };
 }
 
@@ -435,13 +544,14 @@ ipcMain.handle("file:save-markdown", async (_, payload) => {
     targetPath = result.filePath;
   }
 
-  await fs.writeFile(targetPath, payload.markdown, "utf8");
+  const normalizedMarkdown = await relocateMarkdownImages(payload.markdown, targetPath);
+  await fs.writeFile(targetPath, normalizedMarkdown, "utf8");
   state.currentFilePath = targetPath;
   state.isDirty = false;
   if (window) {
     updateWindowTitle(window);
   }
-  return { canceled: false, filePath: targetPath };
+  return { canceled: false, filePath: targetPath, markdown: normalizedMarkdown };
 });
 
 ipcMain.handle("file:save-html", async (_, payload) => {

@@ -26,6 +26,19 @@ npm install
 npm run dev
 ```
 
+如果你是在 Windows PowerShell 下做 Electron 调试，不要直接写 Unix 风格的环境变量前缀命令（例如 `FOO=bar command`），PowerShell 会把 `=true`、`=*` 之类内容当成独立命令而报错。仓库里已经提供了可直接使用的调试脚本：
+
+```bash
+npm run dev:debug
+```
+
+它会安全地注入这些调试变量：
+
+- `ELECTRON_ENABLE_LOGGING=true`
+- `ELECTRON_ENABLE_STACK_DUMPING=true`
+- `DEBUG=*`
+- `NODE_OPTIONS=--trace-warnings`
+
 ## 打包
 
 ```bash

@@ -1,6 +1,11 @@
 :root {
   --editor-font-size: 18px;
   --paper-width: 900px;
+  --content-line-height: 1.62;
+  --content-block-gap: 0.6em;
+  --content-block-gap-lg: 0.95em;
+  --content-heading-gap-top: 1.3em;
+  --content-heading-gap-bottom: 0.45em;
   --bg-0: #f7f2e9;
   --bg-1: #f0e6d8;
   --panel: rgba(249, 244, 236, 0.85);
@@ -238,7 +243,7 @@ select {
 .editor-pane,
 .side-pane {
   overflow: auto;
-  padding: 24px;
+  padding: 20px 24px;
 }
 
 .paper,
@@ -249,7 +254,7 @@ select {
 .paper {
   max-width: var(--paper-width);
   margin: 0 auto;
-  padding: 36px 58px 72px;
+  padding: 30px 54px 56px;
   border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
   border-radius: 28px;
   background:
@@ -265,11 +270,11 @@ select {
   align-items: start;
   justify-content: space-between;
   gap: 24px;
-  margin-bottom: 26px;
+  margin-bottom: 20px;
 }
 
 .eyebrow {
-  margin-bottom: 10px;
+  margin-bottom: 8px;
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.16em;
@@ -301,7 +306,7 @@ select {
 .preview-surface,
 .source-textarea {
   font-size: var(--editor-font-size);
-  line-height: 1.85;
+  line-height: var(--content-line-height);
 }
 
 .editor-surface {
@@ -326,14 +331,32 @@ select {
 .preview-surface h4,
 .preview-surface h5,
 .preview-surface h6 {
-  margin: 1.5em 0 0.55em;
-  line-height: 1.2;
+  margin: var(--content-heading-gap-top) 0 var(--content-heading-gap-bottom);
+  line-height: 1.24;
   color: var(--text);
 }
 
 .editor-surface p,
 .preview-surface p {
-  margin: 0.75em 0;
+  margin: var(--content-block-gap) 0;
+}
+
+.editor-surface ul,
+.editor-surface ol,
+.preview-surface ul,
+.preview-surface ol {
+  margin: var(--content-block-gap) 0;
+  padding-left: 1.4em;
+}
+
+.editor-surface li,
+.preview-surface li {
+  margin: 0.18em 0;
+}
+
+.editor-surface li > p,
+.preview-surface li > p {
+  margin: 0.2em 0;
 }
 
 .editor-surface a,
@@ -345,7 +368,7 @@ select {
 
 .editor-surface blockquote,
 .preview-surface blockquote {
-  margin: 1.1em 0;
+  margin: var(--content-block-gap-lg) 0;
   padding-left: 1.1em;
   border-left: 4px solid color-mix(in srgb, var(--accent-soft) 75%, transparent);
   color: var(--quote);
@@ -362,6 +385,7 @@ select {
 
 .editor-surface pre,
 .preview-surface pre {
+  margin: var(--content-block-gap-lg) 0;
   padding: 18px 20px;
   border-radius: 16px;
   background: var(--code-bg);
@@ -380,13 +404,14 @@ select {
 .preview-surface img {
   display: block;
   max-width: 100%;
-  margin: 1.4em auto;
+  margin: 1.05em auto;
   border-radius: 18px;
   box-shadow: 0 18px 40px rgba(56, 44, 26, 0.18);
 }
 
 .editor-surface ul[data-type="taskList"] {
   list-style: none;
+  margin: var(--content-block-gap) 0;
   padding-left: 0.5em;
 }
 
@@ -394,6 +419,7 @@ select {
   display: flex;
   gap: 10px;
   align-items: flex-start;
+  margin: 0.2em 0;
 }
 
 .editor-surface ul[data-type="taskList"] li > label {
@@ -404,7 +430,7 @@ select {
 .preview-surface table {
   width: 100%;
   border-collapse: collapse;
-  margin: 1.4em 0;
+  margin: var(--content-block-gap-lg) 0;
   overflow: hidden;
   border-radius: 16px;
 }
@@ -466,13 +492,91 @@ select {
 
 .status-bar {
   display: flex;
-  flex-wrap: wrap;
-  gap: 18px;
-  padding: 12px 22px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 42px;
+  padding: 8px 18px;
   border-top: 1px solid var(--border);
-  background: var(--panel);
+  backdrop-filter: blur(18px);
+  background: color-mix(in srgb, var(--panel) 92%, transparent);
   color: var(--text-soft);
   font-size: 13px;
+}
+
+.status-bar-section {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.status-bar-main {
+  flex: 1;
+}
+
+.status-bar-meta {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.status-title,
+.status-message {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.status-title {
+  max-width: min(240px, 24vw);
+  color: var(--text);
+}
+
+.status-indicator,
+.status-meta-item,
+.status-metric-button {
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-soft);
+}
+
+.status-indicator {
+  background: color-mix(in srgb, var(--panel-strong) 70%, transparent);
+  color: color-mix(in srgb, var(--text) 78%, var(--text-soft));
+}
+
+.status-indicator.dirty {
+  background: color-mix(in srgb, var(--accent-soft) 55%, transparent);
+  color: var(--accent);
+}
+
+.status-message {
+  max-width: min(340px, 34vw);
+}
+
+.status-meta-item {
+  border-color: color-mix(in srgb, var(--border) 70%, transparent);
+}
+
+.status-metric-button {
+  border-color: color-mix(in srgb, var(--border) 70%, transparent);
+  cursor: pointer;
+  transition:
+    border-color 120ms ease,
+    background 120ms ease,
+    color 120ms ease;
+}
+
+.status-metric-button:hover {
+  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+  background: color-mix(in srgb, var(--accent-soft) 24%, transparent);
+  color: var(--text);
 }
 
 .dialog-backdrop {
@@ -561,5 +665,25 @@ select {
 
   .find-bar {
     top: 110px;
+  }
+
+  .status-bar {
+    flex-wrap: wrap;
+    padding: 8px 14px 10px;
+  }
+
+  .status-bar-main,
+  .status-bar-meta {
+    width: 100%;
+  }
+
+  .status-bar-meta {
+    overflow-x: auto;
+    padding-bottom: 2px;
+  }
+
+  .status-title,
+  .status-message {
+    max-width: none;
   }
 }

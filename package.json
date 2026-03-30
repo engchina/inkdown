@@ -7,8 +7,10 @@
   "license": "MIT",
   "scripts": {
     "dev": "concurrently -k \"npm:dev:web\" \"npm:dev:electron\"",
+    "dev:debug": "concurrently -k \"npm:dev:web\" \"npm:dev:electron:debug\"",
     "dev:web": "vite",
     "dev:electron": "wait-on tcp:5173 && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .",
+    "dev:electron:debug": "wait-on tcp:5173 && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5173 ELECTRON_ENABLE_LOGGING=true ELECTRON_ENABLE_STACK_DUMPING=true DEBUG=* NODE_OPTIONS=--trace-warnings electron .",
     "build:web": "vite build",
     "build": "npm run build:web",
     "package": "npm run build:web && electron-builder",
