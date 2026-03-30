@@ -1,0 +1,41 @@
+# Inkdown
+
+Inkdown 是一个可打包为 Windows 安装程序的桌面 Markdown 编辑器基础版，目标是做出接近 Typora 的沉浸式单栏编辑体验。
+
+## 当前能力
+
+- 单栏所见即所得编辑体验
+- 编辑器 / 源码 / 预览三种视图
+- 标题、加粗、斜体、下划线、删除线、代码块、引用
+- 无序列表、有序列表、任务列表
+- 链接、图片、表格插入
+- 拖拽和粘贴图片，已保存文档时自动落到相对路径资源目录
+- Markdown 打开、保存、另存为
+- HTML 导出
+- PDF 导出
+- Mermaid 图表与数学公式预览
+- 查找替换
+- 文档大纲、字数统计、未保存状态提示
+- 主题与排版偏好设置
+- `electron-builder` 的 Windows `nsis` 安装包配置
+
+## 开发
+
+```bash
+npm install
+npm run dev
+```
+
+## 打包
+
+```bash
+npm run build
+```
+
+Windows 安装包使用：
+
+```bash
+npm run package:win
+```
+
+产物默认输出到 `release/` 目录。当前仓库是在 Linux/WSL 环境初始化的，Windows 安装包能否实际生成还取决于本机是否具备 `wine` 等交叉打包依赖。
