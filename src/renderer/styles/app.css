@@ -599,34 +599,6 @@ select {
   transition: background 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
 }
 
-.paper-header {
-  display: flex;
-  align-items: start;
-  gap: 24px;
-  margin-bottom: 22px;
-}
-
-.eyebrow {
-  margin-bottom: 8px;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: var(--text-soft);
-}
-
-.paper-header h1 {
-  margin: 0;
-  font-size: clamp(28px, 4vw, 42px);
-  line-height: 1.05;
-}
-
-.paper-subtitle {
-  margin-top: 8px;
-  color: var(--text-soft);
-  font-size: 13px;
-}
-
 .editor-surface,
 .preview-surface,
 .source-textarea {
@@ -921,13 +893,25 @@ select {
 
 .yaml-front-matter {
   margin: 0 0 1.2em;
-  padding: 16px 18px;
-  border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
-  border-radius: 16px;
-  background: color-mix(in srgb, var(--panel-strong) 92%, transparent);
 }
 
-.yaml-front-matter-title,
+.yaml-front-matter pre {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-soft);
+  white-space: pre-wrap;
+  box-shadow: none;
+}
+
+.yaml-front-matter code {
+  padding: 0;
+  background: transparent;
+  color: inherit;
+}
+
 .footnotes-title {
   margin-bottom: 10px;
   font-size: 12px;
@@ -935,20 +919,6 @@ select {
   letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--text-soft);
-}
-
-.yaml-front-matter pre {
-  margin: 0;
-  padding: 0;
-  background: transparent;
-  color: var(--text);
-  white-space: pre-wrap;
-}
-
-.yaml-front-matter code {
-  padding: 0;
-  background: transparent;
-  color: inherit;
 }
 
 .callout {

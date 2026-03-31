@@ -286,6 +286,25 @@ function prependFrontMatter(rawFrontMatter, markdownBody) {
   return `${rawFrontMatter}${body}`;
 }
 
+function buildRawFrontMatter(content) {
+  const normalized = String(content || "").replace(/^\r?\n+|\r?\n+$/g, "");
+  if (!normalized.trim()) {
+    return "";
+  }
+  return `---\n${normalized}\n---\n\n`;
+}
+
+function serializeEditorHtmlToMarkdown(html) {
+  const container = document.createElement("div");
+  container.innerHTML = String(html || "");
+  const frontMatterNode = container.querySelector(":scope > .yaml-front-matter");
+  const rawFrontMatter = frontMatterNode ? buildRawFrontMatter(frontMatterNode.textContent || "") : "";
+  if (frontMatterNode) {
+    frontMatterNode.remove();
+  }
+  return prependFrontMatter(rawFrontMatter, turndown.turndown(container.innerHTML));
+}
+
 function extractFootnotes(markdown) {
   const lines = String(markdown || "").split(/\r?\n/);
   const bodyLines = [];
@@ -525,11 +544,6 @@ function buildYamlFrontMatterElement(content) {
   const wrapper = document.createElement("section");
   wrapper.className = "yaml-front-matter";
 
-  const title = document.createElement("div");
-  title.className = "yaml-front-matter-title";
-  title.textContent = "Front Matter";
-  wrapper.appendChild(title);
-
   const pre = document.createElement("pre");
   const code = document.createElement("code");
   code.textContent = String(content || "");
@@ -648,7 +662,7 @@ function renderMarkdownForEditor(markdown, currentFilePath, outline) {
 }
 
 function renderMarkdownForPreview(markdown, currentFilePath, outline, resolveAsset = window.editorApi.resolveMarkdownAsset) {
-  const { content: frontMatterContent, body: withoutFrontMatter } = extractYamlFrontMatter(markdown);
+  const { body: withoutFrontMatter } = extractYamlFrontMatter(markdown);
   const { body: withoutFootnotes, definitions } = extractFootnotes(withoutFrontMatter);
   const { body, order } = applyFootnoteReferences(
     preprocessMarkdownSyntax(withoutFootnotes, { enableExtendedInlineSyntax: true }),
@@ -660,7 +674,6 @@ function renderMarkdownForPreview(markdown, currentFilePath, outline, resolveAss
     resolveAsset
   );
   return decorateRenderedHtml(container, outline, {
-    frontMatterContent,
     enableCallouts: true,
     footnotes: { definitions, order },
     currentFilePath,
@@ -700,10 +713,7 @@ function buildStandaloneHtml(title, bodyHtml, theme) {
       .toc-item.level-2 { padding-left: 12px; }
       .toc-item.level-3 { padding-left: 24px; }
       .toc-item.level-4, .toc-item.level-5, .toc-item.level-6 { padding-left: 36px; }
-      .yaml-front-matter { margin-bottom: 24px; padding: 16px 18px; border: 1px solid rgba(160, 160, 160, 0.24); border-radius: 14px; background: rgba(255, 255, 255, 0.6); }
-      .yaml-front-matter-title, .footnotes-title { margin-bottom: 10px; font-size: 12px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: ${theme === "midnight" ? "#b8c7d9" : "#69553f"}; }
-      .yaml-front-matter pre { margin: 0; padding: 0; background: transparent; color: inherit; white-space: pre-wrap; }
-      .yaml-front-matter code { padding: 0; background: transparent; color: inherit; }
+      .footnotes-title { margin-bottom: 10px; font-size: 12px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: ${theme === "midnight" ? "#b8c7d9" : "#69553f"}; }
       .callout { position: relative; padding: 14px 16px 14px 18px; border: 1px solid rgba(160, 160, 160, 0.24); border-radius: 16px; background: rgba(255, 255, 255, 0.6); }
       .callout::before { content: ""; position: absolute; inset: 10px auto 10px 0; width: 4px; border-radius: 999px; background: #9a5a26; }
       .callout-title { margin-bottom: 6px; font-size: 13px; font-weight: 700; color: inherit; }
@@ -1126,10 +1136,7 @@ export default function App() {
           return;
         }
         programmaticMarkdownSyncRef.current = true;
-        const nextMarkdown = prependFrontMatter(
-          extractYamlFrontMatter(markdownText).raw,
-          turndown.turndown(instance.getHTML())
-        );
+        const nextMarkdown = serializeEditorHtmlToMarkdown(instance.getHTML());
         lastEditorMarkdownRef.current = nextMarkdown;
         startTransition(() => {
           const nextOutline = extractOutlineFromMarkdown(nextMarkdown);
@@ -1962,13 +1969,6 @@ export default function App() {
           {showEditor ? (
             <section className="editor-pane">
               <div className="paper">
-                <div className="paper-header">
-                  <div>
-                    <div className="eyebrow">Markdown Document</div>
-                    <h1>{documentTitle}</h1>
-                    {documentPathLabel ? <div className="paper-subtitle">{documentPathLabel}</div> : null}
-                  </div>
-                </div>
                 <EditorContent editor={editor} />
                 <div className="editor-end-hitbox" onMouseDown={handleEditorEndMouseDown} />
               </div>
