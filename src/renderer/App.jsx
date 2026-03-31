@@ -1,7 +1,7 @@
 import React, { startTransition, useDeferredValue, useEffect, useId, useMemo, useRef, useState } from "react";
 import { Mark, mergeAttributes } from "@tiptap/core";
 import { TextSelection } from "@tiptap/pm/state";
-import { CellSelection } from "@tiptap/pm/tables";
+import { CellSelection, TableMap } from "@tiptap/pm/tables";
 import { EditorContent, NodeViewContent, NodeViewWrapper, ReactNodeViewRenderer, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Underline from "@tiptap/extension-underline";
@@ -227,6 +227,7 @@ function CodeBlockNodeView({ editor, getPos, node, updateAttributes }) {
   const mermaidPreviewId = useId();
   const [copied, setCopied] = useState(false);
   const [auxPreviewHtml, setAuxPreviewHtml] = useState("");
+  const [mermaidRefreshKey, setMermaidRefreshKey] = useState(0);
   const highlightLanguage = useMemo(() => normalizeHighlightLanguage(activeValue), [activeValue]);
   const lineNumbers = useMemo(() => {
     const count = Math.max(1, String(node.textContent || "").split("\n").length);
@@ -264,7 +265,7 @@ function CodeBlockNodeView({ editor, getPos, node, updateAttributes }) {
     return () => {
       canceled = true;
     };
-  }, [activeValue, mermaidPreviewId, node.textContent]);
+  }, [activeValue, mermaidPreviewId, mermaidRefreshKey, node.textContent]);
 
   useEffect(() => {
     if (!["md", "markdown", "html"].includes(activeValue)) {
@@ -324,6 +325,25 @@ function CodeBlockNodeView({ editor, getPos, node, updateAttributes }) {
     } catch {}
   }
 
+  function applyLanguageTool() {
+    try {
+      if (["json"].includes(activeValue)) {
+        replaceCodeBlockText(formatJsonLikeText(node.textContent || ""));
+        return;
+      }
+      if (["sql"].includes(activeValue)) {
+        replaceCodeBlockText(formatSqlLikeText(node.textContent || ""));
+        return;
+      }
+      if (activeValue === "mermaid") {
+        setMermaidRefreshKey((current) => current + 1);
+      }
+    } catch {}
+  }
+
+  const toolLabel =
+    activeValue === "json" ? "Format JSON" : activeValue === "sql" ? "Format SQL" : activeValue === "mermaid" ? "Refresh" : null;
+
   return (
     <NodeViewWrapper className="code-block-node">
       <div className="code-block-toolbar" contentEditable={false}>
@@ -349,6 +369,16 @@ function CodeBlockNodeView({ editor, getPos, node, updateAttributes }) {
         >
           {copied ? "Copied" : "Copy"}
         </button>
+        {toolLabel ? (
+          <button
+            className="tool-button tool-button-ghost code-block-tool-button"
+            type="button"
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={applyLanguageTool}
+          >
+            {toolLabel}
+          </button>
+        ) : null}
         <button
           className="tool-button tool-button-ghost code-block-collapse-button"
           type="button"
@@ -641,6 +671,11 @@ function dumpYamlObject(value) {
   } catch {
     return "";
   }
+}
+
+function replaceFrontMatterRaw(markdown, rawFrontMatter) {
+  const { body } = extractYamlFrontMatter(markdown);
+  return prependFrontMatter(rawFrontMatter, body);
 }
 
 function mergeYamlValues(currentValue, incomingValue) {
@@ -1524,8 +1559,35 @@ function canPasteFrontMatterAtCursor(editor) {
   return editor.state.selection.from <= 2;
 }
 
+function formatJsonLikeText(value) {
+  const parsed = JSON.parse(value);
+  return JSON.stringify(parsed, null, 2);
+}
+
+function formatSqlLikeText(value) {
+  const keywords = [
+    "select", "from", "where", "group by", "order by", "limit", "insert into", "values",
+    "update", "set", "delete", "join", "left join", "right join", "inner join", "outer join",
+    "and", "or", "case", "when", "then", "else", "end", "as", "on"
+  ];
+  let text = String(value || "").trim();
+  keywords
+    .sort((left, right) => right.length - left.length)
+    .forEach((keyword) => {
+      const escaped = keyword.replace(/\s+/g, "\\s+");
+      text = text.replace(new RegExp(`\\b${escaped}\\b`, "gi"), keyword.toUpperCase());
+    });
+  return text
+    .replace(/\s+(FROM|WHERE|GROUP BY|ORDER BY|LIMIT|VALUES|SET|JOIN|LEFT JOIN|RIGHT JOIN|INNER JOIN|OUTER JOIN)\b/g, "\n$1")
+    .replace(/\s+(AND|OR)\b/g, "\n  $1");
+}
+
 function getTableLayoutDocumentKey(filePath) {
   return filePath || "__untitled__";
+}
+
+function buildParagraphNode(schema, text) {
+  return schema.nodes.paragraph.create(null, text ? schema.text(text) : null);
 }
 
 function buildInitialVisualMerge(existingRaw, incomingRaw) {
