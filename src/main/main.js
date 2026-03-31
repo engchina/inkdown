@@ -86,10 +86,12 @@ function isMarkdownFilePath(filePath) {
 async function loadPreferences() {
   try {
     const raw = await fs.readFile(getPreferencesPath(), "utf8");
-    return {
+    const prefs = {
       ...getDefaultPreferences(),
       ...JSON.parse(raw)
     };
+    if (prefs.viewMode === "split") prefs.viewMode = "editor";
+    return prefs;
   } catch {
     return getDefaultPreferences();
   }
@@ -697,12 +699,6 @@ function rebuildMenu(window) {
           type: "radio",
           checked: preferences.viewMode === "editor",
           click: () => emitMenuAction(window, { type: "set-view-mode", mode: "editor" })
-        },
-        {
-          label: "Split View",
-          type: "radio",
-          checked: preferences.viewMode === "split",
-          click: () => emitMenuAction(window, { type: "set-view-mode", mode: "split" })
         },
         {
           label: "Source Only",

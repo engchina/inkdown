@@ -85,14 +85,6 @@ export default function Toolbar({
               Source
             </ToolButton>
             <ToolButton
-              title="Split View"
-              active={viewMode === "split"}
-              variant="ghost"
-              onClick={() => onSetViewMode("split")}
-            >
-              Split
-            </ToolButton>
-            <ToolButton
               title="Preview Only"
               active={viewMode === "preview"}
               variant="ghost"

@@ -36,7 +36,6 @@ export default function PreferencesDialog({ open, preferences, onChange, onClose
           <span>Default View</span>
           <select value={preferences.viewMode} onChange={(event) => onChange({ viewMode: event.target.value })}>
             <option value="editor">Editor Only</option>
-            <option value="split">Split View</option>
             <option value="source">Source Only</option>
             <option value="preview">Preview Only</option>
           </select>

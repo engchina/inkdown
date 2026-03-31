@@ -2015,9 +2015,9 @@ export default function App() {
     }
   }
 
-  const showEditor = preferences.viewMode === "editor" || preferences.viewMode === "split";
+  const showEditor = preferences.viewMode === "editor";
   const showSource = preferences.viewMode === "source" || findOpen;
-  const showPreview = preferences.viewMode === "split" || preferences.viewMode === "preview";
+  const showPreview = preferences.viewMode === "preview";
   const findSummary = findOpen && findQuery ? `${matches.length === 0 ? "0" : `${matchIndex + 1}/${matches.length}`} matches` : null;
   const documentPathLabel = filePath || preferences.workspaceRoot || "";
 
