@@ -23,14 +23,14 @@ export default function FindReplaceBar({
       <input
         className="find-input"
         type="text"
-        placeholder="查找 Markdown 文本"
+        placeholder="Find in Markdown"
         value={query}
         onChange={(event) => onQueryChange(event.target.value)}
       />
       <input
         className="find-input"
         type="text"
-        placeholder="替换为"
+        placeholder="Replace with"
         value={replaceValue}
         onChange={(event) => onReplaceChange(event.target.value)}
       />

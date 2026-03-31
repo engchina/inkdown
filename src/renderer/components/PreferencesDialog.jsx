@@ -15,14 +15,14 @@ export default function PreferencesDialog({ open, preferences, onChange, onClose
     <div className="dialog-backdrop" role="presentation" onClick={onClose}>
       <section className="preferences-dialog" role="dialog" onClick={(event) => event.stopPropagation()}>
         <div className="dialog-header">
-          <h2>偏好设置</h2>
+          <h2>Preferences</h2>
           <button className="tool-button" type="button" onClick={onClose}>
             Close
           </button>
         </div>
 
         <label className="pref-row">
-          <span>主题</span>
+          <span>Theme</span>
           <select value={preferences.theme} onChange={(event) => onChange({ theme: event.target.value })}>
             {themes.map((theme) => (
               <option key={theme.value} value={theme.value}>
@@ -33,17 +33,17 @@ export default function PreferencesDialog({ open, preferences, onChange, onClose
         </label>
 
         <label className="pref-row">
-          <span>默认视图</span>
+          <span>Default View</span>
           <select value={preferences.viewMode} onChange={(event) => onChange({ viewMode: event.target.value })}>
-            <option value="editor">仅编辑</option>
-            <option value="split">分栏</option>
-            <option value="source">仅源码</option>
-            <option value="preview">仅预览</option>
+            <option value="editor">Editor Only</option>
+            <option value="split">Split View</option>
+            <option value="source">Source Only</option>
+            <option value="preview">Preview Only</option>
           </select>
         </label>
 
         <label className="pref-row">
-          <span>字体大小</span>
+          <span>Font Size</span>
           <input
             type="range"
             min="14"
@@ -55,7 +55,7 @@ export default function PreferencesDialog({ open, preferences, onChange, onClose
         </label>
 
         <label className="pref-row">
-          <span>正文宽度</span>
+          <span>Content Width</span>
           <input
             type="range"
             min="720"

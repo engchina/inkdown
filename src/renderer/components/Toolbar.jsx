@@ -31,40 +31,40 @@ export default function Toolbar({
   return (
     <div className="toolbar">
       <div className="toolbar-group">
-        <ToolButton title="新建文档" onClick={onNew}>
+        <ToolButton title="New Document" onClick={onNew}>
           New
         </ToolButton>
-        <ToolButton title="打开文档" onClick={onOpen}>
+        <ToolButton title="Open Document" onClick={onOpen}>
           Open
         </ToolButton>
-        <ToolButton title="保存" onClick={onSave}>
+        <ToolButton title="Save" onClick={onSave}>
           Save
         </ToolButton>
-        <ToolButton title="另存为" onClick={onSaveAs}>
+        <ToolButton title="Save As" onClick={onSaveAs}>
           Save As
         </ToolButton>
       </div>
 
       <div className="toolbar-group">
-        <ToolButton title="正文" onClick={() => onApplyFormat("paragraph")}>
+        <ToolButton title="Paragraph" onClick={() => onApplyFormat("paragraph")}>
           P
         </ToolButton>
         <ToolButton
-          title="一级标题"
+          title="Heading 1"
           active={editor.isActive("heading", { level: 1 })}
           onClick={() => onApplyFormat("heading-1")}
         >
           H1
         </ToolButton>
         <ToolButton
-          title="二级标题"
+          title="Heading 2"
           active={editor.isActive("heading", { level: 2 })}
           onClick={() => onApplyFormat("heading-2")}
         >
           H2
         </ToolButton>
         <ToolButton
-          title="三级标题"
+          title="Heading 3"
           active={editor.isActive("heading", { level: 3 })}
           onClick={() => onApplyFormat("heading-3")}
         >
@@ -74,56 +74,56 @@ export default function Toolbar({
 
       <div className="toolbar-group">
         <ToolButton
-          title="加粗"
+          title="Bold"
           active={editor.isActive("bold")}
           onClick={() => onApplyFormat("bold")}
         >
           B
         </ToolButton>
         <ToolButton
-          title="斜体"
+          title="Italic"
           active={editor.isActive("italic")}
           onClick={() => onApplyFormat("italic")}
         >
           I
         </ToolButton>
         <ToolButton
-          title="下划线"
+          title="Underline"
           active={editor.isActive("underline")}
           onClick={() => onApplyFormat("underline")}
         >
           U
         </ToolButton>
         <ToolButton
-          title="删除线"
+          title="Strikethrough"
           active={editor.isActive("strike")}
           onClick={() => onApplyFormat("strike")}
         >
           S
         </ToolButton>
         <ToolButton
-          title="高亮"
+          title="Highlight"
           active={editor.isActive("highlight")}
           onClick={() => onApplyFormat("highlight")}
         >
           Mark
         </ToolButton>
         <ToolButton
-          title="下标"
+          title="Subscript"
           active={editor.isActive("subscript")}
           onClick={() => onApplyFormat("subscript")}
         >
           Sub
         </ToolButton>
         <ToolButton
-          title="上标"
+          title="Superscript"
           active={editor.isActive("superscript")}
           onClick={() => onApplyFormat("superscript")}
         >
           Sup
         </ToolButton>
         <ToolButton
-          title="行内代码"
+          title="Inline Code"
           active={editor.isActive("code")}
           onClick={() => onApplyFormat("inline-code")}
         >
@@ -133,35 +133,35 @@ export default function Toolbar({
 
       <div className="toolbar-group">
         <ToolButton
-          title="引用"
+          title="Blockquote"
           active={editor.isActive("blockquote")}
           onClick={() => onApplyFormat("blockquote")}
         >
           "
         </ToolButton>
         <ToolButton
-          title="无序列表"
+          title="Bulleted List"
           active={editor.isActive("bulletList")}
           onClick={() => onApplyFormat("bullet-list")}
         >
           •
         </ToolButton>
         <ToolButton
-          title="有序列表"
+          title="Numbered List"
           active={editor.isActive("orderedList")}
           onClick={() => onApplyFormat("ordered-list")}
         >
           1.
         </ToolButton>
         <ToolButton
-          title="任务列表"
+          title="Task List"
           active={editor.isActive("taskList")}
           onClick={() => onApplyFormat("task-list")}
         >
           ☑
         </ToolButton>
         <ToolButton
-          title="代码块"
+          title="Code Block"
           active={editor.isActive("codeBlock")}
           onClick={() => onApplyFormat("code-block")}
         >
@@ -170,43 +170,43 @@ export default function Toolbar({
       </div>
 
       <div className="toolbar-group">
-        <ToolButton title="插入链接" onClick={() => onApplyFormat("link")}>
+        <ToolButton title="Insert Link" onClick={() => onApplyFormat("link")}>
           Link
         </ToolButton>
-        <ToolButton title="插入图片" onClick={onInsertImage}>
+        <ToolButton title="Insert Image" onClick={onInsertImage}>
           Img
         </ToolButton>
-        <ToolButton title="插入表格" onClick={onInsertTable}>
+        <ToolButton title="Insert Table" onClick={onInsertTable}>
           Tbl
         </ToolButton>
       </div>
 
       <div className="toolbar-group">
-        <ToolButton title="仅编辑" active={viewMode === "editor"} onClick={() => onSetViewMode("editor")}>
+        <ToolButton title="Editor Only" active={viewMode === "editor"} onClick={() => onSetViewMode("editor")}>
           Edit
         </ToolButton>
-        <ToolButton title="分栏" active={viewMode === "split"} onClick={() => onSetViewMode("split")}>
+        <ToolButton title="Split View" active={viewMode === "split"} onClick={() => onSetViewMode("split")}>
           Split
         </ToolButton>
-        <ToolButton title="仅源码" active={viewMode === "source"} onClick={() => onSetViewMode("source")}>
+        <ToolButton title="Source Only" active={viewMode === "source"} onClick={() => onSetViewMode("source")}>
           Src
         </ToolButton>
-        <ToolButton title="仅预览" active={viewMode === "preview"} onClick={() => onSetViewMode("preview")}>
+        <ToolButton title="Preview Only" active={viewMode === "preview"} onClick={() => onSetViewMode("preview")}>
           Preview
         </ToolButton>
       </div>
 
       <div className="toolbar-group toolbar-actions">
-        <ToolButton title="查找替换" onClick={onOpenFind}>
+        <ToolButton title="Find and Replace" onClick={onOpenFind}>
           Find
         </ToolButton>
-        <ToolButton title="偏好设置" onClick={onOpenPreferences}>
+        <ToolButton title="Preferences" onClick={onOpenPreferences}>
           Pref
         </ToolButton>
-        <ToolButton title="导出 HTML" onClick={onExport}>
+        <ToolButton title="Export HTML" onClick={onExport}>
           HTML
         </ToolButton>
-        <ToolButton title="导出 PDF" onClick={onExportPdf}>
+        <ToolButton title="Export PDF" onClick={onExportPdf}>
           PDF
         </ToolButton>
       </div>

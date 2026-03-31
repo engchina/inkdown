@@ -101,26 +101,26 @@ export default function Sidebar({
             className={`sidebar-tab${sidebarTab === "outline" ? " active" : ""}`}
             onClick={() => onSidebarTabChange("outline")}
           >
-            大纲
+            Outline
           </button>
           <button
             type="button"
             className={`sidebar-tab${sidebarTab === "files" ? " active" : ""}`}
             onClick={() => onSidebarTabChange("files")}
           >
-            文件
+            Files
           </button>
         </div>
 
         <div className="sidebar-actions">
-          <button type="button" className="tool-button compact" onClick={onPickWorkspace} title="打开文件夹">
+          <button type="button" className="tool-button compact" onClick={onPickWorkspace} title="Open Folder">
             Folder
           </button>
           <button
             type="button"
             className="tool-button compact"
             onClick={onRevealCurrentFile}
-            title="在文件夹中显示当前文件"
+            title="Reveal Current File in Folder"
           >
             Reveal
           </button>
@@ -131,7 +131,7 @@ export default function Sidebar({
         <input
           className="find-input sidebar-input"
           type="text"
-          placeholder={sidebarTab === "files" ? "过滤文件" : "过滤标题"}
+          placeholder={sidebarTab === "files" ? "Filter files" : "Filter headings"}
           value={filterText}
           onChange={(event) => onFilterChange(event.target.value)}
         />
@@ -152,15 +152,15 @@ export default function Sidebar({
                 {item.text}
               </button>
             ))}
-          {outline.length === 0 ? <div className="outline-empty">暂无标题结构</div> : null}
+          {outline.length === 0 ? <div className="outline-empty">No headings yet</div> : null}
         </div>
       ) : (
         <div className="sidebar-content">
-          <div className="panel-heading">{workspaceRoot || "未打开文件夹"}</div>
+          <div className="panel-heading">{workspaceRoot || "No folder opened"}</div>
           {filteredTree ? (
             <FileTreeNode node={filteredTree} activeFilePath={activeFilePath} onOpenFile={onOpenFile} />
           ) : (
-            <div className="outline-empty">没有可显示的 Markdown 文件</div>
+            <div className="outline-empty">No Markdown files to display</div>
           )}
         </div>
       )}
