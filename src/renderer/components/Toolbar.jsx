@@ -16,12 +16,14 @@ function ToolButton({ active = false, children, className = "", disabled = false
 
 
 export default function Toolbar({
+  focusMode,
   documentPath,
   documentTitle,
   editor,
   isDirty,
   onExport,
   onExportPdf,
+  onOpenPalette,
   onNew,
   onOpen,
   onOpenFind,
@@ -33,8 +35,11 @@ export default function Toolbar({
   onSave,
   onSaveAs,
   onSetViewMode,
+  onToggleFocusMode,
   onToggleSidebar,
+  onToggleTypewriterMode,
   sidebarVisible,
+  typewriterMode,
   viewMode
 }) {
   return (
@@ -63,6 +68,10 @@ export default function Toolbar({
         <div className="toolbar-group document-toolbar-actions">
           <div className={`document-status${isDirty ? " dirty" : ""}`}>{isDirty ? "Unsaved" : "Saved"}</div>
 
+          <ToolButton title="Command Palette" variant="ghost" onClick={() => onOpenPalette()}>
+            Command
+          </ToolButton>
+
           <ToolButton title="Save" variant="primary" onClick={onSave}>
             Save
           </ToolButton>
@@ -75,6 +84,14 @@ export default function Toolbar({
               onClick={() => onSetViewMode("editor")}
             >
               Edit
+            </ToolButton>
+            <ToolButton
+              title="Split View"
+              active={viewMode === "split"}
+              variant="ghost"
+              onClick={() => onSetViewMode("split")}
+            >
+              Split
             </ToolButton>
             <ToolButton
               title="Source Mode"
@@ -91,6 +108,20 @@ export default function Toolbar({
               onClick={() => onSetViewMode("preview")}
             >
               Preview
+            </ToolButton>
+          </div>
+
+          <div className="view-switch writing-modes" aria-label="Writing modes">
+            <ToolButton title="Focus Mode" active={focusMode} variant="ghost" onClick={onToggleFocusMode}>
+              Focus
+            </ToolButton>
+            <ToolButton
+              title="Typewriter Mode"
+              active={typewriterMode}
+              variant="ghost"
+              onClick={onToggleTypewriterMode}
+            >
+              Typewriter
             </ToolButton>
           </div>
         </div>

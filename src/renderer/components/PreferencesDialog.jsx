@@ -36,9 +36,28 @@ export default function PreferencesDialog({ open, preferences, onChange, onClose
           <span>Default View</span>
           <select value={preferences.viewMode} onChange={(event) => onChange({ viewMode: event.target.value })}>
             <option value="editor">Editor Only</option>
+            <option value="split">Split View</option>
             <option value="source">Source Only</option>
             <option value="preview">Preview Only</option>
           </select>
+        </label>
+
+        <label className="pref-row">
+          <span>Focus Mode</span>
+          <input
+            type="checkbox"
+            checked={preferences.focusMode}
+            onChange={(event) => onChange({ focusMode: event.target.checked })}
+          />
+        </label>
+
+        <label className="pref-row">
+          <span>Typewriter</span>
+          <input
+            type="checkbox"
+            checked={preferences.typewriterMode}
+            onChange={(event) => onChange({ typewriterMode: event.target.checked })}
+          />
         </label>
 
         <label className="pref-row">

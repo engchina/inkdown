@@ -1,4 +1,5 @@
 import React, { useMemo } from "react";
+import PropertiesPanel from "./PropertiesPanel";
 
 function matchesFilter(node, keyword) {
   if (!keyword) {
@@ -73,7 +74,13 @@ export default function Sidebar({
   activeFilePath,
   activeOutlineId,
   filterText,
+  frontMatterFields,
+  frontMatterRaw,
+  isSimpleFrontMatter,
+  onAddFrontMatterField,
   onFilterChange,
+  onFrontMatterFieldChange,
+  onRemoveFrontMatterField,
   onJumpOutline,
   onOpenFile,
   onPickWorkspace,
@@ -106,18 +113,29 @@ export default function Sidebar({
           >
             Files
           </button>
+          <button
+            type="button"
+            className={`sidebar-tab${sidebarTab === "properties" ? " active" : ""}`}
+            onClick={() => onSidebarTabChange("properties")}
+          >
+            Properties
+          </button>
         </div>
       </div>
 
       <div className="sidebar-meta">
         <div>
-          <div className="panel-heading">{sidebarTab === "outline" ? "Document map" : fileRootLabel}</div>
+          <div className="panel-heading">
+            {sidebarTab === "outline" ? "Document map" : sidebarTab === "files" ? fileRootLabel : "Properties"}
+          </div>
           <div className="sidebar-caption">
             {sidebarTab === "outline"
               ? `${outline.length} headings`
-              : workspaceRoot
+              : sidebarTab === "files"
+                ? (workspaceRoot
                 ? workspaceRoot
-                : "Open a folder to browse Markdown files"}
+                : "Open a folder to browse Markdown files")
+                : "Front matter, title, tags, and metadata"}
           </div>
         </div>
 
@@ -135,15 +153,17 @@ export default function Sidebar({
         </div>
       </div>
 
-      <div className="sidebar-search">
-        <input
-          className="find-input sidebar-input"
-          type="text"
-          placeholder={sidebarTab === "files" ? "Filter files" : "Filter headings"}
-          value={filterText}
-          onChange={(event) => onFilterChange(event.target.value)}
-        />
-      </div>
+      {sidebarTab !== "properties" ? (
+        <div className="sidebar-search">
+          <input
+            className="find-input sidebar-input"
+            type="text"
+            placeholder={sidebarTab === "files" ? "Filter files" : "Filter headings"}
+            value={filterText}
+            onChange={(event) => onFilterChange(event.target.value)}
+          />
+        </div>
+      ) : null}
 
       {sidebarTab === "outline" ? (
         <div className="sidebar-content">
@@ -161,13 +181,24 @@ export default function Sidebar({
             ))}
           {outline.length === 0 ? <div className="outline-empty">No headings yet</div> : null}
         </div>
-      ) : (
+      ) : sidebarTab === "files" ? (
         <div className="sidebar-content">
           {filteredTree ? (
             <FileTreeNode node={filteredTree} activeFilePath={activeFilePath} onOpenFile={onOpenFile} />
           ) : (
             <div className="outline-empty">No Markdown files to display</div>
           )}
+        </div>
+      ) : (
+        <div className="sidebar-content">
+          <PropertiesPanel
+            fields={frontMatterFields}
+            isEditable={isSimpleFrontMatter}
+            rawFrontMatter={frontMatterRaw}
+            onAddField={onAddFrontMatterField}
+            onRemoveField={onRemoveFrontMatterField}
+            onUpdateField={onFrontMatterFieldChange}
+          />
         </div>
       )}
     </aside>

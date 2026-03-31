@@ -1,11 +1,13 @@
-import React, { startTransition, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import React, { startTransition, useDeferredValue, useEffect, useId, useMemo, useRef, useState } from "react";
 import { Mark, mergeAttributes } from "@tiptap/core";
 import { TextSelection } from "@tiptap/pm/state";
-import { EditorContent, useEditor } from "@tiptap/react";
+import { CellSelection } from "@tiptap/pm/tables";
+import { EditorContent, NodeViewContent, NodeViewWrapper, ReactNodeViewRenderer, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Underline from "@tiptap/extension-underline";
 import Link from "@tiptap/extension-link";
 import Image from "@tiptap/extension-image";
+import CodeBlock from "@tiptap/extension-code-block";
 import Placeholder from "@tiptap/extension-placeholder";
 import TaskList from "@tiptap/extension-task-list";
 import TaskItem from "@tiptap/extension-task-item";
@@ -16,6 +18,18 @@ import TableCell from "@tiptap/extension-table-cell";
 import { Marked } from "marked";
 import markedKatex from "marked-katex-extension";
 import TurndownService from "turndown";
+import hljs from "highlight.js/lib/core";
+import javascript from "highlight.js/lib/languages/javascript";
+import typescript from "highlight.js/lib/languages/typescript";
+import xml from "highlight.js/lib/languages/xml";
+import css from "highlight.js/lib/languages/css";
+import json from "highlight.js/lib/languages/json";
+import bash from "highlight.js/lib/languages/bash";
+import yamlLanguage from "highlight.js/lib/languages/yaml";
+import sql from "highlight.js/lib/languages/sql";
+import python from "highlight.js/lib/languages/python";
+import markdownLanguage from "highlight.js/lib/languages/markdown";
+import * as yaml from "js-yaml";
 import katexStyles from "katex/dist/katex.min.css?inline";
 import Toolbar from "./components/Toolbar";
 import Sidebar from "./components/Sidebar";
@@ -23,6 +37,10 @@ import StatusBar from "./components/StatusBar";
 import FindReplaceBar from "./components/FindReplaceBar";
 import MarkdownPreview, { renderPreviewHtml } from "./components/MarkdownPreview";
 import PreferencesDialog from "./components/PreferencesDialog";
+import CommandPalette from "./components/CommandPalette";
+import SlashCommandMenu from "./components/SlashCommandMenu";
+import TableToolbar from "./components/TableToolbar";
+import FrontMatterMergeDialog from "./components/FrontMatterMergeDialog";
 
 const editorMarked = new Marked({ gfm: true, breaks: true });
 const previewMarked = new Marked({ gfm: true, breaks: true });
@@ -50,7 +68,43 @@ const defaultPreferences = {
   sidebarTab: "outline",
   focusMode: false,
   typewriterMode: false,
-  workspaceRoot: null
+  workspaceRoot: null,
+  recentFiles: [],
+  paletteUsage: {},
+  tableLayouts: {}
+};
+
+const codeLanguageOptions = [
+  { value: "", label: "Plain text" },
+  { value: "js", label: "JavaScript" },
+  { value: "ts", label: "TypeScript" },
+  { value: "jsx", label: "JSX" },
+  { value: "tsx", label: "TSX" },
+  { value: "json", label: "JSON" },
+  { value: "html", label: "HTML" },
+  { value: "css", label: "CSS" },
+  { value: "md", label: "Markdown" },
+  { value: "bash", label: "Bash" },
+  { value: "yaml", label: "YAML" },
+  { value: "sql", label: "SQL" },
+  { value: "python", label: "Python" },
+  { value: "mermaid", label: "Mermaid" }
+];
+
+const codeLanguageTemplates = {
+  js: "function main() {\n  console.log('Hello, world!');\n}",
+  ts: "function main(): void {\n  console.log('Hello, world!');\n}",
+  jsx: "export function Component() {\n  return <div>Hello</div>;\n}",
+  tsx: "export function Component(): JSX.Element {\n  return <div>Hello</div>;\n}",
+  json: '{\n  "name": "Inkdown"\n}',
+  html: "<section>\n  <h1>Hello</h1>\n</section>",
+  css: ".card {\n  display: grid;\n}",
+  bash: "echo \"Hello, world!\"",
+  yaml: "title: Inkdown\nstatus: draft",
+  sql: "select *\nfrom notes;",
+  python: "def main():\n    print('Hello, world!')",
+  md: "# Title\n\nBody",
+  mermaid: "graph TD\n  A[Start] --> B[Finish]"
 };
 
 const initialMarkdown = `---
@@ -103,6 +157,33 @@ f(x) = \\sum_{n=0}^{\\infty}\\frac{x^n}{n!}
 \`\`\`
 `;
 
+hljs.registerLanguage("js", javascript);
+hljs.registerLanguage("javascript", javascript);
+hljs.registerLanguage("ts", typescript);
+hljs.registerLanguage("typescript", typescript);
+hljs.registerLanguage("html", xml);
+hljs.registerLanguage("xml", xml);
+hljs.registerLanguage("css", css);
+hljs.registerLanguage("json", json);
+hljs.registerLanguage("bash", bash);
+hljs.registerLanguage("shell", bash);
+hljs.registerLanguage("yaml", yamlLanguage);
+hljs.registerLanguage("yml", yamlLanguage);
+hljs.registerLanguage("sql", sql);
+hljs.registerLanguage("python", python);
+hljs.registerLanguage("md", markdownLanguage);
+hljs.registerLanguage("markdown", markdownLanguage);
+hljs.registerAliases(["jsx"], { languageName: "javascript" });
+hljs.registerAliases(["tsx"], { languageName: "typescript" });
+hljs.registerAliases(["sh", "zsh"], { languageName: "bash" });
+
+function normalizeHighlightLanguage(value) {
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase();
+  return normalized && hljs.getLanguage(normalized) ? normalized : "";
+}
+
 const MarkdownImage = Image.extend({
   addAttributes() {
     return {
@@ -136,6 +217,253 @@ const MarkdownImage = Image.extend({
           }
           return true;
         }
+    };
+  }
+});
+
+function CodeBlockNodeView({ editor, getPos, node, updateAttributes }) {
+  const activeValue = node.attrs.language || "";
+  const collapsed = Boolean(node.attrs.collapsed);
+  const mermaidPreviewId = useId();
+  const [copied, setCopied] = useState(false);
+  const [auxPreviewHtml, setAuxPreviewHtml] = useState("");
+  const highlightLanguage = useMemo(() => normalizeHighlightLanguage(activeValue), [activeValue]);
+  const lineNumbers = useMemo(() => {
+    const count = Math.max(1, String(node.textContent || "").split("\n").length);
+    return Array.from({ length: count }, (_, index) => index + 1);
+  }, [node.textContent]);
+
+  useEffect(() => {
+    if (activeValue !== "mermaid") {
+      return undefined;
+    }
+
+    let canceled = false;
+    const container = document.getElementById(mermaidPreviewId);
+    if (!container) {
+      return undefined;
+    }
+
+    async function renderMermaidPreview() {
+      try {
+        const html = await renderPreviewHtml(
+          `<div class="mermaid">${node.textContent || ""}</div>`,
+          document.documentElement.dataset.theme || "paper"
+        );
+        if (!canceled && container) {
+          container.innerHTML = html;
+        }
+      } catch (error) {
+        if (!canceled && container) {
+          container.innerHTML = `<pre>${String(error.message || error)}</pre>`;
+        }
+      }
+    }
+
+    renderMermaidPreview();
+    return () => {
+      canceled = true;
+    };
+  }, [activeValue, mermaidPreviewId, node.textContent]);
+
+  useEffect(() => {
+    if (!["md", "markdown", "html"].includes(activeValue)) {
+      setAuxPreviewHtml("");
+      return undefined;
+    }
+
+    let canceled = false;
+    async function buildPreview() {
+      if (activeValue === "html") {
+        if (!canceled) {
+          setAuxPreviewHtml(node.textContent || "");
+        }
+        return;
+      }
+      const rendered = renderMarkdownForPreview(node.textContent || "", null, []);
+      const html = await renderPreviewHtml(rendered, document.documentElement.dataset.theme || "paper");
+      if (!canceled) {
+        setAuxPreviewHtml(html);
+      }
+    }
+
+    buildPreview();
+    return () => {
+      canceled = true;
+    };
+  }, [activeValue, node.textContent]);
+
+  function replaceCodeBlockText(nextText) {
+    const pos = typeof getPos === "function" ? getPos() : null;
+    if (typeof pos !== "number") {
+      return;
+    }
+    editor
+      .chain()
+      .focus(pos + 1)
+      .command(({ tr }) => {
+        tr.insertText(nextText, pos + 1, pos + node.nodeSize - 1);
+        return true;
+      })
+      .run();
+  }
+
+  function handleLanguageChange(nextLanguage) {
+    const normalizedLanguage = nextLanguage || null;
+    updateAttributes({ language: normalizedLanguage });
+    if (!String(node.textContent || "").trim() && nextLanguage && codeLanguageTemplates[nextLanguage]) {
+      replaceCodeBlockText(codeLanguageTemplates[nextLanguage]);
+    }
+  }
+
+  async function copyCodeBlock() {
+    try {
+      await navigator.clipboard.writeText(node.textContent || "");
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1200);
+    } catch {}
+  }
+
+  return (
+    <NodeViewWrapper className="code-block-node">
+      <div className="code-block-toolbar" contentEditable={false}>
+        <span className="code-block-chip">Code</span>
+        <select
+          className="code-block-language-select"
+          value={activeValue}
+          onChange={(event) => handleLanguageChange(event.target.value)}
+          onClick={(event) => event.stopPropagation()}
+          onMouseDown={(event) => event.stopPropagation()}
+        >
+          {codeLanguageOptions.map((option) => (
+            <option key={option.value || "plain"} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+        <button
+          className="tool-button tool-button-ghost code-block-copy-button"
+          type="button"
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={copyCodeBlock}
+        >
+          {copied ? "Copied" : "Copy"}
+        </button>
+        <button
+          className="tool-button tool-button-ghost code-block-collapse-button"
+          type="button"
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => updateAttributes({ collapsed: !collapsed })}
+        >
+          {collapsed ? "Expand" : "Collapse"}
+        </button>
+        <button
+          className="tool-button tool-button-ghost code-block-exit-button"
+          type="button"
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => editor.chain().focus().setParagraph().run()}
+        >
+          Paragraph
+        </button>
+      </div>
+      {!collapsed ? (
+        <>
+          <div className="code-block-editor-frame">
+            <div className="code-block-line-numbers" contentEditable={false}>
+              {lineNumbers.map((line) => (
+                <span key={line}>{line}</span>
+              ))}
+            </div>
+            <pre>
+              <NodeViewContent as="code" className={`hljs${highlightLanguage ? ` language-${highlightLanguage}` : ""}`} />
+            </pre>
+          </div>
+          {activeValue === "mermaid" ? <div id={mermaidPreviewId} className="code-block-mermaid-preview" contentEditable={false} /> : null}
+          {["md", "markdown"].includes(activeValue) && auxPreviewHtml ? (
+            <div className="code-block-aux-preview preview-surface" dangerouslySetInnerHTML={{ __html: auxPreviewHtml }} />
+          ) : null}
+          {activeValue === "html" && auxPreviewHtml ? (
+            <iframe className="code-block-html-preview" sandbox="" srcDoc={auxPreviewHtml} title="HTML preview" />
+          ) : null}
+        </>
+      ) : null}
+    </NodeViewWrapper>
+  );
+}
+
+const CodeBlockWithLanguage = CodeBlock.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      collapsed: {
+        default: false,
+        parseHTML: (element) => element.getAttribute("data-collapsed") === "true",
+        renderHTML: (attributes) => (attributes.collapsed ? { "data-collapsed": "true" } : {})
+      },
+      language: {
+        default: null,
+        parseHTML: (element) => {
+          const explicitLanguage = element.getAttribute("data-language");
+          if (explicitLanguage) {
+            return explicitLanguage;
+          }
+          const className = element.getAttribute("class") || "";
+          const languageClass = className
+            .split(/\s+/)
+            .find((value) => value.startsWith("language-"));
+          return languageClass ? languageClass.replace(/^language-/, "") : null;
+        },
+        renderHTML: (attributes) => {
+          if (!attributes.language) {
+            return {};
+          }
+          return {
+            "data-language": attributes.language,
+            class: `language-${attributes.language}`
+          };
+        }
+      }
+    };
+  },
+  addNodeView() {
+    return ReactNodeViewRenderer(CodeBlockNodeView);
+  }
+});
+
+const TableHeaderWithAlignment = TableHeader.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      textAlign: {
+        default: null,
+        parseHTML: (element) => element.style.textAlign || element.getAttribute("data-align") || null,
+        renderHTML: (attributes) =>
+          attributes.textAlign
+            ? {
+                "data-align": attributes.textAlign,
+                style: `text-align: ${attributes.textAlign}`
+              }
+            : {}
+      }
+    };
+  }
+});
+
+const TableCellWithAlignment = TableCell.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      textAlign: {
+        default: null,
+        parseHTML: (element) => element.style.textAlign || element.getAttribute("data-align") || null,
+        renderHTML: (attributes) =>
+          attributes.textAlign
+            ? {
+                "data-align": attributes.textAlign,
+                style: `text-align: ${attributes.textAlign}`
+              }
+            : {}
+      }
     };
   }
 });
@@ -292,6 +620,355 @@ function buildRawFrontMatter(content) {
     return "";
   }
   return `---\n${normalized}\n---\n\n`;
+}
+
+function parseYamlObject(raw) {
+  const normalized = String(raw || "").trim();
+  if (!normalized) {
+    return {};
+  }
+  try {
+    const parsed = yaml.load(normalized);
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return null;
+  }
+}
+
+function dumpYamlObject(value) {
+  try {
+    return buildRawFrontMatter(yaml.dump(value || {}, { lineWidth: 100, noRefs: true }).trim());
+  } catch {
+    return "";
+  }
+}
+
+function mergeYamlValues(currentValue, incomingValue) {
+  if (Array.isArray(currentValue) && Array.isArray(incomingValue)) {
+    return [...new Set([...currentValue, ...incomingValue].map((item) => JSON.stringify(item)))].map((item) => JSON.parse(item));
+  }
+
+  if (
+    currentValue &&
+    incomingValue &&
+    typeof currentValue === "object" &&
+    typeof incomingValue === "object" &&
+    !Array.isArray(currentValue) &&
+    !Array.isArray(incomingValue)
+  ) {
+    const result = { ...currentValue };
+    Object.keys(incomingValue).forEach((key) => {
+      result[key] = key in result ? mergeYamlValues(result[key], incomingValue[key]) : incomingValue[key];
+    });
+    return result;
+  }
+
+  return incomingValue;
+}
+
+function stripWrappingQuotes(value) {
+  const normalized = String(value || "").trim();
+  if (
+    (normalized.startsWith('"') && normalized.endsWith('"')) ||
+    (normalized.startsWith("'") && normalized.endsWith("'"))
+  ) {
+    return normalized.slice(1, -1);
+  }
+  return normalized;
+}
+
+function parseInlineFrontMatterList(value) {
+  return String(value || "")
+    .replace(/^\[/, "")
+    .replace(/\]$/, "")
+    .split(",")
+    .map((item) => stripWrappingQuotes(item))
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function parseFrontMatterFields(content) {
+  const lines = String(content || "").split(/\r?\n/);
+  const fields = [];
+  let isSimple = true;
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (!line.trim() || /^\s*#/.test(line)) {
+      continue;
+    }
+
+    const match = /^([A-Za-z0-9_-]+):(?:\s*(.*))?$/.exec(line);
+    if (!match) {
+      isSimple = false;
+      continue;
+    }
+
+    const key = match[1];
+    const inlineValue = match[2] ?? "";
+    if (!inlineValue) {
+      const list = [];
+      let nextIndex = index + 1;
+      while (nextIndex < lines.length && /^\s*-\s+/.test(lines[nextIndex])) {
+        list.push(stripWrappingQuotes(lines[nextIndex].replace(/^\s*-\s+/, "")));
+        nextIndex += 1;
+      }
+
+      if (list.length > 0) {
+        fields.push({ id: `${key}-${index}`, key, type: "list", value: list });
+        index = nextIndex - 1;
+        continue;
+      }
+
+      fields.push({ id: `${key}-${index}`, key, type: "text", value: "" });
+      continue;
+    }
+
+    if (inlineValue === "|" || inlineValue === ">" || /[{}]/.test(inlineValue)) {
+      isSimple = false;
+      fields.push({ id: `${key}-${index}`, key, type: "text", value: stripWrappingQuotes(inlineValue) });
+      continue;
+    }
+
+    if (/^\[.*\]$/.test(inlineValue.trim())) {
+      fields.push({ id: `${key}-${index}`, key, type: "list", value: parseInlineFrontMatterList(inlineValue) });
+      continue;
+    }
+
+    fields.push({ id: `${key}-${index}`, key, type: "text", value: stripWrappingQuotes(inlineValue) });
+  }
+
+  return { fields, isSimple };
+}
+
+function formatFrontMatterScalar(value) {
+  const normalized = String(value ?? "").trim();
+  if (!normalized) {
+    return '""';
+  }
+  if (/^[A-Za-z0-9._/-]+$/.test(normalized)) {
+    return normalized;
+  }
+  return JSON.stringify(normalized);
+}
+
+function buildFrontMatterFromFields(fields) {
+  const normalizedFields = fields
+    .map((field) => {
+      const key = String(field.key || "").trim();
+      if (!key) {
+        return null;
+      }
+      if (field.type === "list") {
+        const values = Array.isArray(field.value)
+          ? field.value.map((item) => String(item).trim()).filter(Boolean)
+          : String(field.value || "")
+              .split(",")
+              .map((item) => item.trim())
+              .filter(Boolean);
+        return {
+          key,
+          type: "list",
+          value: values
+        };
+      }
+      return {
+        key,
+        type: "text",
+        value: String(field.value ?? "")
+      };
+    })
+    .filter(Boolean);
+
+  if (normalizedFields.length === 0) {
+    return "";
+  }
+
+  return buildRawFrontMatter(
+    normalizedFields
+      .map((field) => {
+        if (field.type === "list") {
+          if (field.value.length === 0) {
+            return `${field.key}:\n  - ""`;
+          }
+          return `${field.key}:\n${field.value.map((item) => `  - ${formatFrontMatterScalar(item)}`).join("\n")}`;
+        }
+        return `${field.key}: ${formatFrontMatterScalar(field.value)}`;
+      })
+      .join("\n")
+  );
+}
+
+function updateMarkdownFrontMatter(markdown, fields) {
+  const { body } = extractYamlFrontMatter(markdown);
+  return prependFrontMatter(buildFrontMatterFromFields(fields), body);
+}
+
+function mergeFrontMatterRaw(existingRaw, incomingRaw) {
+  const existingObject = parseYamlObject(extractYamlFrontMatter(existingRaw).content || existingRaw);
+  const incomingObject = parseYamlObject(extractYamlFrontMatter(incomingRaw).content || incomingRaw);
+
+  if (existingObject && incomingObject) {
+    return dumpYamlObject(mergeYamlValues(existingObject, incomingObject));
+  }
+
+  const existing = parseFrontMatterFields(extractYamlFrontMatter(existingRaw).content || existingRaw);
+  const incoming = parseFrontMatterFields(extractYamlFrontMatter(incomingRaw).content || incomingRaw);
+
+  if (!existing.isSimple || !incoming.isSimple) {
+    return incomingRaw || existingRaw || "";
+  }
+
+  const merged = [...existing.fields];
+  incoming.fields.forEach((incomingField) => {
+    const matchIndex = merged.findIndex((field) => field.key === incomingField.key);
+    if (matchIndex === -1) {
+      merged.push(incomingField);
+      return;
+    }
+    if (incomingField.type === "list") {
+      const currentValues = Array.isArray(merged[matchIndex].value) ? merged[matchIndex].value : [];
+      const nextValues = Array.isArray(incomingField.value) ? incomingField.value : [];
+      merged[matchIndex] = {
+        ...merged[matchIndex],
+        type: "list",
+        value: [...new Set([...currentValues, ...nextValues].filter(Boolean))]
+      };
+      return;
+    }
+    merged[matchIndex] = {
+      ...merged[matchIndex],
+      type: incomingField.type,
+      value: incomingField.value
+    };
+  });
+
+  return buildFrontMatterFromFields(merged);
+}
+
+function flattenWorkspaceFiles(node, rootPath, files = []) {
+  if (!node) {
+    return files;
+  }
+
+  if (node.type === "file") {
+    const relativePath =
+      rootPath && isFileInsideRoot(node.path, rootPath)
+        ? node.path.slice(rootPath.length).replace(/^[\\/]+/, "").replace(/\\/g, "/")
+        : node.name;
+    files.push({
+      path: node.path,
+      name: node.name,
+      relativePath
+    });
+    return files;
+  }
+
+  (node.children || []).forEach((child) => flattenWorkspaceFiles(child, rootPath, files));
+  return files;
+}
+
+function matchesPaletteQuery(item, query) {
+  const normalizedQuery = String(query ?? "").trim().toLowerCase();
+  if (!normalizedQuery) {
+    return true;
+  }
+  const haystack = [item.label, item.description, item.keywords, item.relativePath]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  return haystack.includes(normalizedQuery);
+}
+
+function normalizeRecentFiles(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return [...new Set(value.map((item) => String(item || "").trim()).filter(Boolean))].slice(0, 8);
+}
+
+function normalizePaletteUsage(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+  return Object.fromEntries(
+    Object.entries(value)
+      .map(([key, count]) => [String(key), Number(count) || 0])
+      .filter(([, count]) => count > 0)
+  );
+}
+
+function getDisplayPath(filePath, workspaceRoot) {
+  if (!filePath) {
+    return "";
+  }
+  if (workspaceRoot && isFileInsideRoot(filePath, workspaceRoot)) {
+    return filePath.slice(workspaceRoot.length).replace(/^[\\/]+/, "").replace(/\\/g, "/");
+  }
+  return filePath;
+}
+
+function scorePaletteItem(item, query, usageMap, recentRanks) {
+  const normalizedQuery = String(query ?? "").trim().toLowerCase();
+  const usageScore = Math.min(40, (usageMap[item.id] || 0) * 6);
+  const recentScore = item.path ? Math.max(0, 32 - (recentRanks.get(item.path) ?? 99) * 6) : 0;
+
+  if (!normalizedQuery) {
+    return usageScore + recentScore;
+  }
+
+  const label = String(item.label || "").toLowerCase();
+  const keywords = String(item.keywords || "").toLowerCase();
+  const description = String(item.description || "").toLowerCase();
+
+  let score = 0;
+  if (label === normalizedQuery) score += 140;
+  else if (label.startsWith(normalizedQuery)) score += 110;
+  else if (label.includes(normalizedQuery)) score += 85;
+
+  if (keywords.includes(normalizedQuery)) score += 40;
+  if (description.includes(normalizedQuery)) score += 20;
+
+  return score + usageScore + recentScore;
+}
+
+function isProbablyUrl(value) {
+  const normalized = String(value || "").trim();
+  if (!normalized) {
+    return false;
+  }
+  try {
+    const parsed = new URL(normalized);
+    return ["http:", "https:", "mailto:"].includes(parsed.protocol);
+  } catch {
+    return false;
+  }
+}
+
+function getEditorSlashContext(instance) {
+  const selection = instance?.state?.selection;
+  if (!selection || !selection.empty) {
+    return null;
+  }
+
+  const { $from, from } = selection;
+  const parent = $from.parent;
+  if (!parent?.isTextblock || parent.type.name !== "paragraph") {
+    return null;
+  }
+
+  const cursorOffset = $from.parentOffset;
+  const beforeCursor = parent.textContent.slice(0, cursorOffset);
+  const match = /^\/([^\n]*)$/.exec(beforeCursor);
+  if (!match) {
+    return null;
+  }
+
+  return {
+    query: match[1] || "",
+    from: from - cursorOffset,
+    to: from
+  };
 }
 
 function serializeEditorHtmlToMarkdown(html) {
@@ -519,8 +1196,19 @@ function serializeTable(node) {
     return `| ${values.join(" | ")} |`;
   };
 
+  const alignmentRowSource = rows[0];
   const headerRow = toMarkdownRow(rows[0]);
-  const dividerRow = `| ${Array.from({ length: columnCount }, () => "---").join(" | ")} |`;
+  const dividerRow = `| ${Array.from({ length: columnCount }, (_, index) => {
+    const cell = alignmentRowSource?.cells?.[index];
+    const align = cell?.style?.textAlign || cell?.getAttribute?.("data-align") || "";
+    if (align === "center") {
+      return ":---:";
+    }
+    if (align === "right") {
+      return "---:";
+    }
+    return "---";
+  }).join(" | ")} |`;
   const bodyRows = rows.slice(1).map(toMarkdownRow);
   return `\n\n${[headerRow, dividerRow, ...bodyRows].join("\n")}\n\n`;
 }
@@ -658,7 +1346,21 @@ function renderMarkdownForEditor(markdown, currentFilePath, outline) {
     currentFilePath,
     window.editorApi.resolveMarkdownAsset
   );
-  return decorateRenderedHtml(container, outline, { frontMatterContent });
+  return decorateRenderedHtml(container, outline, { frontMatterContent, enableCallouts: true });
+}
+
+function renderMarkdownSnippetForEditor(markdown, currentFilePath) {
+  const { raw: frontMatterRaw, body } = extractYamlFrontMatter(markdown);
+  const snippetOutline = extractOutlineFromMarkdown(body);
+  const container = resolveImageSources(
+    editorMarked.parse(preprocessMarkdownSyntax(body, { enableExtendedInlineSyntax: true })),
+    currentFilePath,
+    window.editorApi.resolveMarkdownAsset
+  );
+  return {
+    frontMatterRaw,
+    html: decorateRenderedHtml(container, snippetOutline, { enableCallouts: true })
+  };
 }
 
 function renderMarkdownForPreview(markdown, currentFilePath, outline, resolveAsset = window.editorApi.resolveMarkdownAsset) {
@@ -702,6 +1404,13 @@ function buildStandaloneHtml(title, bodyHtml, theme) {
       img { max-width: 100%; border-radius: 12px; }
       pre { overflow-x: auto; padding: 16px; border-radius: 14px; background: ${theme === "midnight" ? "#1c2434" : "#22252b"}; color: #f5f7fa; }
       code { font-family: "Cascadia Code", "JetBrains Mono", monospace; }
+      .hljs { color: inherit; background: transparent; }
+      .hljs-comment, .hljs-quote { color: #94a3b8; font-style: italic; }
+      .hljs-keyword, .hljs-selector-tag, .hljs-literal, .hljs-name, .hljs-tag { color: #f97316; }
+      .hljs-string, .hljs-attr, .hljs-template-tag, .hljs-template-variable { color: #22c55e; }
+      .hljs-number, .hljs-symbol, .hljs-bullet, .hljs-variable, .hljs-variable.constant_ { color: #38bdf8; }
+      .hljs-title, .hljs-title.class_, .hljs-title.function_ { color: #c084fc; }
+      .hljs-meta, .hljs-built_in, .hljs-type { color: #facc15; }
       mark { padding: 0.08em 0.32em; border-radius: 0.36em; background: ${theme === "midnight" ? "#5a4300" : "#ffe08a"}; color: inherit; }
       sub, sup { font-size: 0.78em; }
       blockquote:not(.callout) {
@@ -742,6 +1451,9 @@ function buildStandaloneHtml(title, bodyHtml, theme) {
       }
       table { width: 100%; border-collapse: collapse; }
       th, td { border: 1px solid rgba(160, 160, 160, 0.3); padding: 10px 12px; }
+      td[data-align="left"], th[data-align="left"] { text-align: left; }
+      td[data-align="center"], th[data-align="center"] { text-align: center; }
+      td[data-align="right"], th[data-align="right"] { text-align: right; }
       .table-of-contents { display: grid; gap: 8px; padding: 16px 18px; border: 1px solid rgba(160, 160, 160, 0.24); border-radius: 14px; background: rgba(255, 255, 255, 0.6); }
       .toc-title { font-size: 12px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; }
       .toc-item { color: inherit; text-decoration: none; }
@@ -795,6 +1507,45 @@ function countStats(markdown) {
 
 function isMarkdownFilePath(filePath) {
   return /\.(md|markdown|mdown|mkd|txt)$/i.test(filePath || "");
+}
+
+function looksLikeMarkdownSnippet(value) {
+  const text = String(value || "").trim();
+  if (!text || isProbablyUrl(text)) {
+    return false;
+  }
+  return /^(#{1,6}\s|>\s|[-*+]\s|\d+\.\s|[-*+]\s\[(?: |x|X)\]\s|```|~~~|\|.+\|)/m.test(text) || /\n/.test(text);
+}
+
+function canPasteFrontMatterAtCursor(editor) {
+  if (!editor?.state?.selection?.empty) {
+    return false;
+  }
+  return editor.state.selection.from <= 2;
+}
+
+function getTableLayoutDocumentKey(filePath) {
+  return filePath || "__untitled__";
+}
+
+function buildInitialVisualMerge(existingRaw, incomingRaw) {
+  const simpleExisting = parseFrontMatterFields(extractYamlFrontMatter(existingRaw).content || existingRaw);
+  const simpleIncoming = parseFrontMatterFields(extractYamlFrontMatter(incomingRaw).content || incomingRaw);
+  if (simpleExisting.isSimple && simpleIncoming.isSimple) {
+    return mergeFrontMatterRaw(existingRaw, incomingRaw);
+  }
+  return incomingRaw || existingRaw || "";
+}
+
+function buildFrontMatterMergeState(existingRaw, incomingRaw, html) {
+  const mergedRaw = buildInitialVisualMerge(existingRaw, incomingRaw);
+  return {
+    currentRaw: existingRaw,
+    incomingRaw,
+    mergedRaw,
+    mergedValue: parseYamlObject(extractYamlFrontMatter(mergedRaw).content || mergedRaw) || {},
+    html
+  };
 }
 
 function findMatches(markdown, query) {
@@ -962,6 +1713,17 @@ function getLineBoundaries(markdown, selectionStart, selectionEnd) {
   return { lineStart, lineEnd };
 }
 
+function getCurrentLine(markdown, cursor) {
+  const lineStart = markdown.lastIndexOf("\n", Math.max(0, cursor - 1)) + 1;
+  const nextNewline = markdown.indexOf("\n", cursor);
+  const lineEnd = nextNewline === -1 ? markdown.length : nextNewline;
+  return {
+    lineStart,
+    lineEnd,
+    line: markdown.slice(lineStart, lineEnd)
+  };
+}
+
 function placeCursorInTrailingParagraph(view) {
   const paragraphNode = view.state.schema.nodes.paragraph;
   if (!paragraphNode) {
@@ -1015,6 +1777,24 @@ turndown.addRule("images", {
     const alt = escapeMarkdownImageAlt(node.getAttribute("alt"));
     const title = node.getAttribute("title");
     return `\n\n![${alt}](${source}${title ? ` "${escapeMarkdownTitle(title)}"` : ""})\n\n`;
+  }
+});
+
+turndown.addRule("codeBlocksWithLanguage", {
+  filter(node) {
+    return node.nodeName === "PRE" && node.firstElementChild?.nodeName === "CODE";
+  },
+  replacement(content, node) {
+    const code = node.firstElementChild;
+    const language =
+      code?.getAttribute("data-language") ||
+      (code?.getAttribute("class") || "")
+        .split(/\s+/)
+        .find((value) => value.startsWith("language-"))
+        ?.replace(/^language-/, "") ||
+      "";
+    const value = code?.textContent?.replace(/\n$/, "") || "";
+    return `\n\n\`\`\`${language}\n${value}\n\`\`\`\n\n`;
   }
 });
 
@@ -1080,6 +1860,13 @@ export default function App() {
   const [replaceValue, setReplaceValue] = useState("");
   const [matchIndex, setMatchIndex] = useState(0);
   const [statusMessage, setStatusMessage] = useState("Ready");
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const [commandPaletteQuery, setCommandPaletteQuery] = useState("");
+  const [slashMenuState, setSlashMenuState] = useState({ open: false, query: "", top: 0, left: 0 });
+  const [slashMenuIndex, setSlashMenuIndex] = useState(0);
+  const [tableToolbarVisible, setTableToolbarVisible] = useState(false);
+  const [tableSelectionCount, setTableSelectionCount] = useState(0);
+  const [frontMatterMergeState, setFrontMatterMergeState] = useState(null);
 
   const sourceRef = useRef(null);
   const sourceHighlightRef = useRef(null);
@@ -1089,10 +1876,305 @@ export default function App() {
   const editorHeadingsRef = useRef([]);
   const statusTimerRef = useRef(null);
   const preferencesRef = useRef(defaultPreferences);
+  const slashMenuStateRef = useRef({ open: false, query: "", top: 0, left: 0 });
+  const slashCommandItemsRef = useRef([]);
+  const executeSlashCommandRef = useRef(null);
 
   const deferredMarkdown = useDeferredValue(markdownText);
   const matches = useMemo(() => findMatches(markdownText, findQuery), [markdownText, findQuery]);
   const stats = useMemo(() => countStats(markdownText), [markdownText]);
+  const frontMatterState = useMemo(() => {
+    const { content, raw } = extractYamlFrontMatter(markdownText);
+    return {
+      ...parseFrontMatterFields(content),
+      raw
+    };
+  }, [markdownText]);
+  const recentFiles = useMemo(() => normalizeRecentFiles(preferences.recentFiles), [preferences.recentFiles]);
+  const paletteUsage = useMemo(() => normalizePaletteUsage(preferences.paletteUsage), [preferences.paletteUsage]);
+  const workspaceFiles = useMemo(
+    () => flattenWorkspaceFiles(workspaceTree, preferences.workspaceRoot),
+    [workspaceTree, preferences.workspaceRoot]
+  );
+  const commandPaletteSuggestions = useMemo(() => {
+    const normalizedQuery = String(commandPaletteQuery ?? "").trim();
+    if (!normalizedQuery) {
+      return [
+        { id: "open-file", badge: "Cmd", label: "Open a document", description: "Choose a Markdown file from disk" },
+        { id: "open-folder", badge: "Cmd", label: "Open a workspace folder", description: "Index files for quick switching" },
+        { id: "new-file", badge: "Cmd", label: "Create a new document", description: "Start with a blank note" }
+      ];
+    }
+    return [
+      { id: "open-file", badge: "Cmd", label: `Open a file instead`, description: `Nothing matched "${normalizedQuery}"` },
+      { id: "open-folder", badge: "Cmd", label: "Switch workspace", description: "Search a different folder tree" },
+      { id: "preferences", badge: "Cmd", label: "Open preferences", description: "Adjust views, theme, and writing defaults" }
+    ];
+  }, [commandPaletteQuery]);
+  const commandPaletteItems = useMemo(() => {
+    const commands = [
+      {
+        id: "new-file",
+        kind: "command",
+        badge: "Cmd",
+        section: "Actions",
+        label: "New document",
+        description: "Create a blank Markdown document",
+        shortcut: "Ctrl+N",
+        keywords: "new create file document"
+      },
+      {
+        id: "open-file",
+        kind: "command",
+        badge: "Cmd",
+        section: "Actions",
+        label: "Open document",
+        description: "Choose a Markdown file from disk",
+        shortcut: "Ctrl+O",
+        keywords: "open file markdown"
+      },
+      {
+        id: "open-folder",
+        kind: "command",
+        badge: "Cmd",
+        section: "Actions",
+        label: "Open workspace folder",
+        description: "Browse Markdown files from a folder tree",
+        shortcut: "Ctrl+Shift+O",
+        keywords: "folder workspace tree files"
+      },
+      {
+        id: "save-file",
+        kind: "command",
+        badge: "Cmd",
+        section: "Actions",
+        label: isDirty ? "Save document" : "Save document",
+        description: isDirty ? "Persist current changes" : "Document already saved",
+        shortcut: "Ctrl+S",
+        keywords: "save write persist"
+      },
+      {
+        id: "find",
+        kind: "command",
+        badge: "Cmd",
+        section: "Actions",
+        label: "Find and replace",
+        description: "Search the Markdown source with replace controls",
+        shortcut: "Ctrl+F",
+        keywords: "find search replace"
+      },
+      {
+        id: "preferences",
+        kind: "command",
+        badge: "Cmd",
+        section: "Actions",
+        label: "Preferences",
+        description: "Theme, typography, and writing defaults",
+        shortcut: "Ctrl+,",
+        keywords: "settings preferences theme font width"
+      },
+      {
+        id: "view-editor",
+        kind: "command",
+        badge: "View",
+        section: "Views",
+        label: "Switch to editor",
+        description: "Immersive Typora-style writing surface",
+        keywords: "view editor write"
+      },
+      {
+        id: "view-split",
+        kind: "command",
+        badge: "View",
+        section: "Views",
+        label: "Switch to split view",
+        description: "Edit and preview side by side",
+        keywords: "split preview live dual pane"
+      },
+      {
+        id: "view-source",
+        kind: "command",
+        badge: "View",
+        section: "Views",
+        label: "Switch to source",
+        description: "Edit raw Markdown directly",
+        keywords: "source raw markdown code"
+      },
+      {
+        id: "view-preview",
+        kind: "command",
+        badge: "View",
+        section: "Views",
+        label: "Switch to preview",
+        description: "Read the rendered document only",
+        keywords: "preview rendered read"
+      },
+      {
+        id: "toggle-focus",
+        kind: "command",
+        badge: "Mode",
+        section: "Writing",
+        label: preferences.focusMode ? "Disable focus mode" : "Enable focus mode",
+        description: "Dim inactive blocks around the current paragraph",
+        shortcut: "F8",
+        keywords: "focus writing zen"
+      },
+      {
+        id: "toggle-typewriter",
+        kind: "command",
+        badge: "Mode",
+        section: "Writing",
+        label: preferences.typewriterMode ? "Disable typewriter mode" : "Enable typewriter mode",
+        description: "Keep the active block centered while writing",
+        shortcut: "F9",
+        keywords: "typewriter center writing"
+      },
+      {
+        id: "open-outline",
+        kind: "command",
+        badge: "Side",
+        section: "Sidebar",
+        label: "Show outline",
+        description: "Navigate headings in the current document",
+        shortcut: "Ctrl+Shift+1",
+        keywords: "sidebar outline toc headings"
+      },
+      {
+        id: "open-files",
+        kind: "command",
+        badge: "Side",
+        section: "Sidebar",
+        label: "Show files",
+        description: "Browse the current workspace tree",
+        shortcut: "Ctrl+Shift+2",
+        keywords: "sidebar files workspace"
+      },
+      {
+        id: "open-properties",
+        kind: "command",
+        badge: "Side",
+        section: "Sidebar",
+        label: "Show properties",
+        description: "Edit title, tags, and front matter",
+        shortcut: "Ctrl+Shift+3",
+        keywords: "sidebar properties front matter metadata tags"
+      },
+      {
+        id: "theme-paper",
+        kind: "command",
+        badge: "Theme",
+        section: "Themes",
+        label: "Switch to Paper theme",
+        description: "Bright editorial canvas",
+        keywords: "theme paper light"
+      },
+      {
+        id: "theme-forest",
+        kind: "command",
+        badge: "Theme",
+        section: "Themes",
+        label: "Switch to Forest theme",
+        description: "Soft green writing environment",
+        keywords: "theme forest green"
+      },
+      {
+        id: "theme-midnight",
+        kind: "command",
+        badge: "Theme",
+        section: "Themes",
+        label: "Switch to Midnight theme",
+        description: "Dark reading and coding palette",
+        keywords: "theme midnight dark"
+      }
+    ];
+    const recentFileItems = recentFiles.map((path, index) => ({
+      id: `file:${path}`,
+      kind: "file",
+      badge: "Recent",
+      section: "Recent Files",
+      label: basenamePath(path),
+      description: getDisplayPath(path, preferences.workspaceRoot),
+      relativePath: getDisplayPath(path, preferences.workspaceRoot),
+      path,
+      recentIndex: index,
+      keywords: `${basenamePath(path)} ${path}`
+    }));
+
+    const recentFileSet = new Set(recentFiles);
+    const workspaceFileItems = workspaceFiles
+      .filter((file) => !recentFileSet.has(file.path))
+      .map((file) => ({
+        id: `file:${file.path}`,
+        kind: "file",
+        badge: "File",
+        section: "Files",
+        label: file.name,
+        description: file.relativePath,
+        relativePath: file.relativePath,
+        path: file.path,
+        keywords: `${file.name} ${file.relativePath}`
+      }));
+
+    const items = [...commands, ...recentFileItems, ...workspaceFileItems];
+    const recentRanks = new Map(recentFiles.map((path, index) => [path, index]));
+    const normalizedQuery = String(commandPaletteQuery ?? "").trim();
+
+    if (!normalizedQuery) {
+      const topHits = items
+        .map((item) => ({ ...item, score: scorePaletteItem(item, "", paletteUsage, recentRanks) }))
+        .filter((item) => item.score > 0)
+        .sort((left, right) => right.score - left.score || left.label.localeCompare(right.label))
+        .slice(0, 6)
+        .map((item) => ({ ...item, section: "Top Hits" }));
+
+      const topHitIds = new Set(topHits.map((item) => item.id));
+      return [
+        ...topHits,
+        ...recentFileItems.filter((item) => !topHitIds.has(item.id)),
+        ...commands.filter((item) => !topHitIds.has(item.id))
+      ];
+    }
+
+    return items
+      .filter((item) => matchesPaletteQuery(item, normalizedQuery))
+      .map((item) => ({ ...item, score: scorePaletteItem(item, normalizedQuery, paletteUsage, recentRanks) }))
+      .filter((item) => item.score > 0)
+      .sort((left, right) => right.score - left.score || left.label.localeCompare(right.label))
+      .map((item, index) => ({
+        ...item,
+        section: index < 6 ? "Best Match" : item.section
+      }));
+  }, [
+    commandPaletteQuery,
+    isDirty,
+    paletteUsage,
+    preferences.focusMode,
+    preferences.typewriterMode,
+    preferences.workspaceRoot,
+    recentFiles,
+    workspaceFiles
+  ]);
+  const slashCommandItems = useMemo(() => {
+    const definitions = [
+      { id: "paragraph", badge: "Text", label: "Paragraph", description: "Return to normal body text", keywords: "paragraph text body" },
+      { id: "heading-1", badge: "H1", label: "Heading 1", description: "Large document title", keywords: "heading title h1" },
+      { id: "heading-2", badge: "H2", label: "Heading 2", description: "Section heading", keywords: "heading section h2" },
+      { id: "heading-3", badge: "H3", label: "Heading 3", description: "Subsection heading", keywords: "heading subsection h3" },
+      { id: "bullet-list", badge: "List", label: "Bullet list", description: "Unordered list items", keywords: "list bullet unordered" },
+      { id: "ordered-list", badge: "1.", label: "Numbered list", description: "Ordered list items", keywords: "list ordered numbered" },
+      { id: "task-list", badge: "Task", label: "Task list", description: "Checkbox list for todos", keywords: "task checkbox todo" },
+      { id: "blockquote", badge: "Quote", label: "Blockquote", description: "Quoted or callout-friendly block", keywords: "quote blockquote callout" },
+      { id: "code-block", badge: "Code", label: "Code block", description: "Fenced code or snippet block", keywords: "code block fenced snippet" },
+      { id: "horizontal-rule", badge: "Rule", label: "Divider", description: "Horizontal rule between sections", keywords: "divider rule hr" },
+      { id: "table", badge: "Tbl", label: "Table", description: "Insert a markdown table scaffold", keywords: "table columns rows" },
+      { id: "image", badge: "Img", label: "Image", description: "Pick and insert an image file", keywords: "image photo media" }
+    ];
+    const normalizedQuery = String(slashMenuState.query || "").trim().toLowerCase();
+    if (!normalizedQuery) {
+      return definitions;
+    }
+    return definitions.filter((item) => matchesPaletteQuery(item, normalizedQuery));
+  }, [slashMenuState.query]);
   const previewHtml = useMemo(
     () => renderMarkdownForPreview(deferredMarkdown, filePath, outline),
     [deferredMarkdown, filePath, outline]
@@ -1159,15 +2241,312 @@ export default function App() {
     }
   }
 
+  function syncTableToolbar(instance) {
+    setTableToolbarVisible(Boolean(instance?.isActive?.("table")));
+    const selection = instance?.state?.selection;
+    if (selection instanceof CellSelection) {
+      const cells = [];
+      selection.forEachCell((cell, pos) => {
+        cells.push({ cell, pos });
+      });
+      setTableSelectionCount(cells.length);
+      return;
+    }
+    setTableSelectionCount(0);
+  }
+
+  function captureTableLayouts(instance) {
+    if (!hasMountedEditorView(instance)) {
+      return;
+    }
+    const tables = Array.from(instance.view.dom.querySelectorAll("table"));
+    const documentKey = getTableLayoutDocumentKey(filePath);
+    const nextLayouts = {};
+
+    tables.forEach((table, index) => {
+      const cols = Array.from(table.querySelectorAll("colgroup col"));
+      const widths = (cols.length > 0 ? cols : Array.from(table.rows?.[0]?.cells || []))
+        .map((element) => parseFloat(element.style.width || ""))
+        .filter((value) => Number.isFinite(value) && value > 0)
+        .map((value) => Math.round(value));
+
+      if (widths.length > 0) {
+        nextLayouts[index] = widths;
+      }
+    });
+
+    updatePreferences((current) => {
+      const existingLayouts = current.tableLayouts || {};
+      const currentForDocument = JSON.stringify(existingLayouts[documentKey] || {});
+      const nextForDocument = JSON.stringify(nextLayouts);
+      if (currentForDocument === nextForDocument) {
+        return {};
+      }
+      return {
+        tableLayouts: {
+          ...existingLayouts,
+          [documentKey]: nextLayouts
+        }
+      };
+    });
+  }
+
+  function applyTableLayouts(instance) {
+    if (!hasMountedEditorView(instance)) {
+      return;
+    }
+    const layouts = preferencesRef.current.tableLayouts?.[getTableLayoutDocumentKey(filePath)];
+    if (!layouts) {
+      return;
+    }
+
+    const tables = Array.from(instance.view.dom.querySelectorAll("table"));
+    tables.forEach((table, index) => {
+      const widths = layouts[index];
+      if (!Array.isArray(widths) || widths.length === 0) {
+        return;
+      }
+      let colgroup = table.querySelector("colgroup");
+      if (!colgroup) {
+        colgroup = document.createElement("colgroup");
+        table.prepend(colgroup);
+      }
+      while (colgroup.children.length < widths.length) {
+        colgroup.appendChild(document.createElement("col"));
+      }
+      Array.from(colgroup.children).forEach((col, colIndex) => {
+        if (widths[colIndex]) {
+          col.style.width = `${widths[colIndex]}px`;
+        }
+      });
+      table.style.tableLayout = "fixed";
+    });
+  }
+
+  function closeSlashMenu() {
+    setSlashMenuState((current) => (current.open ? { open: false, query: "", top: 0, left: 0 } : current));
+  }
+
+  function syncSlashMenu(instance) {
+    const context = getEditorSlashContext(instance);
+    if (!context) {
+      closeSlashMenu();
+      return;
+    }
+    const coords = instance.view.coordsAtPos(instance.state.selection.from);
+    setSlashMenuState({
+      open: true,
+      query: context.query,
+      top: coords.bottom + 8,
+      left: Math.max(24, coords.left)
+    });
+  }
+
+  async function executeSlashCommand(item) {
+    if (!editor || !item) {
+      return;
+    }
+
+    const context = getEditorSlashContext(editor);
+    closeSlashMenu();
+
+    if (!context) {
+      return;
+    }
+
+    const runAfterDelete = async (callback) => {
+      runEditorCommand((chain) => chain.deleteRange({ from: context.from, to: context.to }).run());
+      await callback();
+    };
+
+    switch (item.id) {
+      case "paragraph":
+        runEditorCommand((chain) => chain.deleteRange({ from: context.from, to: context.to }).setParagraph().run());
+        break;
+      case "heading-1":
+        runEditorCommand((chain) => chain.deleteRange({ from: context.from, to: context.to }).toggleHeading({ level: 1 }).run());
+        break;
+      case "heading-2":
+        runEditorCommand((chain) => chain.deleteRange({ from: context.from, to: context.to }).toggleHeading({ level: 2 }).run());
+        break;
+      case "heading-3":
+        runEditorCommand((chain) => chain.deleteRange({ from: context.from, to: context.to }).toggleHeading({ level: 3 }).run());
+        break;
+      case "bullet-list":
+        runEditorCommand((chain) => chain.deleteRange({ from: context.from, to: context.to }).toggleBulletList().run());
+        break;
+      case "ordered-list":
+        runEditorCommand((chain) => chain.deleteRange({ from: context.from, to: context.to }).toggleOrderedList().run());
+        break;
+      case "task-list":
+        runEditorCommand((chain) => chain.deleteRange({ from: context.from, to: context.to }).toggleTaskList().run());
+        break;
+      case "blockquote":
+        runEditorCommand((chain) => chain.deleteRange({ from: context.from, to: context.to }).toggleBlockquote().run());
+        break;
+      case "code-block":
+        runEditorCommand((chain) => chain.deleteRange({ from: context.from, to: context.to }).toggleCodeBlock().run());
+        break;
+      case "horizontal-rule":
+        runEditorCommand((chain) => chain.deleteRange({ from: context.from, to: context.to }).setHorizontalRule().run());
+        break;
+      case "table":
+        await runAfterDelete(async () => insertTable());
+        break;
+      case "image":
+        await runAfterDelete(async () => insertImage());
+        break;
+      default:
+        break;
+    }
+  }
+
+  useEffect(() => {
+    executeSlashCommandRef.current = executeSlashCommand;
+  });
+
+  function applyEditorMarkdownShortcut(rangeFrom, rangeTo, apply) {
+    runEditorCommand((chain) => apply(chain.deleteRange({ from: rangeFrom, to: rangeTo })));
+  }
+
+  function isEditorSelectionInsideList(selection) {
+    const names = [];
+    for (let depth = selection.$from.depth; depth > 0; depth -= 1) {
+      names.push(selection.$from.node(depth).type.name);
+    }
+    return {
+      inTaskItem: names.includes("taskItem"),
+      inListItem: names.includes("listItem"),
+      inBulletList: names.includes("bulletList"),
+      inOrderedList: names.includes("orderedList")
+    };
+  }
+
+  function exitCurrentListItem(selection) {
+    const state = isEditorSelectionInsideList(selection);
+    if (state.inTaskItem) {
+      return runEditorCommand((chain) => chain.liftListItem("taskItem").run());
+    }
+    if (state.inListItem) {
+      return runEditorCommand((chain) => chain.liftListItem("listItem").run());
+    }
+    return false;
+  }
+
+  function handleEditorStructuredEditing(view, event) {
+    const selection = view.state.selection;
+    if (!selection.empty) {
+      return false;
+    }
+
+    const { $from } = selection;
+    const state = isEditorSelectionInsideList(selection);
+    const cursorAtStart = $from.parentOffset === 0;
+    const textContent = $from.parent.textContent || "";
+    const emptyTextblock = !textContent.trim();
+
+    if (event.key === "Tab" && (state.inTaskItem || state.inListItem)) {
+      event.preventDefault();
+      if (state.inTaskItem) {
+        runEditorCommand((chain) => (event.shiftKey ? chain.liftListItem("taskItem").run() : chain.sinkListItem("taskItem").run()));
+        return true;
+      }
+      runEditorCommand((chain) => (event.shiftKey ? chain.liftListItem("listItem").run() : chain.sinkListItem("listItem").run()));
+      return true;
+    }
+
+    if (event.key === "Enter" && emptyTextblock && (state.inTaskItem || state.inListItem)) {
+      event.preventDefault();
+      exitCurrentListItem(selection);
+      return true;
+    }
+
+    if (event.key === "Backspace" && cursorAtStart && emptyTextblock && (state.inTaskItem || state.inListItem)) {
+      event.preventDefault();
+      exitCurrentListItem(selection);
+      return true;
+    }
+
+    return false;
+  }
+
+  function handleEditorSmartMarkdown(view, event) {
+    if (handleEditorStructuredEditing(view, event)) {
+      return true;
+    }
+
+    const selection = view.state.selection;
+    if (!selection.empty) {
+      return false;
+    }
+
+    const { $from } = selection;
+    const parent = $from.parent;
+    if (!parent?.isTextblock || parent.type.name !== "paragraph") {
+      return false;
+    }
+
+    const beforeCursor = parent.textContent.slice(0, $from.parentOffset);
+    const shortcutFrom = selection.from - beforeCursor.length;
+
+    if (event.key === " ") {
+      if (/^#{1,6}$/.test(beforeCursor)) {
+        event.preventDefault();
+        applyEditorMarkdownShortcut(shortcutFrom, selection.from, (chain) =>
+          chain.toggleHeading({ level: beforeCursor.length }).run()
+        );
+        return true;
+      }
+
+      if (/^>$/.test(beforeCursor)) {
+        event.preventDefault();
+        applyEditorMarkdownShortcut(shortcutFrom, selection.from, (chain) => chain.toggleBlockquote().run());
+        return true;
+      }
+
+      if (/^[-*+]$/.test(beforeCursor)) {
+        event.preventDefault();
+        applyEditorMarkdownShortcut(shortcutFrom, selection.from, (chain) => chain.toggleBulletList().run());
+        return true;
+      }
+
+      if (/^\d+\.$/.test(beforeCursor)) {
+        event.preventDefault();
+        applyEditorMarkdownShortcut(shortcutFrom, selection.from, (chain) => chain.toggleOrderedList().run());
+        return true;
+      }
+
+      if (/^[-*+]\s\[(?: |x|X)\]$/.test(beforeCursor)) {
+        event.preventDefault();
+        applyEditorMarkdownShortcut(shortcutFrom, selection.from, (chain) => chain.toggleTaskList().run());
+        return true;
+      }
+    }
+
+    const codeFenceMatch = /^(?:```|~~~)([A-Za-z0-9_-]+)?$/.exec(beforeCursor);
+    if (event.key === "Enter" && codeFenceMatch) {
+      event.preventDefault();
+      applyEditorMarkdownShortcut(shortcutFrom, selection.from, (chain) =>
+        chain.setNode("codeBlock", { language: codeFenceMatch[1] || null }).run()
+      );
+      return true;
+    }
+
+    return false;
+  }
+
   const editor = useEditor(
     {
+      immediatelyRender: false,
       extensions: [
         StarterKit.configure({
           heading: { levels: [1, 2, 3, 4, 5, 6] },
+          codeBlock: false,
           link: false,
           underline: false
         }),
         Underline,
+        CodeBlockWithLanguage,
         Highlight,
         Subscript,
         Superscript,
@@ -1178,13 +2557,45 @@ export default function App() {
         TaskItem.configure({ nested: true }),
         Table.configure({ resizable: true }),
         TableRow,
-        TableHeader,
-        TableCell
+        TableHeaderWithAlignment,
+        TableCellWithAlignment
       ],
       content: renderMarkdownForEditor(markdownText, filePath, outline),
       editorProps: {
         attributes: { class: "editor-surface" },
         handleDOMEvents: {
+          keydown: (view, event) => {
+            if (slashMenuStateRef.current.open) {
+              if (event.key === "ArrowDown") {
+                event.preventDefault();
+                setSlashMenuIndex((current) => (current + 1) % Math.max(1, slashCommandItemsRef.current.length));
+                return true;
+              }
+              if (event.key === "ArrowUp") {
+                event.preventDefault();
+                setSlashMenuIndex(
+                  (current) =>
+                    (current - 1 + Math.max(1, slashCommandItemsRef.current.length)) % Math.max(1, slashCommandItemsRef.current.length)
+                );
+                return true;
+              }
+              if (event.key === "Enter" || event.key === "Tab") {
+                const item = slashCommandItemsRef.current[slashMenuIndex];
+                if (item) {
+                  event.preventDefault();
+                  executeSlashCommandRef.current?.(item);
+                  return true;
+                }
+              }
+              if (event.key === "Escape") {
+                event.preventDefault();
+                closeSlashMenu();
+                return true;
+              }
+            }
+
+            return handleEditorSmartMarkdown(view, event);
+          },
           mousedown(view, event) {
             if (event.button !== 0) {
               return false;
@@ -1210,10 +2621,16 @@ export default function App() {
       onCreate({ editor: instance }) {
         editorHeadingsRef.current = buildEditorHeadingPositions(instance);
         syncEditorModes(instance);
+        syncSlashMenu(instance);
+        syncTableToolbar(instance);
+        window.requestAnimationFrame(() => applyTableLayouts(instance));
       },
       onUpdate({ editor: instance }) {
         editorHeadingsRef.current = buildEditorHeadingPositions(instance);
         syncEditorModes(instance);
+        syncSlashMenu(instance);
+        syncTableToolbar(instance);
+        captureTableLayouts(instance);
         if (programmaticEditorSyncRef.current) {
           programmaticEditorSyncRef.current = false;
           return;
@@ -1238,6 +2655,8 @@ export default function App() {
           setActiveOutlineId(outline[currentHeadingIndex].id);
         }
         syncEditorModes(instance);
+        syncSlashMenu(instance);
+        syncTableToolbar(instance);
       }
     },
     [documentSessionKey]
@@ -1253,6 +2672,18 @@ export default function App() {
   useEffect(() => {
     preferencesRef.current = preferences;
   }, [preferences]);
+
+  useEffect(() => {
+    slashMenuStateRef.current = slashMenuState;
+  }, [slashMenuState]);
+
+  useEffect(() => {
+    slashCommandItemsRef.current = slashCommandItems;
+  }, [slashCommandItems]);
+
+  useEffect(() => {
+    setSlashMenuIndex(0);
+  }, [slashMenuState.query, slashMenuState.open]);
 
   useEffect(
     () => () => {
@@ -1312,6 +2743,7 @@ export default function App() {
       editor.commands.setContent(html, false, { preserveWhitespace: "full" });
       editorHeadingsRef.current = buildEditorHeadingPositions(editor);
       syncEditorModes(editor);
+      window.requestAnimationFrame(() => applyTableLayouts(editor));
       return true;
     };
 
@@ -1379,6 +2811,9 @@ export default function App() {
         case "open-preferences":
           setPreferencesOpen(true);
           break;
+        case "open-command-palette":
+          openCommandPalette();
+          break;
         case "set-view-mode":
           updatePreferences({ viewMode: action.mode });
           break;
@@ -1406,6 +2841,39 @@ export default function App() {
     });
     return unsubscribe;
   }, [editor, filePath, markdownText, preferences, outline, matches, matchIndex, replaceValue]);
+
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      const isModifier = event.metaKey || event.ctrlKey;
+      const key = event.key.toLowerCase();
+
+      if (isModifier && key === "p") {
+        event.preventDefault();
+        openCommandPalette();
+        return;
+      }
+
+      if (isModifier && event.shiftKey && key === "3") {
+        event.preventDefault();
+        updatePreferences({ sidebarVisible: true, sidebarTab: "properties" });
+        return;
+      }
+
+      if (event.key === "Escape" && commandPaletteOpen) {
+        event.preventDefault();
+        closeCommandPalette();
+        return;
+      }
+
+      if (event.key === "Escape" && slashMenuStateRef.current.open) {
+        event.preventDefault();
+        closeSlashMenu();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [commandPaletteOpen, preferences.focusMode, preferences.typewriterMode]);
 
   useEffect(() => {
     if (!findOpen) {
@@ -1462,6 +2930,56 @@ export default function App() {
       if (!isEditingSurfaceTarget(editor, sourceRef.current, event.target)) {
         return;
       }
+      const pastedText = String(event.clipboardData?.getData("text/plain") || "").trim();
+      const sourceFocused = sourceRef.current && (event.target === sourceRef.current || document.activeElement === sourceRef.current);
+      const editorFocused = !sourceFocused && editor?.isFocused;
+      if (pastedText && isProbablyUrl(pastedText)) {
+        if (sourceFocused && applyPastedLinkInSource(pastedText)) {
+          event.preventDefault();
+          setStatus(`Linked selection to ${pastedText}`);
+          return;
+        }
+        if (editor?.state.selection && !editor.state.selection.empty) {
+          event.preventDefault();
+          runEditorCommand((chain) => chain.setLink({ href: pastedText }).run());
+          setStatus(`Linked selection to ${pastedText}`);
+          return;
+        }
+      }
+
+      if (pastedText && editorFocused && looksLikeMarkdownSnippet(pastedText)) {
+        event.preventDefault();
+        const renderedSnippet = renderMarkdownSnippetForEditor(pastedText, filePath);
+        const shouldApplyFrontMatter = renderedSnippet.frontMatterRaw && canPasteFrontMatterAtCursor(editor);
+        if (renderedSnippet.frontMatterRaw && shouldApplyFrontMatter) {
+          const existing = extractYamlFrontMatter(markdownText);
+          const existingParsed = parseFrontMatterFields(existing.content);
+          const incomingParsed = parseFrontMatterFields(extractYamlFrontMatter(renderedSnippet.frontMatterRaw).content);
+
+          if (!existingParsed.isSimple || !incomingParsed.isSimple) {
+            setFrontMatterMergeState(buildFrontMatterMergeState(existing.raw, renderedSnippet.frontMatterRaw, renderedSnippet.html));
+            setStatus("Review front matter merge before inserting");
+            return;
+          }
+
+          setMarkdownText((current) => {
+            const currentFrontMatter = extractYamlFrontMatter(current);
+            const mergedRaw = mergeFrontMatterRaw(currentFrontMatter.raw, renderedSnippet.frontMatterRaw);
+            return prependFrontMatter(mergedRaw, currentFrontMatter.body);
+          });
+          setIsDirty(true);
+        } else if (renderedSnippet.frontMatterRaw) {
+          setStatus("Pasted Markdown snippet and skipped front matter outside document start");
+        }
+        runEditorCommand((chain) => chain.insertContent(renderedSnippet.html).run(), {
+          preserveScroll: true
+        });
+        if (!renderedSnippet.frontMatterRaw || shouldApplyFrontMatter) {
+          setStatus("Inserted Markdown snippet");
+        }
+        return;
+      }
+
       const imageItem = Array.from(event.clipboardData?.items || []).find((item) => item.type.startsWith("image/"));
       if (!imageItem) {
         return;
@@ -1511,7 +3029,36 @@ export default function App() {
   const documentTitle = useMemo(() => basenamePath(filePath), [filePath]);
 
   function updatePreferences(patch) {
-    setPreferences((current) => ({ ...current, ...patch }));
+    setPreferences((current) => ({ ...current, ...(typeof patch === "function" ? patch(current) : patch) }));
+  }
+
+  function rememberRecentFile(nextFilePath) {
+    if (!nextFilePath) {
+      return;
+    }
+    updatePreferences((current) => ({
+      recentFiles: [nextFilePath, ...normalizeRecentFiles(current.recentFiles).filter((path) => path !== nextFilePath)].slice(0, 8)
+    }));
+  }
+
+  function rememberPaletteItem(item) {
+    if (!item) {
+      return;
+    }
+    updatePreferences((current) => {
+      const nextPatch = {};
+      if (item.kind === "command") {
+        const usage = normalizePaletteUsage(current.paletteUsage);
+        nextPatch.paletteUsage = {
+          ...usage,
+          [item.id]: (usage[item.id] || 0) + 1
+        };
+      }
+      if (item.path) {
+        nextPatch.recentFiles = [item.path, ...normalizeRecentFiles(current.recentFiles).filter((path) => path !== item.path)].slice(0, 8);
+      }
+      return nextPatch;
+    });
   }
 
   function handleEditorEndMouseDown(event) {
@@ -1553,6 +3100,7 @@ export default function App() {
     setActiveOutlineId(nextOutline[0]?.id ?? null);
     setDocumentSessionKey((current) => current + 1);
     syncWorkspaceWithFile(nextFilePath);
+    rememberRecentFile(nextFilePath);
   }
 
   async function openDocument() {
@@ -1622,6 +3170,7 @@ export default function App() {
       }
       setIsDirty(false);
       syncWorkspaceWithFile(result.filePath);
+      rememberRecentFile(result.filePath);
       setStatus(`Saved to ${basenamePath(result.filePath)}`);
     }
   }
@@ -1727,9 +3276,67 @@ export default function App() {
     setStatus("Inserted table");
   }
 
+  function handleTableAction(action) {
+    if (!editor) {
+      return;
+    }
+
+    switch (action) {
+      case "add-row-before":
+        runEditorCommand((chain) => chain.addRowBefore().run());
+        break;
+      case "add-row-after":
+        runEditorCommand((chain) => chain.addRowAfter().run());
+        break;
+      case "delete-row":
+        runEditorCommand((chain) => chain.deleteRow().run());
+        break;
+      case "add-col-before":
+        runEditorCommand((chain) => chain.addColumnBefore().run());
+        break;
+      case "add-col-after":
+        runEditorCommand((chain) => chain.addColumnAfter().run());
+        break;
+      case "delete-col":
+        runEditorCommand((chain) => chain.deleteColumn().run());
+        break;
+      case "merge-cells":
+        runEditorCommand((chain) => chain.mergeCells().run());
+        break;
+      case "split-cell":
+        runEditorCommand((chain) => chain.splitCell().run());
+        break;
+      case "align-left":
+        runEditorCommand((chain) => chain.setCellAttribute("textAlign", "left").run());
+        break;
+      case "align-center":
+        runEditorCommand((chain) => chain.setCellAttribute("textAlign", "center").run());
+        break;
+      case "align-right":
+        runEditorCommand((chain) => chain.setCellAttribute("textAlign", "right").run());
+        break;
+      case "toggle-header":
+        runEditorCommand((chain) => chain.toggleHeaderRow().run());
+        break;
+      case "toggle-header-cell":
+        runEditorCommand((chain) => chain.toggleHeaderCell().run());
+        break;
+      case "toggle-header-column":
+        runEditorCommand((chain) => chain.toggleHeaderColumn().run());
+        break;
+      case "delete-table":
+        runEditorCommand((chain) => chain.deleteTable().run());
+        break;
+      default:
+        return;
+    }
+
+    setStatus("Updated table");
+  }
+
   function jumpToOutline(item, index) {
     setActiveOutlineId(item.id);
-    if (preferences.viewMode !== "editor" && sourceRef.current) {
+    if (!["editor", "split"].includes(preferences.viewMode) && sourceRef.current) {
       const offset = getLineStartIndex(markdownText, item.line);
       sourceRef.current.focus();
       sourceRef.current.setSelectionRange(offset, offset + item.text.length);
@@ -1744,6 +3351,157 @@ export default function App() {
 
   function openFindReplace() {
     setFindOpen(true);
+  }
+
+  function openCommandPalette(initialQuery = "") {
+    setCommandPaletteQuery(typeof initialQuery === "string" ? initialQuery : "");
+    setCommandPaletteOpen(true);
+  }
+
+  function closeCommandPalette() {
+    setCommandPaletteOpen(false);
+    setCommandPaletteQuery("");
+  }
+
+  function commitFrontMatterFields(nextFields) {
+    setMarkdownText((current) => updateMarkdownFrontMatter(current, nextFields));
+    setIsDirty(true);
+  }
+
+  function addFrontMatterField() {
+    commitFrontMatterFields([...frontMatterState.fields, { key: "", type: "text", value: "" }]);
+    updatePreferences({ sidebarVisible: true, sidebarTab: "properties" });
+    setStatus("Added a new property");
+  }
+
+  function removeFrontMatterField(index) {
+    commitFrontMatterFields(frontMatterState.fields.filter((_, fieldIndex) => fieldIndex !== index));
+    setStatus("Removed property");
+  }
+
+  function updateFrontMatterField(index, patch) {
+    const nextFields = frontMatterState.fields.map((field, fieldIndex) => {
+      if (fieldIndex !== index) {
+        return field;
+      }
+      const nextType = patch.type || field.type;
+      let nextValue = patch.value ?? field.value;
+      if (typeof nextValue === "string" && nextType === "list") {
+        nextValue = nextValue
+          .split(",")
+          .map((item) => item.trim())
+          .filter(Boolean);
+      }
+      if (Array.isArray(nextValue) && nextType === "text") {
+        nextValue = nextValue.join(", ");
+      }
+      return {
+        ...field,
+        ...patch,
+        type: nextType,
+        value: nextValue
+      };
+    });
+    commitFrontMatterFields(nextFields);
+  }
+
+  function closeFrontMatterMergeDialog() {
+    setFrontMatterMergeState(null);
+  }
+
+  function applyFrontMatterMergeAndInsert({ mergedRaw, keepCurrent = false, replace = false, bodyOnly = false }) {
+    if (!frontMatterMergeState) {
+      return;
+    }
+
+    const snippetHtml = frontMatterMergeState.html;
+    if (!bodyOnly) {
+      setMarkdownText((current) => {
+        const existing = extractYamlFrontMatter(current);
+        const nextRaw = replace ? frontMatterMergeState.incomingRaw : keepCurrent ? existing.raw : mergedRaw;
+        return prependFrontMatter(nextRaw, existing.body);
+      });
+      setIsDirty(true);
+    }
+
+    runEditorCommand((chain) => chain.insertContent(snippetHtml).run(), { preserveScroll: true });
+    setStatus(bodyOnly ? "Inserted body and kept current front matter" : "Merged front matter and inserted content");
+    closeFrontMatterMergeDialog();
+  }
+
+  async function executeCommandPaletteItem(item) {
+    if (!item) {
+      return;
+    }
+
+    rememberPaletteItem(item);
+
+    if (item.kind === "file" && item.path) {
+      closeCommandPalette();
+      await openDocumentFromPath(item.path);
+      return;
+    }
+
+    switch (item.id) {
+      case "new-file":
+        await createNewDocument();
+        break;
+      case "open-file":
+        await openDocument();
+        break;
+      case "open-folder":
+        await pickWorkspaceFolder();
+        break;
+      case "save-file":
+        await saveDocument(false);
+        break;
+      case "find":
+        openFindReplace();
+        break;
+      case "preferences":
+        setPreferencesOpen(true);
+        break;
+      case "view-editor":
+        updatePreferences({ viewMode: "editor" });
+        break;
+      case "view-split":
+        updatePreferences({ viewMode: "split" });
+        break;
+      case "view-source":
+        updatePreferences({ viewMode: "source" });
+        break;
+      case "view-preview":
+        updatePreferences({ viewMode: "preview" });
+        break;
+      case "toggle-focus":
+        updatePreferences({ focusMode: !preferences.focusMode });
+        break;
+      case "toggle-typewriter":
+        updatePreferences({ typewriterMode: !preferences.typewriterMode });
+        break;
+      case "open-outline":
+        updatePreferences({ sidebarVisible: true, sidebarTab: "outline" });
+        break;
+      case "open-files":
+        updatePreferences({ sidebarVisible: true, sidebarTab: "files" });
+        break;
+      case "open-properties":
+        updatePreferences({ sidebarVisible: true, sidebarTab: "properties" });
+        break;
+      case "theme-paper":
+        updatePreferences({ theme: "paper" });
+        break;
+      case "theme-forest":
+        updatePreferences({ theme: "forest" });
+        break;
+      case "theme-midnight":
+        updatePreferences({ theme: "midnight" });
+        break;
+      default:
+        break;
+    }
+
+    closeCommandPalette();
   }
 
   function handleFindQueryChange(value) {
@@ -1817,6 +3575,240 @@ export default function App() {
 
   function handleSourceScroll() {
     syncSourceHighlightScroll();
+  }
+
+  function applySourceTextUpdate(nextText, nextSelectionStart, nextSelectionEnd = nextSelectionStart) {
+    setMarkdownText(nextText);
+    setIsDirty(true);
+    window.requestAnimationFrame(() => {
+      const textarea = sourceRef.current;
+      if (!textarea) {
+        return;
+      }
+      textarea.focus();
+      textarea.setSelectionRange(nextSelectionStart, nextSelectionEnd);
+      syncSourceHighlightScroll();
+    });
+  }
+
+  function indentSourceSelection(outdent = false) {
+    const textarea = sourceRef.current;
+    if (!textarea) {
+      return;
+    }
+
+    const selectionStart = textarea.selectionStart ?? 0;
+    const selectionEnd = textarea.selectionEnd ?? selectionStart;
+    const { lineStart, lineEnd } = getLineBoundaries(markdownText, selectionStart, selectionEnd);
+    const before = markdownText.slice(0, lineStart);
+    const target = markdownText.slice(lineStart, lineEnd);
+    const after = markdownText.slice(lineEnd);
+    const lines = target.split(/\r?\n/);
+    const nextLines = lines.map((line) => {
+      if (!outdent) {
+        return `  ${line}`;
+      }
+      if (line.startsWith("  ")) {
+        return line.slice(2);
+      }
+      if (line.startsWith("\t")) {
+        return line.slice(1);
+      }
+      return line.replace(/^ /, "");
+    });
+    const nextTarget = nextLines.join("\n");
+    const nextText = `${before}${nextTarget}${after}`;
+    const nextSelectionStart = outdent
+      ? Math.max(lineStart, selectionStart - (target.startsWith("  ") || target.startsWith("\t") ? 2 : 1))
+      : selectionStart + 2;
+    const delta = nextTarget.length - target.length;
+    applySourceTextUpdate(nextText, nextSelectionStart, selectionEnd + delta);
+  }
+
+  function continueMarkdownList() {
+    const textarea = sourceRef.current;
+    if (!textarea) {
+      return false;
+    }
+
+    const selectionStart = textarea.selectionStart ?? 0;
+    const selectionEnd = textarea.selectionEnd ?? selectionStart;
+    if (selectionStart !== selectionEnd) {
+      return false;
+    }
+
+    const { lineStart, lineEnd, line } = getCurrentLine(markdownText, selectionStart);
+    const before = markdownText.slice(0, selectionStart);
+    const after = markdownText.slice(selectionEnd);
+
+    const taskMatch = /^(\s*)[-*+]\s\[(?: |x|X)\]\s*(.*)$/.exec(line);
+    if (taskMatch) {
+      const content = taskMatch[2];
+      const prefix = `${taskMatch[1]}- [ ] `;
+      if (!content.trim()) {
+        const nextText = `${markdownText.slice(0, lineStart)}${taskMatch[1]}${markdownText.slice(lineEnd)}`;
+        applySourceTextUpdate(nextText, lineStart + taskMatch[1].length);
+        return true;
+      }
+      const insertion = `\n${prefix}`;
+      applySourceTextUpdate(`${before}${insertion}${after}`, selectionStart + insertion.length);
+      return true;
+    }
+
+    const orderedMatch = /^(\s*)(\d+)\.\s+(.*)$/.exec(line);
+    if (orderedMatch) {
+      const content = orderedMatch[3];
+      if (!content.trim()) {
+        const nextText = `${markdownText.slice(0, lineStart)}${orderedMatch[1]}${markdownText.slice(lineEnd)}`;
+        applySourceTextUpdate(nextText, lineStart + orderedMatch[1].length);
+        return true;
+      }
+      const nextIndex = Number(orderedMatch[2]) + 1;
+      const insertion = `\n${orderedMatch[1]}${nextIndex}. `;
+      applySourceTextUpdate(`${before}${insertion}${after}`, selectionStart + insertion.length);
+      return true;
+    }
+
+    const bulletMatch = /^(\s*)[-*+]\s+(.*)$/.exec(line);
+    if (bulletMatch) {
+      const content = bulletMatch[2];
+      if (!content.trim()) {
+        const nextText = `${markdownText.slice(0, lineStart)}${bulletMatch[1]}${markdownText.slice(lineEnd)}`;
+        applySourceTextUpdate(nextText, lineStart + bulletMatch[1].length);
+        return true;
+      }
+      const insertion = `\n${bulletMatch[1]}- `;
+      applySourceTextUpdate(`${before}${insertion}${after}`, selectionStart + insertion.length);
+      return true;
+    }
+
+    const quoteMatch = /^(\s*(?:>\s*)+)(.*)$/.exec(line);
+    if (quoteMatch) {
+      const content = quoteMatch[2];
+      if (!content.trim()) {
+        const nextText = `${markdownText.slice(0, lineStart)}${markdownText.slice(lineEnd)}`;
+        applySourceTextUpdate(nextText, lineStart);
+        return true;
+      }
+      const normalizedPrefix = quoteMatch[1].replace(/\s*$/, " ");
+      const insertion = `\n${normalizedPrefix}`;
+      applySourceTextUpdate(`${before}${insertion}${after}`, selectionStart + insertion.length);
+      return true;
+    }
+
+    return false;
+  }
+
+  function handleSourceBackspaceShortcut() {
+    const textarea = sourceRef.current;
+    if (!textarea) {
+      return false;
+    }
+
+    const selectionStart = textarea.selectionStart ?? 0;
+    const selectionEnd = textarea.selectionEnd ?? selectionStart;
+    if (selectionStart !== selectionEnd) {
+      return false;
+    }
+
+    const { lineStart, lineEnd, line } = getCurrentLine(markdownText, selectionStart);
+    if (selectionStart !== lineEnd) {
+      return false;
+    }
+
+    const markerMatch = /^(\s*)(?:[-*+]\s|\d+\.\s|[-*+]\s\[(?: |x|X)\]\s|(?:>\s*)+)$/u.exec(line);
+    if (!markerMatch) {
+      return false;
+    }
+
+    const nextText = `${markdownText.slice(0, lineStart)}${markerMatch[1]}${markdownText.slice(lineEnd)}`;
+    applySourceTextUpdate(nextText, lineStart + markerMatch[1].length);
+    return true;
+  }
+
+  function handleSourceAutoPair(event) {
+    const textarea = sourceRef.current;
+    if (!textarea || event.ctrlKey || event.metaKey || event.altKey || event.key.length !== 1) {
+      return false;
+    }
+
+    const pairMap = {
+      "*": "*",
+      "_": "_",
+      "~": "~",
+      "`": "`",
+      "\"": "\"",
+      "'": "'",
+      "(": ")",
+      "[": "]",
+      "{": "}",
+      "^": "^"
+    };
+
+    const closing = pairMap[event.key];
+    if (!closing) {
+      return false;
+    }
+
+    const selectionStart = textarea.selectionStart ?? 0;
+    const selectionEnd = textarea.selectionEnd ?? selectionStart;
+    const before = markdownText.slice(0, selectionStart);
+    const selected = markdownText.slice(selectionStart, selectionEnd);
+    const after = markdownText.slice(selectionEnd);
+    const nextChar = markdownText[selectionEnd] || "";
+    const allowAutoPair = selectionStart !== selectionEnd || !nextChar || /\s|[)\]}>.,!?]/.test(nextChar);
+
+    if (!allowAutoPair) {
+      return false;
+    }
+
+    event.preventDefault();
+    if (selectionStart !== selectionEnd) {
+      applySourceTextUpdate(`${before}${event.key}${selected}${closing}${after}`, selectionStart + 1, selectionEnd + 1);
+      return true;
+    }
+
+    applySourceTextUpdate(`${before}${event.key}${closing}${after}`, selectionStart + 1);
+    return true;
+  }
+
+  function handleSourceKeyDown(event) {
+    if (event.key === "Tab") {
+      event.preventDefault();
+      indentSourceSelection(event.shiftKey);
+      return;
+    }
+
+    if (event.key === "Enter") {
+      if (continueMarkdownList()) {
+        event.preventDefault();
+      }
+      return;
+    }
+
+    if (event.key === "Backspace" && handleSourceBackspaceShortcut()) {
+      event.preventDefault();
+      return;
+    }
+
+    handleSourceAutoPair(event);
+  }
+
+  function applyPastedLinkInSource(url) {
+    const textarea = sourceRef.current;
+    if (!textarea) {
+      return false;
+    }
+    const selectionStart = textarea.selectionStart ?? 0;
+    const selectionEnd = textarea.selectionEnd ?? selectionStart;
+    if (selectionStart === selectionEnd) {
+      return false;
+    }
+    const before = markdownText.slice(0, selectionStart);
+    const selection = markdownText.slice(selectionStart, selectionEnd);
+    const after = markdownText.slice(selectionEnd);
+    applySourceTextUpdate(`${before}[${selection}](${url})${after}`, selectionStart + 1, selectionStart + 1 + selection.length);
+    return true;
   }
 
   function insertIntoSource(content, options = {}) {
@@ -2015,21 +4007,23 @@ export default function App() {
     }
   }
 
-  const showEditor = preferences.viewMode === "editor";
+  const showEditor = ["editor", "split"].includes(preferences.viewMode);
   const showSource = preferences.viewMode === "source" || findOpen;
-  const showPreview = preferences.viewMode === "preview";
+  const showPreview = ["preview", "split"].includes(preferences.viewMode);
   const findSummary = findOpen && findQuery ? `${matches.length === 0 ? "0" : `${matchIndex + 1}/${matches.length}`} matches` : null;
   const documentPathLabel = filePath || preferences.workspaceRoot || "";
 
   return (
     <div className={`app-shell theme-${preferences.theme}`}>
       <Toolbar
+        focusMode={preferences.focusMode}
         documentPath={documentPathLabel}
         documentTitle={documentTitle}
         editor={editor}
         isDirty={isDirty}
         onNew={createNewDocument}
         onOpen={openDocument}
+        onOpenPalette={openCommandPalette}
         onRevealCurrentFile={revealCurrentFile}
         onInsertImage={insertImage}
         onInsertTable={insertTable}
@@ -2041,8 +4035,11 @@ export default function App() {
         onOpenFind={openFindReplace}
         onOpenPreferences={() => setPreferencesOpen(true)}
         onSetViewMode={(mode) => updatePreferences({ viewMode: mode })}
+        onToggleFocusMode={() => updatePreferences({ focusMode: !preferences.focusMode })}
         onToggleSidebar={() => updatePreferences({ sidebarVisible: !preferences.sidebarVisible })}
+        onToggleTypewriterMode={() => updatePreferences({ typewriterMode: !preferences.typewriterMode })}
         sidebarVisible={preferences.sidebarVisible}
+        typewriterMode={preferences.typewriterMode}
         viewMode={preferences.viewMode}
       />
 
@@ -2076,7 +4073,13 @@ export default function App() {
             sidebarTab={preferences.sidebarTab}
             onSidebarTabChange={(tab) => updatePreferences({ sidebarTab: tab })}
             filterText={sidebarFilter}
+            frontMatterFields={frontMatterState.fields}
+            frontMatterRaw={frontMatterState.raw}
+            isSimpleFrontMatter={frontMatterState.isSimple}
+            onAddFrontMatterField={addFrontMatterField}
+            onFrontMatterFieldChange={updateFrontMatterField}
             onFilterChange={setSidebarFilter}
+            onRemoveFrontMatterField={removeFrontMatterField}
           />
         ) : null}
 
@@ -2084,6 +4087,7 @@ export default function App() {
           {showEditor ? (
             <section className="editor-pane">
               <div className="paper">
+                <TableToolbar visible={tableToolbarVisible} selectionCount={tableSelectionCount} onAction={handleTableAction} />
                 <EditorContent editor={editor} />
                 <div className="editor-end-hitbox" onMouseDown={handleEditorEndMouseDown} />
               </div>
@@ -2105,6 +4109,7 @@ export default function App() {
                   value={markdownText}
                   onChange={handleSourceChange}
                   onClick={handleSourceSelection}
+                  onKeyDown={handleSourceKeyDown}
                   onKeyUp={handleSourceSelection}
                   onScroll={handleSourceScroll}
                 />
@@ -2136,6 +4141,62 @@ export default function App() {
         preferences={preferences}
         onChange={updatePreferences}
         onClose={() => setPreferencesOpen(false)}
+      />
+
+      <CommandPalette
+        open={commandPaletteOpen}
+        query={commandPaletteQuery}
+        items={commandPaletteItems}
+        suggestions={commandPaletteSuggestions}
+        onQueryChange={setCommandPaletteQuery}
+        onClose={closeCommandPalette}
+        onSelect={executeCommandPaletteItem}
+      />
+
+      <SlashCommandMenu
+        visible={slashMenuState.open}
+        items={slashCommandItems}
+        position={{ top: slashMenuState.top, left: slashMenuState.left }}
+        selectedIndex={Math.min(slashMenuIndex, Math.max(0, slashCommandItems.length - 1))}
+        onHover={setSlashMenuIndex}
+        onSelect={executeSlashCommand}
+      />
+
+      <FrontMatterMergeDialog
+        open={Boolean(frontMatterMergeState)}
+        currentRaw={frontMatterMergeState?.currentRaw}
+        incomingRaw={frontMatterMergeState?.incomingRaw}
+        mergedRaw={frontMatterMergeState?.mergedRaw || ""}
+        mergedValue={frontMatterMergeState?.mergedValue}
+        onChangeMerged={(value) =>
+          setFrontMatterMergeState((current) => {
+            if (!current) {
+              return current;
+            }
+            const parsed = parseYamlObject(extractYamlFrontMatter(value).content || value);
+            return {
+              ...current,
+              mergedRaw: value,
+              mergedValue: parsed ?? current.mergedValue
+            };
+          })
+        }
+        onChangeMergedValue={(value) =>
+          setFrontMatterMergeState((current) =>
+            current
+              ? {
+                  ...current,
+                  mergedValue: value,
+                  mergedRaw: dumpYamlObject(value)
+                }
+              : current
+          )
+        }
+        onApplyMerged={() => applyFrontMatterMergeAndInsert({ mergedRaw: frontMatterMergeState?.mergedRaw || "" })}
+        onKeepCurrent={() => applyFrontMatterMergeAndInsert({ keepCurrent: true })}
+        onReplace={() => applyFrontMatterMergeAndInsert({ replace: true })}
+        onBodyOnly={() => applyFrontMatterMergeAndInsert({ bodyOnly: true })}
+        onCancel={closeFrontMatterMergeDialog}
       />
     </div>
   );

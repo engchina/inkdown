@@ -48,7 +48,10 @@ function getDefaultPreferences() {
     sidebarTab: "outline",
     focusMode: false,
     typewriterMode: false,
-    workspaceRoot: null
+    workspaceRoot: null,
+    recentFiles: [],
+    paletteUsage: {},
+    tableLayouts: {}
   };
 }
 
@@ -90,7 +93,6 @@ async function loadPreferences() {
       ...getDefaultPreferences(),
       ...JSON.parse(raw)
     };
-    if (prefs.viewMode === "split") prefs.viewMode = "editor";
     return prefs;
   } catch {
     return getDefaultPreferences();
@@ -565,6 +567,12 @@ function rebuildMenu(window) {
         { role: "selectAll", label: "Select All" },
         { type: "separator" },
         {
+          label: "Command Palette",
+          accelerator: "CmdOrCtrl+P",
+          click: () => emitMenuAction(window, { type: "open-command-palette" })
+        },
+        { type: "separator" },
+        {
           label: "Find and Replace",
           accelerator: "CmdOrCtrl+F",
           click: () => emitMenuAction(window, { type: "open-find" })
@@ -689,6 +697,11 @@ function rebuildMenu(window) {
           click: () => emitMenuAction(window, { type: "set-sidebar-tab", tab: "files" })
         },
         {
+          label: "Properties",
+          accelerator: "CmdOrCtrl+Shift+3",
+          click: () => emitMenuAction(window, { type: "set-sidebar-tab", tab: "properties" })
+        },
+        {
           label: "Outline",
           accelerator: "CmdOrCtrl+Shift+1",
           click: () => emitMenuAction(window, { type: "set-sidebar-tab", tab: "outline" })
@@ -699,6 +712,12 @@ function rebuildMenu(window) {
           type: "radio",
           checked: preferences.viewMode === "editor",
           click: () => emitMenuAction(window, { type: "set-view-mode", mode: "editor" })
+        },
+        {
+          label: "Split View",
+          type: "radio",
+          checked: preferences.viewMode === "split",
+          click: () => emitMenuAction(window, { type: "set-view-mode", mode: "split" })
         },
         {
           label: "Source Only",
