@@ -1,5 +1,6 @@
 import React, { startTransition, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { Mark, mergeAttributes } from "@tiptap/core";
+import { TextSelection } from "@tiptap/pm/state";
 import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Underline from "@tiptap/extension-underline";
@@ -8,7 +9,7 @@ import Image from "@tiptap/extension-image";
 import Placeholder from "@tiptap/extension-placeholder";
 import TaskList from "@tiptap/extension-task-list";
 import TaskItem from "@tiptap/extension-task-item";
-import Table from "@tiptap/extension-table";
+import { Table } from "@tiptap/extension-table";
 import TableRow from "@tiptap/extension-table-row";
 import TableHeader from "@tiptap/extension-table-header";
 import TableCell from "@tiptap/extension-table-cell";
@@ -791,6 +792,29 @@ function getLineBoundaries(markdown, selectionStart, selectionEnd) {
   return { lineStart, lineEnd };
 }
 
+function placeCursorInTrailingParagraph(view) {
+  const paragraphNode = view.state.schema.nodes.paragraph;
+  if (!paragraphNode) {
+    view.focus();
+    return false;
+  }
+
+  const lastNode = view.state.doc.lastChild;
+  const hasTrailingEmptyParagraph =
+    lastNode?.type?.name === "paragraph" && lastNode.childCount === 0 && (lastNode.textContent || "") === "";
+
+  let transaction = view.state.tr;
+  if (!hasTrailingEmptyParagraph) {
+    transaction = transaction.insert(transaction.doc.content.size, paragraphNode.create());
+  }
+
+  const endPos = transaction.doc.content.size;
+  transaction = transaction.setSelection(TextSelection.create(transaction.doc, endPos)).scrollIntoView();
+  view.dispatch(transaction);
+  view.focus();
+  return true;
+}
+
 turndown.addRule("taskListItems", {
   filter(node) {
     return node.nodeName === "LI" && node.getAttribute("data-type") === "taskItem";
@@ -941,7 +965,29 @@ export default function App() {
       ],
       content: renderMarkdownForEditor(markdownText, filePath, outline),
       editorProps: {
-        attributes: { class: "editor-surface" }
+        attributes: { class: "editor-surface" },
+        handleDOMEvents: {
+          mousedown(view, event) {
+            if (event.button !== 0) {
+              return false;
+            }
+
+            const root = view.dom;
+            const target = event.target;
+            if (!(root instanceof HTMLElement) || !(target instanceof HTMLElement) || target !== root) {
+              return false;
+            }
+
+            const blockElements = Array.from(root.children).filter((child) => child instanceof HTMLElement);
+            const lastBlock = blockElements.at(-1);
+            if (lastBlock && event.clientY < lastBlock.getBoundingClientRect().bottom) {
+              return false;
+            }
+
+            event.preventDefault();
+            return placeCursorInTrailingParagraph(view);
+          }
+        }
       },
       onCreate({ editor: instance }) {
         editorHeadingsRef.current = buildEditorHeadingPositions(instance);
@@ -1037,12 +1083,13 @@ export default function App() {
       programmaticMarkdownSyncRef.current = false;
       return;
     }
-    const html = renderMarkdownForEditor(markdownText, filePath, outline);
+    const nextOutline = extractOutlineFromMarkdown(markdownText);
+    const html = renderMarkdownForEditor(markdownText, filePath, nextOutline);
     programmaticEditorSyncRef.current = true;
     editor.commands.setContent(html, false, { preserveWhitespace: "full" });
     editorHeadingsRef.current = buildEditorHeadingPositions(editor);
     syncEditorModes(editor);
-  }, [markdownText, filePath, outline, editor]);
+  }, [markdownText, filePath, editor]);
 
   useEffect(() => {
     if (editor) {
@@ -1181,6 +1228,14 @@ export default function App() {
 
   function updatePreferences(patch) {
     setPreferences((current) => ({ ...current, ...patch }));
+  }
+
+  function handleEditorEndMouseDown(event) {
+    if (!editor || event.button !== 0) {
+      return;
+    }
+    event.preventDefault();
+    placeCursorInTrailingParagraph(editor.view);
   }
 
   function setStatus(message) {
@@ -1725,6 +1780,7 @@ export default function App() {
                   <div className={`sync-state${isDirty ? " dirty" : ""}`}>{isDirty ? "Unsaved" : "Saved"}</div>
                 </div>
                 <EditorContent editor={editor} />
+                <div className="editor-end-hitbox" onMouseDown={handleEditorEndMouseDown} />
               </div>
             </section>
           ) : null}

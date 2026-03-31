@@ -452,6 +452,11 @@ select {
   color: var(--text);
 }
 
+.editor-end-hitbox {
+  min-height: 72px;
+  cursor: text;
+}
+
 .editor-surface > :first-child,
 .preview-surface > :first-child {
   margin-top: 0;
