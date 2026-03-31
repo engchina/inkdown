@@ -755,8 +755,14 @@ function getLineStartIndex(markdown, lineNumber) {
 }
 
 function getActiveEditorBlock(editor) {
-  const view = editor?.view;
-  const root = view?.dom;
+  let view;
+  let root;
+  try {
+    view = editor?.view;
+    root = view?.dom;
+  } catch {
+    return null;
+  }
   const selection = editor?.state?.selection;
   if (!view || !root || !selection) {
     return null;
@@ -781,6 +787,14 @@ function getActiveEditorBlock(editor) {
   }
 
   return root.firstElementChild instanceof HTMLElement ? root.firstElementChild : null;
+}
+
+function hasMountedEditorView(editor) {
+  try {
+    return editor?.view?.dom instanceof HTMLElement;
+  } catch {
+    return false;
+  }
 }
 
 function getLineBoundaries(markdown, selectionStart, selectionEnd) {
@@ -927,10 +941,10 @@ export default function App() {
   );
 
   function syncEditorModes(instance) {
-    const root = instance?.view?.dom;
-    if (!root) {
+    if (!hasMountedEditorView(instance)) {
       return;
     }
+    const root = instance.view.dom;
     const activeBlock = getActiveEditorBlock(instance);
     Array.from(root.children).forEach((child) => {
       child.classList.remove("editor-block-muted", "editor-block-active");
@@ -948,7 +962,11 @@ export default function App() {
   const editor = useEditor(
     {
       extensions: [
-        StarterKit.configure({ heading: { levels: [1, 2, 3, 4, 5, 6] } }),
+        StarterKit.configure({
+          heading: { levels: [1, 2, 3, 4, 5, 6] },
+          link: false,
+          underline: false
+        }),
         Underline,
         Highlight,
         Subscript,
@@ -1083,12 +1101,30 @@ export default function App() {
       programmaticMarkdownSyncRef.current = false;
       return;
     }
-    const nextOutline = extractOutlineFromMarkdown(markdownText);
-    const html = renderMarkdownForEditor(markdownText, filePath, nextOutline);
-    programmaticEditorSyncRef.current = true;
-    editor.commands.setContent(html, false, { preserveWhitespace: "full" });
-    editorHeadingsRef.current = buildEditorHeadingPositions(editor);
-    syncEditorModes(editor);
+    const syncEditorContent = () => {
+      if (!hasMountedEditorView(editor)) {
+        return false;
+      }
+      const nextOutline = extractOutlineFromMarkdown(markdownText);
+      const html = renderMarkdownForEditor(markdownText, filePath, nextOutline);
+      programmaticEditorSyncRef.current = true;
+      editor.commands.setContent(html, false, { preserveWhitespace: "full" });
+      editorHeadingsRef.current = buildEditorHeadingPositions(editor);
+      syncEditorModes(editor);
+      return true;
+    };
+
+    if (syncEditorContent()) {
+      return;
+    }
+
+    const frameId = window.requestAnimationFrame(() => {
+      syncEditorContent();
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+    };
   }, [markdownText, filePath, editor]);
 
   useEffect(() => {
@@ -1231,7 +1267,7 @@ export default function App() {
   }
 
   function handleEditorEndMouseDown(event) {
-    if (!editor || event.button !== 0) {
+    if (!editor || event.button !== 0 || !hasMountedEditorView(editor)) {
       return;
     }
     event.preventDefault();
