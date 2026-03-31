@@ -1672,43 +1672,52 @@ function getLineStartIndex(markdown, lineNumber) {
 }
 
 function getActiveEditorBlock(editor) {
-  let view;
-  let root;
+  if (!hasMountedEditorView(editor)) {
+    return null;
+  }
+
   try {
-    view = editor?.view;
-    root = view?.dom;
+    const view = editor.view;
+    const root = view.dom;
+    const selection = editor?.state?.selection;
+    const $from = selection?.$from;
+    if (!selection || !$from) {
+      return root.firstElementChild instanceof HTMLElement ? root.firstElementChild : null;
+    }
+
+    for (let depth = $from.depth; depth > 0; depth -= 1) {
+      let blockPos;
+      let domNode;
+      try {
+        blockPos = $from.before(depth);
+        domNode = view.nodeDOM(blockPos);
+      } catch {
+        continue;
+      }
+      if (!(domNode instanceof HTMLElement)) {
+        continue;
+      }
+
+      let node = domNode;
+      while (node && node.parentElement !== root) {
+        node = node.parentElement;
+      }
+
+      if (node && node.parentElement === root) {
+        return node;
+      }
+    }
+
+    return root.firstElementChild instanceof HTMLElement ? root.firstElementChild : null;
   } catch {
     return null;
   }
-  const selection = editor?.state?.selection;
-  if (!view || !root || !selection) {
-    return null;
-  }
-
-  const { $from } = selection;
-  for (let depth = $from.depth; depth > 0; depth -= 1) {
-    const blockPos = $from.before(depth);
-    const domNode = view.nodeDOM(blockPos);
-    if (!(domNode instanceof HTMLElement)) {
-      continue;
-    }
-
-    let node = domNode;
-    while (node && node.parentElement !== root) {
-      node = node.parentElement;
-    }
-
-    if (node && node.parentElement === root) {
-      return node;
-    }
-  }
-
-  return root.firstElementChild instanceof HTMLElement ? root.firstElementChild : null;
 }
 
 function hasMountedEditorView(editor) {
   try {
-    return editor?.view?.dom instanceof HTMLElement;
+    const view = editor?.view;
+    return view?.dom instanceof HTMLElement && view?.docView != null && !view?.isDestroyed;
   } catch {
     return false;
   }
@@ -3343,6 +3352,46 @@ export default function App() {
       return;
     }
 
+    const selection = editor.state.selection;
+    const tableSelection = selection instanceof CellSelection ? selection : null;
+
+    const selectTableAxis = (axis) => {
+      if (!tableSelection) {
+        return false;
+      }
+      const $cell = tableSelection.$anchorCell;
+      const table = $cell.node(-1);
+      const tableStart = $cell.start(-1);
+      const map = TableMap.get(table);
+      const cellIndex = map.map.indexOf($cell.pos - tableStart);
+      const row = Math.floor(cellIndex / map.width);
+      const col = cellIndex % map.width;
+      const anchorIndex = axis === "row" ? row * map.width : col;
+      const headIndex = axis === "row" ? row * map.width + (map.width - 1) : col + map.width * (map.height - 1);
+      runEditorCommand((chain) =>
+        chain
+          .setCellSelection({
+            anchorCell: tableStart + map.map[anchorIndex],
+            headCell: tableStart + map.map[headIndex]
+          })
+          .run()
+      );
+      return true;
+    };
+
+    const clearSelectedCells = () => {
+      if (!tableSelection) {
+        return false;
+      }
+      const { tr, schema } = editor.state;
+      const paragraph = schema.nodes.paragraph;
+      tableSelection.forEachCell((cell, pos) => {
+        tr.replaceWith(pos + 1, pos + cell.nodeSize - 1, paragraph.create());
+      });
+      editor.view.dispatch(tr);
+      return true;
+    };
+
     switch (action) {
       case "add-row-before":
         runEditorCommand((chain) => chain.addRowBefore().run());
@@ -3376,6 +3425,15 @@ export default function App() {
         break;
       case "align-right":
         runEditorCommand((chain) => chain.setCellAttribute("textAlign", "right").run());
+        break;
+      case "clear-cells":
+        clearSelectedCells();
+        break;
+      case "select-row":
+        selectTableAxis("row");
+        break;
+      case "select-col":
+        selectTableAxis("col");
         break;
       case "toggle-header":
         runEditorCommand((chain) => chain.toggleHeaderRow().run());
