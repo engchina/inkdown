@@ -1,6 +1,6 @@
 import React, { startTransition, useDeferredValue, useEffect, useId, useMemo, useRef, useState } from "react";
 import { Mark, mergeAttributes } from "@tiptap/core";
-import { TextSelection } from "@tiptap/pm/state";
+import { Selection, TextSelection } from "@tiptap/pm/state";
 import { CellSelection, TableMap } from "@tiptap/pm/tables";
 import { EditorContent, NodeViewContent, NodeViewWrapper, ReactNodeViewRenderer, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
@@ -79,6 +79,12 @@ const defaultPreferences = {
     orderedList: true,
     taskList: true,
     codeFence: true
+  },
+  smartTransformSource: {
+    tabIndent: true,
+    continueList: true,
+    autoPair: true,
+    literalEscape: true
   },
   workspaceRoot: null,
   recentFiles: [],
@@ -241,6 +247,24 @@ function CodeBlockNodeView({ editor, getPos, node, updateAttributes }) {
   const [auxPreviewHtml, setAuxPreviewHtml] = useState("");
   const [mermaidRefreshKey, setMermaidRefreshKey] = useState(0);
   const highlightLanguage = useMemo(() => normalizeHighlightLanguage(activeValue), [activeValue]);
+  const validationState = useMemo(() => {
+    try {
+      if (activeValue === "json") {
+        JSON.parse(node.textContent || "");
+        return { kind: "valid", label: "JSON valid" };
+      }
+      if (["yaml", "yml"].includes(activeValue)) {
+        yaml.load(String(node.textContent || ""));
+        return { kind: "valid", label: "YAML valid" };
+      }
+      if (activeValue === "html") {
+        return { kind: "info", label: "HTML preview" };
+      }
+    } catch (error) {
+      return { kind: "invalid", label: String(error.message || error) };
+    }
+    return null;
+  }, [activeValue, node.textContent]);
   const lineNumbers = useMemo(() => {
     const count = Math.max(1, String(node.textContent || "").split("\n").length);
     return Array.from({ length: count }, (_, index) => index + 1);
@@ -391,6 +415,7 @@ function CodeBlockNodeView({ editor, getPos, node, updateAttributes }) {
             </option>
           ))}
         </select>
+        {validationState ? <span className={`code-block-status ${validationState.kind}`}>{validationState.label}</span> : null}
         <button
           className="tool-button tool-button-ghost code-block-copy-button"
           type="button"
@@ -1855,8 +1880,8 @@ function placeCursorInTrailingParagraph(view) {
     transaction = transaction.insert(transaction.doc.content.size, paragraphNode.create());
   }
 
-  const endPos = transaction.doc.content.size;
-  transaction = transaction.setSelection(TextSelection.create(transaction.doc, endPos)).scrollIntoView();
+  const endSelection = Selection.atEnd(transaction.doc);
+  transaction = transaction.setSelection(endSelection).scrollIntoView();
   view.dispatch(transaction);
   view.focus();
   return true;
@@ -1910,6 +1935,18 @@ turndown.addRule("codeBlocksWithLanguage", {
       "";
     const value = code?.textContent?.replace(/\n$/, "") || "";
     return `\n\n\`\`\`${language}\n${value}\n\`\`\`\n\n`;
+  }
+});
+
+turndown.addRule("headings", {
+  filter(node) {
+    return /^H[1-6]$/.test(node.nodeName);
+  },
+  replacement(content, node) {
+    const level = Number(node.nodeName.slice(1));
+    const prefix = "#".repeat(level);
+    const text = content.trim();
+    return `\n\n${prefix} ${text}\n\n`;
   }
 });
 
@@ -2575,7 +2612,7 @@ export default function App() {
   });
 
   function applyEditorMarkdownShortcut(rangeFrom, rangeTo, apply) {
-    runEditorCommand((chain) => apply(chain.deleteRange({ from: rangeFrom, to: rangeTo })));
+    return runEditorCommand((chain) => apply(chain.deleteRange({ from: rangeFrom, to: rangeTo })));
   }
 
   function isEditorSelectionInsideList(selection) {
@@ -2587,7 +2624,10 @@ export default function App() {
       inTaskItem: names.includes("taskItem"),
       inListItem: names.includes("listItem"),
       inBulletList: names.includes("bulletList"),
-      inOrderedList: names.includes("orderedList")
+      inOrderedList: names.includes("orderedList"),
+      inBlockquote: names.includes("blockquote"),
+      inHeading: selection.$from.parent.type.name === "heading",
+      inCodeBlock: selection.$from.parent.type.name === "codeBlock"
     };
   }
 
@@ -2630,30 +2670,157 @@ export default function App() {
       return true;
     }
 
+    if (event.key === "Enter" && state.inHeading) {
+      event.preventDefault();
+      if (emptyTextblock) {
+        runEditorCommand((chain) => chain.setParagraph().run());
+        return true;
+      }
+      runEditorCommand((chain) => chain.splitBlock().setParagraph().run());
+      return true;
+    }
+
+    if (event.key === "Enter" && emptyTextblock && state.inBlockquote) {
+      event.preventDefault();
+      runEditorCommand((chain) => chain.toggleBlockquote().run());
+      return true;
+    }
+
     if (event.key === "Backspace" && cursorAtStart && emptyTextblock && (state.inTaskItem || state.inListItem)) {
       event.preventDefault();
       exitCurrentListItem(selection);
       return true;
     }
 
-    if (event.key === "Backspace" && cursorAtStart && emptyTextblock) {
-      if ($from.parent.type.name === "heading") {
+    if (event.key === "Backspace" && cursorAtStart) {
+      if (state.inHeading) {
         event.preventDefault();
         runEditorCommand((chain) => chain.setParagraph().run());
         return true;
       }
 
-      if ($from.parent.type.name === "blockquote") {
+      if (state.inBlockquote) {
         event.preventDefault();
         runEditorCommand((chain) => chain.toggleBlockquote().run());
         return true;
       }
 
-      if ($from.parent.type.name === "codeBlock") {
+      if (emptyTextblock && state.inCodeBlock) {
         event.preventDefault();
         runEditorCommand((chain) => chain.clearNodes().setParagraph().run());
         return true;
       }
+    }
+
+    return false;
+  }
+
+  function handleEditorSmartTextInput(view, from, to, text) {
+    if (!preferencesRef.current.smartMarkdownTransform) {
+      return false;
+    }
+
+    if (suppressNextSmartTransformRef.current) {
+      suppressNextSmartTransformRef.current = false;
+      return false;
+    }
+
+    const selection = view.state.selection;
+    if (!selection.empty || selection.from !== from || selection.to !== to) {
+      return false;
+    }
+
+    const { $from } = selection;
+    const parent = $from.parent;
+    if (!parent?.isTextblock || parent.type.name === "codeBlock") {
+      return false;
+    }
+
+    const beforeCursor = parent.textContent.slice(0, $from.parentOffset);
+    const afterCursor = parent.textContent.slice($from.parentOffset);
+    const shortcutFrom = selection.from - beforeCursor.length;
+    const transformRules = preferencesRef.current.smartTransformRules || {};
+
+    if (text === "`") {
+      if (/`+$/.test(beforeCursor)) {
+        return false;
+      }
+
+      const openingIndex = beforeCursor.lastIndexOf("`");
+      if (openingIndex === -1) {
+        return false;
+      }
+
+      const content = beforeCursor.slice(openingIndex + 1);
+      if (!content || /`/.test(content)) {
+        return false;
+      }
+
+      const codeMark = view.state.schema.marks.code;
+      if (!codeMark) {
+        return false;
+      }
+
+      const markFrom = selection.from - content.length - 1;
+      const tr = view.state.tr.delete(markFrom, markFrom + 1);
+      const mappedFrom = tr.mapping.map(markFrom);
+      const mappedTo = tr.mapping.map(selection.from);
+      tr.addMark(mappedFrom, mappedTo, codeMark.create());
+      tr.setSelection(TextSelection.create(tr.doc, mappedTo));
+      view.dispatch(tr.scrollIntoView());
+      flashActiveEditorBlock();
+      setHint("Inline code.");
+      return true;
+    }
+
+    if (text !== " " || parent.type.name !== "paragraph") {
+      return false;
+    }
+
+    const escapedSpacePrefix = /^\\(#{1,6}|>|[-*+]|\d+\.|[-*+]\s\[(?: |x|X)\])$/.exec(beforeCursor);
+    if (escapedSpacePrefix) {
+      applyEditorMarkdownShortcut(shortcutFrom, selection.from, (chain) =>
+        chain.insertContent(`${escapedSpacePrefix[1]} `).run()
+      );
+      setHint("Inserted literal Markdown marker.");
+      return true;
+    }
+
+    if ((transformRules.heading ?? true) && /^#{1,6}$/.test(beforeCursor) && !afterCursor.length) {
+      applyEditorMarkdownShortcut(shortcutFrom, selection.from, (chain) =>
+        chain.toggleHeading({ level: beforeCursor.length }).run()
+      );
+      flashActiveEditorBlock();
+      setHint(`Heading ${beforeCursor.length}. Backspace on empty heading returns to paragraph.`);
+      return true;
+    }
+
+    if ((transformRules.blockquote ?? true) && /^>$/.test(beforeCursor) && !afterCursor.length) {
+      applyEditorMarkdownShortcut(shortcutFrom, selection.from, (chain) => chain.toggleBlockquote().run());
+      flashActiveEditorBlock();
+      setHint("Blockquote. Backspace on empty quote returns to paragraph.");
+      return true;
+    }
+
+    if ((transformRules.bulletList ?? true) && /^[-*+]$/.test(beforeCursor) && !afterCursor.length) {
+      applyEditorMarkdownShortcut(shortcutFrom, selection.from, (chain) => chain.toggleBulletList().run());
+      flashActiveEditorBlock();
+      setHint("Bullet list. Backspace on empty item exits the list.");
+      return true;
+    }
+
+    if ((transformRules.orderedList ?? true) && /^\d+\.$/.test(beforeCursor) && !afterCursor.length) {
+      applyEditorMarkdownShortcut(shortcutFrom, selection.from, (chain) => chain.toggleOrderedList().run());
+      flashActiveEditorBlock();
+      setHint("Ordered list. Backspace on empty item exits the list.");
+      return true;
+    }
+
+    if ((transformRules.taskList ?? true) && /^[-*+]\s\[(?: |x|X)\]$/.test(beforeCursor) && !afterCursor.length) {
+      applyEditorMarkdownShortcut(shortcutFrom, selection.from, (chain) => chain.toggleTaskList().run());
+      flashActiveEditorBlock();
+      setHint("Task list. Backspace on empty item exits the list.");
+      return true;
     }
 
     return false;
@@ -2685,11 +2852,13 @@ export default function App() {
     }
 
     const beforeCursor = parent.textContent.slice(0, $from.parentOffset);
+    const afterCursor = parent.textContent.slice($from.parentOffset);
     const shortcutFrom = selection.from - beforeCursor.length;
-    const escapedSpacePrefix = /^\\(#{1,6}|>|[-*+]|\d+\.|[-*+]\s\[(?: |x|X)\])$/.exec(beforeCursor);
+    const isSpaceInput = event.key === " " || event.key === "Spacebar" || event.code === "Space";
     const transformRules = preferencesRef.current.smartTransformRules || {};
 
-    if (event.key === " ") {
+    if (isSpaceInput) {
+      const escapedSpacePrefix = /^\\(#{1,6}|>|[-*+]|\d+\.|[-*+]\s\[(?: |x|X)\])$/.exec(beforeCursor);
       if (escapedSpacePrefix) {
         event.preventDefault();
         applyEditorMarkdownShortcut(shortcutFrom, selection.from, (chain) =>
@@ -2699,7 +2868,7 @@ export default function App() {
         return true;
       }
 
-      if ((transformRules.heading ?? true) && /^#{1,6}$/.test(beforeCursor)) {
+      if ((transformRules.heading ?? true) && /^#{1,6}$/.test(beforeCursor) && !afterCursor.length) {
         event.preventDefault();
         applyEditorMarkdownShortcut(shortcutFrom, selection.from, (chain) =>
           chain.toggleHeading({ level: beforeCursor.length }).run()
@@ -2709,7 +2878,7 @@ export default function App() {
         return true;
       }
 
-      if ((transformRules.blockquote ?? true) && /^>$/.test(beforeCursor)) {
+      if ((transformRules.blockquote ?? true) && /^>$/.test(beforeCursor) && !afterCursor.length) {
         event.preventDefault();
         applyEditorMarkdownShortcut(shortcutFrom, selection.from, (chain) => chain.toggleBlockquote().run());
         flashActiveEditorBlock();
@@ -2717,7 +2886,7 @@ export default function App() {
         return true;
       }
 
-      if ((transformRules.bulletList ?? true) && /^[-*+]$/.test(beforeCursor)) {
+      if ((transformRules.bulletList ?? true) && /^[-*+]$/.test(beforeCursor) && !afterCursor.length) {
         event.preventDefault();
         applyEditorMarkdownShortcut(shortcutFrom, selection.from, (chain) => chain.toggleBulletList().run());
         flashActiveEditorBlock();
@@ -2725,7 +2894,7 @@ export default function App() {
         return true;
       }
 
-      if ((transformRules.orderedList ?? true) && /^\d+\.$/.test(beforeCursor)) {
+      if ((transformRules.orderedList ?? true) && /^\d+\.$/.test(beforeCursor) && !afterCursor.length) {
         event.preventDefault();
         applyEditorMarkdownShortcut(shortcutFrom, selection.from, (chain) => chain.toggleOrderedList().run());
         flashActiveEditorBlock();
@@ -2733,7 +2902,7 @@ export default function App() {
         return true;
       }
 
-      if ((transformRules.taskList ?? true) && /^[-*+]\s\[(?: |x|X)\]$/.test(beforeCursor)) {
+      if ((transformRules.taskList ?? true) && /^[-*+]\s\[(?: |x|X)\]$/.test(beforeCursor) && !afterCursor.length) {
         event.preventDefault();
         applyEditorMarkdownShortcut(shortcutFrom, selection.from, (chain) => chain.toggleTaskList().run());
         flashActiveEditorBlock();
@@ -2741,7 +2910,6 @@ export default function App() {
         return true;
       }
     }
-
     const escapedFenceMatch = /^\\((?:```|~~~)([A-Za-z0-9_-]+)?)$/.exec(beforeCursor);
     if (event.key === "Enter" && escapedFenceMatch) {
       event.preventDefault();
@@ -2751,11 +2919,14 @@ export default function App() {
     }
 
     const codeFenceMatch = /^(?:```|~~~)([A-Za-z0-9_-]+)?$/.exec(beforeCursor);
-    if ((transformRules.codeFence ?? true) && event.key === "Enter" && codeFenceMatch) {
+    if ((transformRules.codeFence ?? true) && event.key === "Enter" && codeFenceMatch && !afterCursor.length) {
       event.preventDefault();
-      applyEditorMarkdownShortcut(shortcutFrom, selection.from, (chain) =>
-        chain.setNode("codeBlock", { language: codeFenceMatch[1] || null }).run()
+      const applied = applyEditorMarkdownShortcut(shortcutFrom, selection.from, (chain) =>
+        chain.toggleCodeBlock({ language: codeFenceMatch[1] || null }).run()
       );
+      if (applied === false) {
+        return false;
+      }
       flashActiveEditorBlock();
       setHint(
         codeFenceMatch[1]
@@ -2796,6 +2967,9 @@ export default function App() {
       content: renderMarkdownForEditor(markdownText, filePath, outline),
       editorProps: {
         attributes: { class: "editor-surface" },
+        handleTextInput(view, from, to, text) {
+          return handleEditorSmartTextInput(view, from, to, text);
+        },
         handleDOMEvents: {
           keydown: (view, event) => {
             if (slashMenuStateRef.current.open) {
@@ -4146,9 +4320,15 @@ export default function App() {
     const selected = markdownText.slice(selectionStart, selectionEnd);
     const after = markdownText.slice(selectionEnd);
     const nextChar = markdownText[selectionEnd] || "";
-    const allowAutoPair = selectionStart !== selectionEnd || !nextChar || /\s|[)\]}>.,!?]/.test(nextChar);
+    const allowAutoPair =
+      event.key !== "`" && (selectionStart !== selectionEnd || !nextChar || /\s|[)\]}>.,!?]/.test(nextChar));
 
     if (!allowAutoPair) {
+      if (event.key === "`" && selectionStart !== selectionEnd) {
+        event.preventDefault();
+        applySourceTextUpdate(`${before}\`${selected}\`${after}`, selectionStart + 1, selectionEnd + 1);
+        return true;
+      }
       return false;
     }
 
@@ -4163,13 +4343,15 @@ export default function App() {
   }
 
   function handleSourceKeyDown(event) {
-    if (event.key === "Tab") {
+    const sourceRules = preferencesRef.current.smartTransformSource || {};
+
+    if (event.key === "Tab" && (sourceRules.tabIndent ?? true)) {
       event.preventDefault();
       indentSourceSelection(event.shiftKey);
       return;
     }
 
-    if (event.key === "Enter") {
+    if (event.key === "Enter" && (sourceRules.continueList ?? true)) {
       if (continueMarkdownList()) {
         event.preventDefault();
       }
@@ -4181,7 +4363,9 @@ export default function App() {
       return;
     }
 
-    handleSourceAutoPair(event);
+    if (sourceRules.autoPair ?? true) {
+      handleSourceAutoPair(event);
+    }
   }
 
   function applyPastedLinkInSource(url) {

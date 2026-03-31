@@ -1,8 +1,8 @@
-import React from "react";
+import React, { useMemo, useState } from "react";
 
 const sections = [
   {
-    title: "Smart Transforms",
+    title: "Editor Transforms",
     items: [
       "# + Space -> Heading",
       "> + Space -> Blockquote",
@@ -10,6 +10,14 @@ const sections = [
       "1. + Space -> Ordered List",
       "- [ ] + Space -> Task List",
       "``` + Enter -> Code Block"
+    ]
+  },
+  {
+    title: "Source Assist",
+    items: [
+      "Tab / Shift+Tab indent or outdent selected lines",
+      "Enter continues lists and blockquotes",
+      "Auto pair symbols when typing inline markdown"
     ]
   },
   {
@@ -25,7 +33,8 @@ const sections = [
     items: [
       "Choose language from the toolbar",
       "Copy / Collapse / Preview tools live on the block",
-      "JSON / SQL / YAML / Markdown blocks include language-specific actions"
+      "JSON / SQL / YAML / Markdown blocks include language-specific actions",
+      "Mermaid, Markdown, and HTML blocks can render previews"
     ]
   },
   {
@@ -35,10 +44,32 @@ const sections = [
       "Paste TSV/Excel data into selected cells",
       "Use the table toolbar for merge, split, clear, and alignment"
     ]
+  },
+  {
+    title: "Front Matter",
+    items: [
+      "Edit front matter from the persistent sidebar tree",
+      "Switch field types between text, number, boolean, list, and object",
+      "Use merge dialog when pasted front matter conflicts with the current document"
+    ]
   }
 ];
 
 export default function EditingCheatsheetDialog({ open, onClose }) {
+  const [query, setQuery] = useState("");
+  const filteredSections = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase();
+    if (!normalizedQuery) {
+      return sections;
+    }
+    return sections
+      .map((section) => ({
+        ...section,
+        items: section.items.filter((item) => `${section.title} ${item}`.toLowerCase().includes(normalizedQuery))
+      }))
+      .filter((section) => section.items.length > 0);
+  }, [query]);
+
   if (!open) {
     return null;
   }
@@ -56,8 +87,16 @@ export default function EditingCheatsheetDialog({ open, onClose }) {
           </button>
         </div>
 
+        <input
+          className="find-input editing-cheatsheet-search"
+          type="text"
+          placeholder="Search transforms, shortcuts, and behaviors"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+        />
+
         <div className="editing-cheatsheet-grid">
-          {sections.map((section) => (
+          {filteredSections.map((section) => (
             <section key={section.title} className="editing-cheatsheet-card">
               <h3>{section.title}</h3>
               <div className="editing-cheatsheet-list">
@@ -67,6 +106,7 @@ export default function EditingCheatsheetDialog({ open, onClose }) {
               </div>
             </section>
           ))}
+          {filteredSections.length === 0 ? <div className="editing-cheatsheet-empty">No help items match that query.</div> : null}
         </div>
       </section>
     </div>

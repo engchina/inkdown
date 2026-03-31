@@ -1054,6 +1054,31 @@ select {
   padding: 0 10px;
 }
 
+.code-block-status {
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.code-block-status.valid {
+  background: rgba(34, 197, 94, 0.16);
+  color: #16a34a;
+}
+
+.code-block-status.invalid {
+  background: rgba(239, 68, 68, 0.16);
+  color: #dc2626;
+}
+
+.code-block-status.info {
+  background: rgba(56, 189, 248, 0.16);
+  color: #0284c7;
+}
+
 .code-block-collapse-button {
   height: 30px;
   min-width: auto;
@@ -1088,6 +1113,8 @@ select {
 }
 
 .code-block-editor-frame code {
+  display: block;
+  min-height: 1.65em;
   padding-left: 14px;
   white-space: pre;
 }
@@ -1350,6 +1377,7 @@ select {
 .properties-panel {
   display: grid;
   gap: 12px;
+  min-width: 0;
 }
 
 .properties-toolbar {
@@ -1382,6 +1410,7 @@ select {
 }
 
 .properties-title {
+  min-width: 0;
   font-size: 15px;
   font-weight: 600;
   color: var(--text);
@@ -1789,12 +1818,14 @@ select {
 
 .front-matter-tree-node,
 .front-matter-tree-leaf {
+  min-width: 0;
   width: 100%;
   padding-left: calc(var(--depth, 0) * 8px);
 }
 
 .front-matter-tree-row {
   display: grid;
+  min-width: 0;
   gap: 6px;
   padding: 8px 10px;
   border: 0;
@@ -1805,6 +1836,7 @@ select {
 
 .front-matter-tree-main {
   display: grid;
+  min-width: 0;
   grid-template-columns: minmax(54px, auto) minmax(82px, 96px) minmax(0, 1fr);
   gap: 6px;
   align-items: start;
@@ -1823,6 +1855,7 @@ select {
 
 .front-matter-tree-actions {
   display: flex;
+  min-width: 0;
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 4px;
@@ -1880,6 +1913,23 @@ select {
   font-family: "Cascadia Code", "JetBrains Mono", monospace;
   font-size: 12px;
   line-height: 1.5;
+}
+
+.properties-tree {
+  min-width: 0;
+  overflow-x: hidden;
+}
+
+.properties-tree .front-matter-tree-main {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.properties-tree .front-matter-tree-actions {
+  justify-content: flex-start;
+}
+
+.properties-tree .front-matter-tree-type {
+  width: 100%;
 }
 
 .front-matter-pane textarea {
@@ -1982,6 +2032,11 @@ select {
   gap: 14px;
 }
 
+.editing-cheatsheet-search {
+  width: 100%;
+  margin-bottom: 14px;
+}
+
 .editing-cheatsheet-card {
   padding: 16px 18px;
   border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
@@ -1999,6 +2054,15 @@ select {
   color: var(--text-soft);
   font-size: 13px;
   line-height: 1.5;
+}
+
+.editing-cheatsheet-empty {
+  grid-column: 1 / -1;
+  padding: 18px;
+  border: 1px dashed color-mix(in srgb, var(--border) 82%, transparent);
+  border-radius: 18px;
+  color: var(--text-soft);
+  text-align: center;
 }
 
 .preferences-help h3 {

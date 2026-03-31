@@ -15,6 +15,12 @@ const transformRuleOptions = [
   { key: "codeFence", label: "Code Fence" }
 ];
 
+const sourceRuleOptions = [
+  { key: "tabIndent", label: "Tab Indent" },
+  { key: "continueList", label: "List Continuation" },
+  { key: "autoPair", label: "Auto Pair Symbols" }
+];
+
 export default function PreferencesDialog({ open, preferences, onChange, onClose, onOpenCheatsheet }) {
   if (!open) {
     return null;
@@ -89,7 +95,7 @@ export default function PreferencesDialog({ open, preferences, onChange, onClose
 
         <section className="preferences-group">
           <div className="preferences-group-header">
-            <h3>Transform Categories</h3>
+            <h3>Editor Transforms</h3>
             <button className="tool-button tool-button-ghost" type="button" onClick={onOpenCheatsheet}>
               Cheatsheet
             </button>
@@ -105,6 +111,31 @@ export default function PreferencesDialog({ open, preferences, onChange, onClose
                     onChange({
                       smartTransformRules: {
                         ...(preferences.smartTransformRules || {}),
+                        [rule.key]: event.target.checked
+                      }
+                    })
+                  }
+                />
+              </label>
+            ))}
+          </div>
+        </section>
+
+        <section className="preferences-group">
+          <div className="preferences-group-header">
+            <h3>Source Assist</h3>
+          </div>
+          <div className="preferences-rule-grid">
+            {sourceRuleOptions.map((rule) => (
+              <label key={rule.key} className="preferences-rule-item">
+                <span>{rule.label}</span>
+                <input
+                  type="checkbox"
+                  checked={preferences.smartTransformSource?.[rule.key] ?? true}
+                  onChange={(event) =>
+                    onChange({
+                      smartTransformSource: {
+                        ...(preferences.smartTransformSource || {}),
                         [rule.key]: event.target.checked
                       }
                     })

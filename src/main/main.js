@@ -58,6 +58,12 @@ function getDefaultPreferences() {
       taskList: true,
       codeFence: true
     },
+    smartTransformSource: {
+      tabIndent: true,
+      continueList: true,
+      autoPair: true,
+      literalEscape: true
+    },
     workspaceRoot: null,
     recentFiles: [],
     paletteUsage: {},
@@ -801,7 +807,7 @@ function rebuildMenu(window) {
           click: () => shell.openExternal(HELP_LINKS.markdownReference)
         },
         {
-          label: "Editing Cheatsheet",
+          label: "Shortcuts & Transforms",
           accelerator: "CmdOrCtrl+/",
           click: () => emitMenuAction(window, { type: "open-editing-cheatsheet" })
         },
