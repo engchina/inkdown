@@ -704,7 +704,42 @@ function buildStandaloneHtml(title, bodyHtml, theme) {
       code { font-family: "Cascadia Code", "JetBrains Mono", monospace; }
       mark { padding: 0.08em 0.32em; border-radius: 0.36em; background: ${theme === "midnight" ? "#5a4300" : "#ffe08a"}; color: inherit; }
       sub, sup { font-size: 0.78em; }
-      blockquote { margin-left: 0; padding-left: 18px; border-left: 4px solid #d0b896; color: ${theme === "midnight" ? "#d3dbe8" : "#69553f"}; }
+      blockquote:not(.callout) {
+        min-height: 1.6em;
+        margin: 1.15em 0;
+        padding: 0.35em 0 0.35em 1em;
+        border-left: 3px solid ${
+          theme === "midnight"
+            ? "rgba(148, 163, 184, 0.5)"
+            : theme === "forest"
+              ? "rgba(5, 150, 105, 0.28)"
+              : "rgba(79, 70, 229, 0.26)"
+        };
+        border-radius: 0 10px 10px 0;
+        background: linear-gradient(
+          90deg,
+          ${
+            theme === "midnight"
+              ? "rgba(30, 41, 59, 0.52)"
+              : theme === "forest"
+                ? "rgba(255, 255, 255, 0.48)"
+                : "rgba(255, 255, 255, 0.52)"
+          } 0%,
+          transparent 82%
+        );
+        color: ${theme === "midnight" ? "#d3dbe8" : theme === "forest" ? "#065f46" : "#5b6476"};
+      }
+      blockquote:not(.callout) > :first-child { margin-top: 0; }
+      blockquote:not(.callout) > :last-child { margin-bottom: 0; }
+      blockquote:not(.callout) p { margin: 0.45em 0; }
+      blockquote:not(.callout) blockquote:not(.callout) {
+        min-height: 0;
+        margin: 0.7em 0 0.35em;
+        padding-left: 0.9em;
+        border-left-width: 2px;
+        border-radius: 0 8px 8px 0;
+        background: none;
+      }
       table { width: 100%; border-collapse: collapse; }
       th, td { border: 1px solid rgba(160, 160, 160, 0.3); padding: 10px 12px; }
       .table-of-contents { display: grid; gap: 8px; padding: 16px 18px; border: 1px solid rgba(160, 160, 160, 0.24); border-radius: 14px; background: rgba(255, 255, 255, 0.6); }
@@ -777,6 +812,41 @@ function findMatches(markdown, query) {
     startIndex = foundAt + query.length;
   }
   return matches;
+}
+
+function renderSourceHighlights(markdown, matches, currentIndex) {
+  const text = String(markdown || "");
+  if (matches.length === 0) {
+    return text;
+  }
+
+  const segments = [];
+  let cursor = 0;
+
+  matches.forEach((match, index) => {
+    if (match.start > cursor) {
+      segments.push(
+        <span key={`source-text-${cursor}`}>{text.slice(cursor, match.start)}</span>
+      );
+    }
+
+    segments.push(
+      <mark
+        key={`source-match-${match.start}-${match.end}-${index}`}
+        className={index === currentIndex ? "source-find-hit current" : "source-find-hit"}
+      >
+        {text.slice(match.start, match.end)}
+      </mark>
+    );
+
+    cursor = match.end;
+  });
+
+  if (cursor < text.length) {
+    segments.push(<span key={`source-text-tail-${cursor}`}>{text.slice(cursor)}</span>);
+  }
+
+  return segments;
 }
 
 function getLineStartIndex(markdown, lineNumber) {
@@ -1012,6 +1082,7 @@ export default function App() {
   const [statusMessage, setStatusMessage] = useState("Ready");
 
   const sourceRef = useRef(null);
+  const sourceHighlightRef = useRef(null);
   const programmaticEditorSyncRef = useRef(false);
   const programmaticMarkdownSyncRef = useRef(false);
   const lastEditorMarkdownRef = useRef(initialMarkdown);
@@ -1026,6 +1097,18 @@ export default function App() {
     () => renderMarkdownForPreview(deferredMarkdown, filePath, outline),
     [deferredMarkdown, filePath, outline]
   );
+  const sourceHighlightContent = useMemo(
+    () => renderSourceHighlights(markdownText, matches, matchIndex),
+    [markdownText, matches, matchIndex]
+  );
+
+  function syncSourceHighlightScroll() {
+    if (!sourceRef.current || !sourceHighlightRef.current) {
+      return;
+    }
+    sourceHighlightRef.current.scrollTop = sourceRef.current.scrollTop;
+    sourceHighlightRef.current.scrollLeft = sourceRef.current.scrollLeft;
+  }
 
   function runEditorCommand(execute, { preserveScroll = true } = {}) {
     if (!editor) {
@@ -1325,11 +1408,34 @@ export default function App() {
   }, [editor, filePath, markdownText, preferences, outline, matches, matchIndex, replaceValue]);
 
   useEffect(() => {
-    if (!findOpen || !sourceRef.current || matches.length === 0 || preferences.viewMode !== "source") {
+    if (!findOpen) {
       return;
     }
-    selectMatch(matchIndex);
+    if (matches.length === 0) {
+      if (matchIndex !== 0) {
+        setMatchIndex(0);
+      }
+      return;
+    }
+    if (matchIndex >= matches.length) {
+      setMatchIndex(0);
+    }
+  }, [findOpen, matchIndex, matches.length]);
+
+  useEffect(() => {
+    const sourceVisible = preferences.viewMode === "source" || findOpen;
+    if (!findOpen || !sourceVisible || !sourceRef.current || matches.length === 0) {
+      return;
+    }
+    selectMatch(matchIndex, { focusSource: false });
   }, [findOpen, matchIndex, matches, preferences.viewMode]);
+
+  useEffect(() => {
+    if (!findOpen || !findQuery) {
+      return;
+    }
+    window.requestAnimationFrame(syncSourceHighlightScroll);
+  }, [findOpen, findQuery, markdownText]);
 
   useEffect(() => {
     if (!editor) {
@@ -1638,18 +1744,23 @@ export default function App() {
 
   function openFindReplace() {
     setFindOpen(true);
-    if (preferences.viewMode !== "source") {
-      updatePreferences({ viewMode: "source" });
-    }
   }
 
-  function selectMatch(index) {
+  function handleFindQueryChange(value) {
+    setFindQuery(value);
+    setMatchIndex(0);
+  }
+
+  function selectMatch(index, { focusSource = true } = {}) {
     if (!sourceRef.current || matches.length === 0) {
       return;
     }
     const match = matches[index];
-    sourceRef.current.focus();
+    if (focusSource) {
+      sourceRef.current.focus();
+    }
     sourceRef.current.setSelectionRange(match.start, match.end);
+    window.requestAnimationFrame(syncSourceHighlightScroll);
   }
 
   function goToNextMatch() {
@@ -1658,7 +1769,7 @@ export default function App() {
     }
     const nextIndex = (matchIndex + 1) % matches.length;
     setMatchIndex(nextIndex);
-    selectMatch(nextIndex);
+    selectMatch(nextIndex, { focusSource: false });
   }
 
   function goToPrevMatch() {
@@ -1667,7 +1778,7 @@ export default function App() {
     }
     const nextIndex = (matchIndex - 1 + matches.length) % matches.length;
     setMatchIndex(nextIndex);
-    selectMatch(nextIndex);
+    selectMatch(nextIndex, { focusSource: false });
   }
 
   function replaceCurrentMatch() {
@@ -1702,6 +1813,10 @@ export default function App() {
     if (currentHeading) {
       setActiveOutlineId(currentHeading.id);
     }
+  }
+
+  function handleSourceScroll() {
+    syncSourceHighlightScroll();
   }
 
   function insertIntoSource(content, options = {}) {
@@ -1901,7 +2016,7 @@ export default function App() {
   }
 
   const showEditor = preferences.viewMode === "editor" || preferences.viewMode === "split";
-  const showSource = preferences.viewMode === "source";
+  const showSource = preferences.viewMode === "source" || findOpen;
   const showPreview = preferences.viewMode === "split" || preferences.viewMode === "preview";
   const findSummary = findOpen && findQuery ? `${matches.length === 0 ? "0" : `${matchIndex + 1}/${matches.length}`} matches` : null;
   const documentPathLabel = filePath || preferences.workspaceRoot || "";
@@ -1937,7 +2052,7 @@ export default function App() {
         replaceValue={replaceValue}
         count={matches.length}
         currentIndex={matchIndex}
-        onQueryChange={setFindQuery}
+        onQueryChange={handleFindQueryChange}
         onReplaceChange={setReplaceValue}
         onPrev={goToPrevMatch}
         onNext={goToNextMatch}
@@ -1965,7 +2080,7 @@ export default function App() {
           />
         ) : null}
 
-        <main className={`workspace-main mode-${preferences.viewMode}`}>
+        <main className={`workspace-main mode-${preferences.viewMode}${findOpen ? " find-open" : ""}`}>
           {showEditor ? (
             <section className="editor-pane">
               <div className="paper">
@@ -1978,14 +2093,22 @@ export default function App() {
           {showSource ? (
             <section className="side-pane source-pane">
               <div className="side-pane-header">Source</div>
-              <textarea
-                ref={sourceRef}
-                className="source-textarea"
-                value={markdownText}
-                onChange={handleSourceChange}
-                onClick={handleSourceSelection}
-                onKeyUp={handleSourceSelection}
-              />
+              <div className={`source-editor-shell${findOpen && findQuery ? " searching" : ""}`}>
+                {findOpen && findQuery ? (
+                  <div ref={sourceHighlightRef} className="source-highlight-layer" aria-hidden="true">
+                    {sourceHighlightContent}
+                  </div>
+                ) : null}
+                <textarea
+                  ref={sourceRef}
+                  className={`source-textarea${findOpen && findQuery ? " searching" : ""}`}
+                  value={markdownText}
+                  onChange={handleSourceChange}
+                  onClick={handleSourceSelection}
+                  onKeyUp={handleSourceSelection}
+                  onScroll={handleSourceScroll}
+                />
+              </div>
             </section>
           ) : null}
 

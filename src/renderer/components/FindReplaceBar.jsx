@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useRef } from "react";
 
 export default function FindReplaceBar({
   open,
@@ -14,6 +14,16 @@ export default function FindReplaceBar({
   onReplaceAll,
   onClose
 }) {
+  const queryInputRef = useRef(null);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    queryInputRef.current?.focus();
+    queryInputRef.current?.select();
+  }, [open]);
+
   if (!open) {
     return null;
   }
@@ -21,11 +31,27 @@ export default function FindReplaceBar({
   return (
     <div className="find-bar">
       <input
+        ref={queryInputRef}
         className="find-input"
         type="text"
         placeholder="Find in Markdown"
         value={query}
         onChange={(event) => onQueryChange(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            if (event.shiftKey) {
+              onPrev();
+              return;
+            }
+            onNext();
+            return;
+          }
+          if (event.key === "Escape") {
+            event.preventDefault();
+            onClose();
+          }
+        }}
       />
       <input
         className="find-input"
@@ -33,6 +59,17 @@ export default function FindReplaceBar({
         placeholder="Replace with"
         value={replaceValue}
         onChange={(event) => onReplaceChange(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            onReplaceOne();
+            return;
+          }
+          if (event.key === "Escape") {
+            event.preventDefault();
+            onClose();
+          }
+        }}
       />
       <span className="find-count">
         {count === 0 ? "0 results" : `${currentIndex + 1}/${count}`}

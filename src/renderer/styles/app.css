@@ -29,6 +29,11 @@
   --code-bg: #1e293b;
   --code-fg: #f8fafc;
   --quote: #64748b;
+  --quote-border: rgba(79, 70, 229, 0.26);
+  --quote-bg: rgba(255, 255, 255, 0.52);
+  --search-hit-bg: color-mix(in srgb, #fbbf24 24%, var(--panel-strong));
+  --search-hit-current-bg: color-mix(in srgb, var(--accent) 78%, #111827);
+  --search-hit-current-fg: #f8fafc;
   
   --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
   --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.08), 0 2px 4px -1px rgba(0, 0, 0, 0.04);
@@ -59,6 +64,11 @@
   --accent: #059669;
   --accent-soft: rgba(5, 150, 105, 0.15);
   --quote: #065f46;
+  --quote-border: rgba(5, 150, 105, 0.28);
+  --quote-bg: rgba(255, 255, 255, 0.48);
+  --search-hit-bg: color-mix(in srgb, #facc15 22%, var(--panel-strong));
+  --search-hit-current-bg: color-mix(in srgb, var(--accent) 76%, #052e16);
+  --search-hit-current-fg: #ecfdf5;
   background:
     radial-gradient(circle at 10% 20%, rgba(167, 243, 208, 0.5) 0%, transparent 50%),
     radial-gradient(circle at 90% 10%, rgba(217, 249, 157, 0.4) 0%, transparent 45%),
@@ -82,6 +92,11 @@
   --code-bg: #000000;
   --code-fg: #f1f5f9;
   --quote: #cbd5e1;
+  --quote-border: rgba(148, 163, 184, 0.5);
+  --quote-bg: rgba(30, 41, 59, 0.52);
+  --search-hit-bg: color-mix(in srgb, #f59e0b 36%, rgba(15, 23, 42, 0.92));
+  --search-hit-current-bg: color-mix(in srgb, var(--accent) 68%, #020617);
+  --search-hit-current-fg: #f8fafc;
   
   --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
   --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.4), 0 2px 4px -1px rgba(0, 0, 0, 0.2);
@@ -373,6 +388,10 @@ select {
   grid-template-columns: 1fr;
 }
 
+.workspace-main.mode-editor.find-open {
+  grid-template-columns: minmax(0, 1.15fr) minmax(360px, 0.85fr);
+}
+
 .workspace-main.mode-source {
   grid-template-columns: minmax(0, 1fr);
 }
@@ -381,8 +400,16 @@ select {
   grid-template-columns: minmax(0, 1.1fr) minmax(360px, 0.9fr);
 }
 
+.workspace-main.mode-split.find-open {
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 0.8fr) minmax(320px, 0.8fr);
+}
+
 .workspace-main.mode-preview {
   grid-template-columns: minmax(0, 1fr);
+}
+
+.workspace-main.mode-preview.find-open {
+  grid-template-columns: minmax(0, 1fr) minmax(360px, 0.85fr);
 }
 
 .sidebar-panel {
@@ -733,14 +760,40 @@ select {
   font-size: 0.78em;
 }
 
-.editor-surface blockquote,
-.preview-surface blockquote {
-  margin: var(--content-block-gap-lg) 0;
-  padding: 12px 18px;
-  border-left: 4px solid var(--accent);
-  border-radius: 0 12px 12px 0;
-  background: var(--panel-soft);
+.editor-surface blockquote:not(.callout),
+.preview-surface blockquote:not(.callout) {
+  min-height: 1.6em;
+  margin: calc(var(--content-block-gap-lg) + 0.1em) 0;
+  padding: 0.32em 0 0.32em 1em;
+  border-left: 3px solid var(--quote-border);
+  border-radius: 0 10px 10px 0;
+  background: linear-gradient(90deg, var(--quote-bg) 0%, transparent 82%);
   color: var(--quote);
+}
+
+.editor-surface blockquote:not(.callout) > :first-child,
+.preview-surface blockquote:not(.callout) > :first-child {
+  margin-top: 0;
+}
+
+.editor-surface blockquote:not(.callout) > :last-child,
+.preview-surface blockquote:not(.callout) > :last-child {
+  margin-bottom: 0;
+}
+
+.editor-surface blockquote:not(.callout) p,
+.preview-surface blockquote:not(.callout) p {
+  margin: 0.45em 0;
+}
+
+.editor-surface blockquote:not(.callout) blockquote:not(.callout),
+.preview-surface blockquote:not(.callout) blockquote:not(.callout) {
+  min-height: 0;
+  margin: 0.7em 0 0.35em;
+  padding-left: 0.9em;
+  border-left-width: 2px;
+  border-radius: 0 8px 8px 0;
+  background: none;
 }
 
 .editor-surface code,
@@ -830,19 +883,70 @@ select {
   -webkit-backdrop-filter: blur(24px) saturate(180%);
 }
 
-.source-textarea {
+.source-editor-shell {
   flex: 1;
   width: 100%;
   min-height: 360px;
-  resize: none;
-  padding: 18px 20px;
+  position: relative;
   border: 1px solid var(--border);
   border-radius: 18px;
   background: var(--panel-strong);
+  overflow: hidden;
+}
+
+.source-highlight-layer,
+.source-textarea {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 18px 20px;
   color: var(--text);
   font-family: "Cascadia Code", "JetBrains Mono", monospace;
-  outline: none;
+  font-size: 14px;
+  line-height: 1.7;
   tab-size: 2;
+}
+
+.source-highlight-layer {
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  pointer-events: none;
+  scrollbar-width: none;
+}
+
+.source-highlight-layer::-webkit-scrollbar {
+  display: none;
+}
+
+.source-find-hit {
+  border-radius: 0.28em;
+  background: var(--search-hit-bg);
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
+.source-find-hit.current {
+  background: var(--search-hit-current-bg);
+  color: var(--search-hit-current-fg);
+}
+
+.source-textarea {
+  resize: none;
+  border: none;
+  background: transparent;
+  outline: none;
+  overflow: auto;
+}
+
+.source-textarea.searching {
+  color: transparent;
+  caret-color: var(--text);
+}
+
+.source-textarea.searching::selection {
+  background: color-mix(in srgb, var(--accent) 24%, transparent);
 }
 
 .preview-pane .preview-surface {
@@ -1120,6 +1224,10 @@ select {
   .workspace-main.mode-split {
     grid-template-columns: 1fr 1fr;
   }
+
+  .workspace-main.mode-split.find-open {
+    grid-template-columns: 1fr 1fr;
+  }
 }
 
 @media (max-width: 1024px) {
@@ -1131,6 +1239,9 @@ select {
     display: none;
   }
 
+  .workspace-main.mode-editor.find-open,
+  .workspace-main.mode-split.find-open,
+  .workspace-main.mode-preview.find-open,
   .workspace-main.mode-split,
   .workspace-main.mode-source,
   .workspace-main.mode-preview {
