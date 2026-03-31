@@ -64,29 +64,29 @@ tags:
 
 [TOC]
 
-这是一个接近 Typora 的沉浸式 Markdown 编辑器。
+This is an immersive Markdown editor inspired by Typora.
 
-## 已覆盖的 Typora 基础能力
+## Core Typora-style features included
 
-- 实时所见即所得编辑
-- 文件树 / 大纲 / 查找替换
-- 图片、表格、任务列表
-- Mermaid、数学公式与导出
+- Live WYSIWYG editing
+- File tree, outline, and find/replace
+- Images, tables, and task lists
+- Mermaid, math, and export support
 
-## 扩展 Markdown
+## Extended Markdown
 
-==高亮==、H~2~O、x^2^ 与脚注引用[^inkdown] 现在都能预览。
+==Highlight==, H~2~O, x^2^, and footnotes[^inkdown] all render in preview.
 
 > [!NOTE]
-> 现在支持 Typora 参考页里的 GitHub 风格 Callout。
+> GitHub-style callouts from the Typora reference pages are supported.
 
-[^inkdown]: 这里是脚注内容，支持 **Markdown** 内联格式。
+[^inkdown]: This footnote also supports inline **Markdown** formatting.
 
-## 数学与图表
+## Math and diagrams
 
-行内公式：\\(E = mc^2\\)
+Inline formula: \\(E = mc^2\\)
 
-块级公式：
+Block formula:
 
 \\[
 \\int_0^1 x^2 dx = \\frac{1}{3}
@@ -646,7 +646,7 @@ function renderMarkdownForPreview(markdown, currentFilePath, outline, resolveAss
 
 function buildStandaloneHtml(title, bodyHtml, theme) {
   return `<!doctype html>
-<html lang="zh-CN">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -909,7 +909,7 @@ export default function App() {
   const [findQuery, setFindQuery] = useState("");
   const [replaceValue, setReplaceValue] = useState("");
   const [matchIndex, setMatchIndex] = useState(0);
-  const [statusMessage, setStatusMessage] = useState("就绪");
+  const [statusMessage, setStatusMessage] = useState("Ready");
 
   const sourceRef = useRef(null);
   const programmaticEditorSyncRef = useRef(false);
@@ -955,7 +955,7 @@ export default function App() {
         Superscript,
         Link.configure({ openOnClick: true, autolink: true, defaultProtocol: "https" }),
         MarkdownImage.configure({ inline: false, allowBase64: true }),
-        Placeholder.configure({ placeholder: "开始写作，像 Typora 一样在正文里直接编辑 Markdown 内容。" }),
+        Placeholder.configure({ placeholder: "Start writing and edit Markdown directly in the document, just like Typora." }),
         TaskList,
         TaskItem.configure({ nested: true }),
         Table.configure({ resizable: true }),
@@ -1243,7 +1243,7 @@ export default function App() {
     if (statusTimerRef.current) {
       window.clearTimeout(statusTimerRef.current);
     }
-    statusTimerRef.current = window.setTimeout(() => setStatusMessage("就绪"), 3200);
+    statusTimerRef.current = window.setTimeout(() => setStatusMessage("Ready"), 3200);
   }
 
   function syncWorkspaceWithFile(nextFilePath) {
@@ -1285,7 +1285,7 @@ export default function App() {
     setFindQuery("");
     setReplaceValue("");
     setMatchIndex(0);
-    setStatus(`已打开 ${basenamePath(result.filePath)}`);
+    setStatus(`Opened ${basenamePath(result.filePath)}`);
   }
 
   async function openDocumentFromPath(targetPath) {
@@ -1302,7 +1302,7 @@ export default function App() {
     setFindQuery("");
     setReplaceValue("");
     setMatchIndex(0);
-    setStatus(`已打开 ${basenamePath(result.filePath)}`);
+    setStatus(`Opened ${basenamePath(result.filePath)}`);
   }
 
   async function createNewDocument() {
@@ -1315,7 +1315,7 @@ export default function App() {
     setFindQuery("");
     setReplaceValue("");
     setMatchIndex(0);
-    setStatus("已新建空白文档");
+    setStatus("Created a new blank document");
   }
 
   async function confirmDiscardChanges() {
@@ -1338,7 +1338,7 @@ export default function App() {
       }
       setIsDirty(false);
       syncWorkspaceWithFile(result.filePath);
-      setStatus(`已保存到 ${basenamePath(result.filePath)}`);
+      setStatus(`Saved to ${basenamePath(result.filePath)}`);
     }
   }
 
@@ -1353,7 +1353,7 @@ export default function App() {
     const html = buildStandaloneHtml(documentTitle, preparedPreviewHtml, preferences.theme);
     const result = await window.editorApi.saveHtml({ html });
     if (!result.canceled) {
-      setStatus(`已导出 HTML: ${basenamePath(result.filePath)}`);
+      setStatus(`Exported HTML: ${basenamePath(result.filePath)}`);
     }
   }
 
@@ -1368,7 +1368,7 @@ export default function App() {
     const html = buildStandaloneHtml(documentTitle, preparedPreviewHtml, preferences.theme);
     const result = await window.editorApi.savePdf({ html });
     if (!result.canceled) {
-      setStatus(`已导出 PDF: ${basenamePath(result.filePath)}`);
+      setStatus(`Exported PDF: ${basenamePath(result.filePath)}`);
     }
   }
 
@@ -1378,7 +1378,7 @@ export default function App() {
       return;
     }
     updatePreferences({ workspaceRoot: result.directoryPath, sidebarVisible: true, sidebarTab: "files" });
-    setStatus(`已打开文件夹 ${basenamePath(result.directoryPath)}`);
+    setStatus(`Opened folder ${basenamePath(result.directoryPath)}`);
   }
 
   function revealCurrentFile() {
@@ -1398,7 +1398,7 @@ export default function App() {
   async function insertImageFromFile(imagePath) {
     const persisted = await window.editorApi.persistImageFile(imagePath);
     insertMarkdownImage(persisted.markdownPath, persisted.absolutePath);
-    setStatus(`已插入图片 ${basenamePath(persisted.absolutePath)}`);
+    setStatus(`Inserted image ${basenamePath(persisted.absolutePath)}`);
   }
 
   function insertMarkdownImage(markdownPath, absolutePath) {
@@ -1423,11 +1423,11 @@ export default function App() {
   function insertTable() {
     if (preferences.viewMode === "source" && sourceRef.current) {
       insertIntoSource("| Column 1 | Column 2 |\n| --- | --- |\n| Value | Value |", { block: true });
-      setStatus("已插入表格模板");
+      setStatus("Inserted table template");
       return;
     }
     editor?.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run();
-    setStatus("已插入表格");
+    setStatus("Inserted table");
   }
 
   function jumpToOutline(item, index) {
@@ -1486,7 +1486,7 @@ export default function App() {
     const current = matches[matchIndex];
     setMarkdownText(markdownText.slice(0, current.start) + replaceValue + markdownText.slice(current.end));
     setIsDirty(true);
-    setStatus("已替换当前匹配");
+    setStatus("Replaced current match");
   }
 
   function replaceAllMatches() {
@@ -1495,7 +1495,7 @@ export default function App() {
     }
     setMarkdownText(markdownText.split(findQuery).join(replaceValue));
     setIsDirty(true);
-    setStatus(`已替换全部 ${matches.length} 处匹配`);
+    setStatus(`Replaced all ${matches.length} matches`);
   }
 
   function handleSourceChange(event) {
@@ -1572,7 +1572,7 @@ export default function App() {
     if (preferences.viewMode === "source" && sourceRef.current) {
       switch (format) {
         case "paragraph":
-          setStatus("源码模式下正文样式请直接编辑 Markdown。");
+          setStatus("In source mode, edit paragraph styles directly in Markdown.");
           break;
         case "heading-1":
           prefixSelectedLines("# ");
@@ -1626,7 +1626,7 @@ export default function App() {
           wrapSourceSelection("`", "`", "code");
           break;
         case "link": {
-          const href = window.prompt("输入链接地址");
+          const href = window.prompt("Enter a link URL");
           if (href) {
             wrapSourceSelection("[", `](${href})`, "link text");
           }
@@ -1698,7 +1698,7 @@ export default function App() {
         editor.chain().focus().toggleCode().run();
         break;
       case "link": {
-        const href = window.prompt("输入链接地址");
+        const href = window.prompt("Enter a link URL");
         if (href) {
           editor.chain().focus().extendMarkRange("link").setLink({ href }).run();
         }
@@ -1712,14 +1712,19 @@ export default function App() {
   const showEditor = preferences.viewMode === "editor" || preferences.viewMode === "split";
   const showSource = preferences.viewMode === "source";
   const showPreview = preferences.viewMode === "split" || preferences.viewMode === "preview";
-  const findSummary = findOpen && findQuery ? `${matches.length === 0 ? "0" : `${matchIndex + 1}/${matches.length}`} 匹配` : null;
+  const findSummary = findOpen && findQuery ? `${matches.length === 0 ? "0" : `${matchIndex + 1}/${matches.length}`} matches` : null;
+  const documentPathLabel = filePath || preferences.workspaceRoot || "";
 
   return (
     <div className={`app-shell theme-${preferences.theme}`}>
       <Toolbar
+        documentPath={documentPathLabel}
+        documentTitle={documentTitle}
         editor={editor}
+        isDirty={isDirty}
         onNew={createNewDocument}
         onOpen={openDocument}
+        onRevealCurrentFile={revealCurrentFile}
         onInsertImage={insertImage}
         onInsertTable={insertTable}
         onApplyFormat={applyFormatting}
@@ -1730,6 +1735,8 @@ export default function App() {
         onOpenFind={openFindReplace}
         onOpenPreferences={() => setPreferencesOpen(true)}
         onSetViewMode={(mode) => updatePreferences({ viewMode: mode })}
+        onToggleSidebar={() => updatePreferences({ sidebarVisible: !preferences.sidebarVisible })}
+        sidebarVisible={preferences.sidebarVisible}
         viewMode={preferences.viewMode}
       />
 
@@ -1775,9 +1782,8 @@ export default function App() {
                   <div>
                     <div className="eyebrow">Markdown Document</div>
                     <h1>{documentTitle}</h1>
-                    {preferences.workspaceRoot ? <div className="paper-subtitle">{preferences.workspaceRoot}</div> : null}
+                    {documentPathLabel ? <div className="paper-subtitle">{documentPathLabel}</div> : null}
                   </div>
-                  <div className={`sync-state${isDirty ? " dirty" : ""}`}>{isDirty ? "Unsaved" : "Saved"}</div>
                 </div>
                 <EditorContent editor={editor} />
                 <div className="editor-end-hitbox" onMouseDown={handleEditorEndMouseDown} />
@@ -1809,8 +1815,6 @@ export default function App() {
       </div>
 
       <StatusBar
-        documentTitle={documentTitle}
-        isDirty={isDirty}
         lineCount={stats.lineCount}
         wordCount={stats.wordCount}
         charCount={stats.charCount}

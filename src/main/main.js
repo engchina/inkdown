@@ -118,12 +118,12 @@ async function maybeContinueWithUnsavedChanges(window) {
 
   const result = await dialog.showMessageBox(window, {
     type: "warning",
-    buttons: ["继续", "取消"],
+    buttons: ["Continue", "Cancel"],
     defaultId: 1,
     cancelId: 1,
-    title: "未保存的更改",
-    message: "当前文档有未保存的修改。",
-    detail: "继续操作会丢失尚未保存的内容。"
+    title: "Unsaved changes",
+    message: "The current document has unsaved changes.",
+    detail: "Continuing will discard the unsaved content."
   });
 
   return result.response === 0;
@@ -150,7 +150,7 @@ async function createPdfFromHtml(window, payload) {
     : "Untitled.pdf";
 
   const result = await dialog.showSaveDialog(window, {
-    title: "导出 PDF",
+    title: "Export PDF",
     defaultPath: defaultName,
     filters: [{ name: "PDF", extensions: ["pdf"] }]
   });
@@ -416,7 +416,7 @@ function compareFileNodes(left, right) {
     return left.type === "directory" ? -1 : 1;
   }
 
-  return left.name.localeCompare(right.name, "zh-CN", { numeric: true, sensitivity: "base" });
+  return left.name.localeCompare(right.name, "en", { numeric: true, sensitivity: "base" });
 }
 
 async function buildWorkspaceNode(targetPath, isRoot = false) {
@@ -496,253 +496,253 @@ function rebuildMenu(window) {
   const preferences = state.preferences;
   const template = [
     {
-      label: "文件",
+      label: "File",
       submenu: [
         {
-          label: "新建",
+          label: "New",
           accelerator: "CmdOrCtrl+N",
           click: () => emitMenuAction(window, { type: "new-file" })
         },
         {
-          label: "打开...",
+          label: "Open...",
           accelerator: "CmdOrCtrl+O",
           click: () => emitMenuAction(window, { type: "open-file" })
         },
         {
-          label: "打开文件夹...",
+          label: "Open Folder...",
           accelerator: "CmdOrCtrl+Shift+O",
           click: () => emitMenuAction(window, { type: "pick-workspace" })
         },
         {
-          label: "在文件夹中显示",
+          label: "Reveal in Folder",
           accelerator: "CmdOrCtrl+Shift+R",
           enabled: Boolean(state.currentFilePath),
           click: () => emitMenuAction(window, { type: "reveal-current-file" })
         },
         { type: "separator" },
         {
-          label: "保存",
+          label: "Save",
           accelerator: "CmdOrCtrl+S",
           click: () => emitMenuAction(window, { type: "save-file" })
         },
         {
-          label: "另存为",
+          label: "Save As",
           accelerator: "CmdOrCtrl+Shift+S",
           click: () => emitMenuAction(window, { type: "save-file-as" })
         },
         { type: "separator" },
         {
-          label: "导出 HTML",
+          label: "Export HTML",
           accelerator: "CmdOrCtrl+Shift+E",
           click: () => emitMenuAction(window, { type: "export-html" })
         },
         {
-          label: "导出 PDF",
+          label: "Export PDF",
           accelerator: "CmdOrCtrl+Shift+P",
           click: () => emitMenuAction(window, { type: "export-pdf" })
         },
         { type: "separator" },
         {
-          label: "偏好设置...",
+          label: "Preferences...",
           accelerator: "CmdOrCtrl+,",
           click: () => emitMenuAction(window, { type: "open-preferences" })
         },
         { type: "separator" },
-        { role: "close", label: "关闭" }
+        { role: "close", label: "Close" }
       ]
     },
     {
-      label: "编辑",
+      label: "Edit",
       submenu: [
-        { role: "undo", label: "撤销" },
-        { role: "redo", label: "重做" },
+        { role: "undo", label: "Undo" },
+        { role: "redo", label: "Redo" },
         { type: "separator" },
-        { role: "cut", label: "剪切" },
-        { role: "copy", label: "复制" },
-        { role: "paste", label: "粘贴" },
-        { role: "selectAll", label: "全选" },
+        { role: "cut", label: "Cut" },
+        { role: "copy", label: "Copy" },
+        { role: "paste", label: "Paste" },
+        { role: "selectAll", label: "Select All" },
         { type: "separator" },
         {
-          label: "查找与替换",
+          label: "Find and Replace",
           accelerator: "CmdOrCtrl+F",
           click: () => emitMenuAction(window, { type: "open-find" })
         }
       ]
     },
     {
-      label: "段落",
+      label: "Paragraph",
       submenu: [
         {
-          label: "正文",
+          label: "Paragraph",
           accelerator: "CmdOrCtrl+Alt+0",
           click: () => emitMenuAction(window, { type: "apply-format", format: "paragraph" })
         },
         {
-          label: "一级标题",
+          label: "Heading 1",
           accelerator: "CmdOrCtrl+1",
           click: () => emitMenuAction(window, { type: "apply-format", format: "heading-1" })
         },
         {
-          label: "二级标题",
+          label: "Heading 2",
           accelerator: "CmdOrCtrl+2",
           click: () => emitMenuAction(window, { type: "apply-format", format: "heading-2" })
         },
         {
-          label: "三级标题",
+          label: "Heading 3",
           accelerator: "CmdOrCtrl+3",
           click: () => emitMenuAction(window, { type: "apply-format", format: "heading-3" })
         },
         { type: "separator" },
         {
-          label: "无序列表",
+          label: "Bulleted List",
           accelerator: "CmdOrCtrl+Shift+7",
           click: () => emitMenuAction(window, { type: "apply-format", format: "bullet-list" })
         },
         {
-          label: "有序列表",
+          label: "Numbered List",
           accelerator: "CmdOrCtrl+Shift+8",
           click: () => emitMenuAction(window, { type: "apply-format", format: "ordered-list" })
         },
         {
-          label: "任务列表",
+          label: "Task List",
           accelerator: "CmdOrCtrl+Shift+9",
           click: () => emitMenuAction(window, { type: "apply-format", format: "task-list" })
         },
         {
-          label: "引用块",
+          label: "Blockquote",
           accelerator: "CmdOrCtrl+Shift+Q",
           click: () => emitMenuAction(window, { type: "apply-format", format: "blockquote" })
         },
         {
-          label: "代码块",
+          label: "Code Block",
           accelerator: "CmdOrCtrl+Alt+C",
           click: () => emitMenuAction(window, { type: "apply-format", format: "code-block" })
         },
         {
-          label: "水平线",
+          label: "Horizontal Rule",
           accelerator: "CmdOrCtrl+Alt+-",
           click: () => emitMenuAction(window, { type: "apply-format", format: "horizontal-rule" })
         },
         {
-          label: "表格",
+          label: "Table",
           accelerator: "CmdOrCtrl+Alt+T",
           click: () => emitMenuAction(window, { type: "insert-table" })
         }
       ]
     },
     {
-      label: "格式",
+      label: "Format",
       submenu: [
         {
-          label: "加粗",
+          label: "Bold",
           accelerator: "CmdOrCtrl+B",
           click: () => emitMenuAction(window, { type: "apply-format", format: "bold" })
         },
         {
-          label: "斜体",
+          label: "Italic",
           accelerator: "CmdOrCtrl+I",
           click: () => emitMenuAction(window, { type: "apply-format", format: "italic" })
         },
         {
-          label: "下划线",
+          label: "Underline",
           accelerator: "CmdOrCtrl+U",
           click: () => emitMenuAction(window, { type: "apply-format", format: "underline" })
         },
         {
-          label: "删除线",
+          label: "Strikethrough",
           accelerator: "CmdOrCtrl+Shift+5",
           click: () => emitMenuAction(window, { type: "apply-format", format: "strike" })
         },
         {
-          label: "行内代码",
+          label: "Inline Code",
           accelerator: "CmdOrCtrl+Shift+`",
           click: () => emitMenuAction(window, { type: "apply-format", format: "inline-code" })
         },
         { type: "separator" },
         {
-          label: "超链接",
+          label: "Link",
           accelerator: "CmdOrCtrl+K",
           click: () => emitMenuAction(window, { type: "apply-format", format: "link" })
         },
         {
-          label: "图片",
+          label: "Image",
           accelerator: "CmdOrCtrl+Shift+I",
           click: () => emitMenuAction(window, { type: "insert-image" })
         }
       ]
     },
     {
-      label: "视图",
+      label: "View",
       submenu: [
         {
-          label: "显示侧边栏",
+          label: "Show Sidebar",
           type: "checkbox",
           checked: preferences.sidebarVisible,
           accelerator: "CmdOrCtrl+Shift+L",
           click: () => sendPreferenceToggle(window, "sidebarVisible")
         },
         {
-          label: "文件列表",
+          label: "Files",
           accelerator: "CmdOrCtrl+Shift+2",
           click: () => emitMenuAction(window, { type: "set-sidebar-tab", tab: "files" })
         },
         {
-          label: "大纲",
+          label: "Outline",
           accelerator: "CmdOrCtrl+Shift+1",
           click: () => emitMenuAction(window, { type: "set-sidebar-tab", tab: "outline" })
         },
         { type: "separator" },
         {
-          label: "仅编辑",
+          label: "Editor Only",
           type: "radio",
           checked: preferences.viewMode === "editor",
           click: () => emitMenuAction(window, { type: "set-view-mode", mode: "editor" })
         },
         {
-          label: "分栏",
+          label: "Split View",
           type: "radio",
           checked: preferences.viewMode === "split",
           click: () => emitMenuAction(window, { type: "set-view-mode", mode: "split" })
         },
         {
-          label: "仅源码",
+          label: "Source Only",
           type: "radio",
           checked: preferences.viewMode === "source",
           click: () => emitMenuAction(window, { type: "set-view-mode", mode: "source" })
         },
         {
-          label: "仅预览",
+          label: "Preview Only",
           type: "radio",
           checked: preferences.viewMode === "preview",
           click: () => emitMenuAction(window, { type: "set-view-mode", mode: "preview" })
         },
         { type: "separator" },
         {
-          label: "专注模式",
+          label: "Focus Mode",
           type: "checkbox",
           checked: preferences.focusMode,
           accelerator: "F8",
           click: () => sendPreferenceToggle(window, "focusMode")
         },
         {
-          label: "打字机模式",
+          label: "Typewriter Mode",
           type: "checkbox",
           checked: preferences.typewriterMode,
           accelerator: "F9",
           click: () => sendPreferenceToggle(window, "typewriterMode")
         },
         { type: "separator" },
-        { role: "togglefullscreen", label: "切换全屏", accelerator: "F11" },
-        { role: "resetZoom", label: "实际大小" },
-        { role: "zoomIn", label: "放大" },
-        { role: "zoomOut", label: "缩小" },
+        { role: "togglefullscreen", label: "Toggle Full Screen", accelerator: "F11" },
+        { role: "resetZoom", label: "Actual Size" },
+        { role: "zoomIn", label: "Zoom In" },
+        { role: "zoomOut", label: "Zoom Out" },
         { type: "separator" },
-        { role: "reload", label: "重新加载" },
-        { role: "toggleDevTools", label: "开发者工具" }
+        { role: "reload", label: "Reload" },
+        { role: "toggleDevTools", label: "Developer Tools" }
       ]
     },
     {
-      label: "主题",
+      label: "Theme",
       submenu: [
         {
           label: "Paper",
@@ -765,7 +765,7 @@ function rebuildMenu(window) {
       ]
     },
     {
-      label: "帮助",
+      label: "Help",
       submenu: [
         {
           label: "Quick Start",
@@ -780,16 +780,16 @@ function rebuildMenu(window) {
           click: () => shell.openExternal(HELP_LINKS.customThemes)
         },
         {
-          label: "更新日志",
+          label: "What's New",
           click: () => shell.openExternal(HELP_LINKS.whatsNew)
         },
         { type: "separator" },
         {
-          label: "官方网站",
+          label: "Website",
           click: () => shell.openExternal(HELP_LINKS.website)
         },
         { type: "separator" },
-        { role: "about", label: "关于 Inkdown" }
+        { role: "about", label: "About Inkdown" }
       ]
     }
   ];
@@ -836,12 +836,12 @@ async function createWindow() {
 
     const response = dialog.showMessageBoxSync(mainWindow, {
       type: "warning",
-      buttons: ["退出", "取消"],
+      buttons: ["Quit", "Cancel"],
       defaultId: 1,
       cancelId: 1,
-      title: "未保存的更改",
-      message: "当前文档有未保存的修改。",
-      detail: "现在退出会丢失尚未保存的内容。"
+      title: "Unsaved changes",
+      message: "The current document has unsaved changes.",
+      detail: "Quitting now will discard the unsaved content."
     });
 
     if (response !== 0) {
@@ -871,7 +871,7 @@ app.on("activate", () => {
 ipcMain.handle("dialog:open-markdown", async () => {
   const window = BrowserWindow.getFocusedWindow();
   const result = await dialog.showOpenDialog(window, {
-    title: "打开 Markdown 文档",
+    title: "Open Markdown Document",
     properties: ["openFile"],
     filters: [{ name: "Markdown", extensions: ["md", "markdown", "mdown", "mkd", "txt"] }]
   });
@@ -886,7 +886,7 @@ ipcMain.handle("dialog:open-markdown", async () => {
 ipcMain.handle("dialog:pick-workspace", async () => {
   const window = BrowserWindow.getFocusedWindow();
   const result = await dialog.showOpenDialog(window, {
-    title: "打开文件夹",
+    title: "Open Folder",
     properties: ["openDirectory"]
   });
 
@@ -910,7 +910,7 @@ ipcMain.handle("dialog:confirm-discard-changes", async () => {
 ipcMain.handle("dialog:pick-image", async () => {
   const window = BrowserWindow.getFocusedWindow();
   const result = await dialog.showOpenDialog(window, {
-    title: "插入图片",
+    title: "Insert Image",
     properties: ["openFile"],
     filters: [{ name: "Images", extensions: ["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp"] }]
   });
@@ -928,7 +928,7 @@ ipcMain.handle("file:save-markdown", async (_, payload) => {
 
   if (!targetPath) {
     const result = await dialog.showSaveDialog(window, {
-      title: "保存 Markdown 文档",
+      title: "Save Markdown Document",
       defaultPath: "Untitled.md",
       filters: [{ name: "Markdown", extensions: ["md"] }]
     });
@@ -959,7 +959,7 @@ ipcMain.handle("file:save-html", async (_, payload) => {
     : "Untitled.html";
 
   const result = await dialog.showSaveDialog(window, {
-    title: "导出 HTML",
+    title: "Export HTML",
     defaultPath: defaultName,
     filters: [{ name: "HTML", extensions: ["html"] }]
   });

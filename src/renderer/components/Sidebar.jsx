@@ -21,9 +21,7 @@ function filterTree(node, keyword) {
     return matchesFilter(node, keyword) ? node : null;
   }
 
-  const children = (node.children || [])
-    .map((child) => filterTree(child, keyword))
-    .filter(Boolean);
+  const children = (node.children || []).map((child) => filterTree(child, keyword)).filter(Boolean);
 
   if (children.length > 0 || matchesFilter(node, keyword)) {
     return {
@@ -72,25 +70,23 @@ function FileTreeNode({ node, activeFilePath, onOpenFile, depth = 0 }) {
 }
 
 export default function Sidebar({
-  outline,
-  activeOutlineId,
-  onJumpOutline,
-  workspaceRoot,
-  workspaceTree,
   activeFilePath,
+  activeOutlineId,
+  filterText,
+  onFilterChange,
+  onJumpOutline,
   onOpenFile,
   onPickWorkspace,
   onRevealCurrentFile,
-  sidebarTab,
   onSidebarTabChange,
-  filterText,
-  onFilterChange
+  outline,
+  sidebarTab,
+  workspaceRoot,
+  workspaceTree
 }) {
   const normalizedFilter = filterText.trim().toLowerCase();
-  const filteredTree = useMemo(
-    () => filterTree(workspaceTree, normalizedFilter),
-    [workspaceTree, normalizedFilter]
-  );
+  const filteredTree = useMemo(() => filterTree(workspaceTree, normalizedFilter), [workspaceTree, normalizedFilter]);
+  const fileRootLabel = workspaceRoot ? workspaceRoot.split(/[\\/]/).filter(Boolean).pop() : "No folder opened";
 
   return (
     <aside className="sidebar-panel">
@@ -101,29 +97,41 @@ export default function Sidebar({
             className={`sidebar-tab${sidebarTab === "outline" ? " active" : ""}`}
             onClick={() => onSidebarTabChange("outline")}
           >
-            大纲
+            Outline
           </button>
           <button
             type="button"
             className={`sidebar-tab${sidebarTab === "files" ? " active" : ""}`}
             onClick={() => onSidebarTabChange("files")}
           >
-            文件
+            Files
           </button>
         </div>
+      </div>
 
-        <div className="sidebar-actions">
-          <button type="button" className="tool-button compact" onClick={onPickWorkspace} title="打开文件夹">
-            Folder
-          </button>
-          <button
-            type="button"
-            className="tool-button compact"
-            onClick={onRevealCurrentFile}
-            title="在文件夹中显示当前文件"
-          >
-            Reveal
-          </button>
+      <div className="sidebar-meta">
+        <div>
+          <div className="panel-heading">{sidebarTab === "outline" ? "Document map" : fileRootLabel}</div>
+          <div className="sidebar-caption">
+            {sidebarTab === "outline"
+              ? `${outline.length} headings`
+              : workspaceRoot
+                ? workspaceRoot
+                : "Open a folder to browse Markdown files"}
+          </div>
+        </div>
+
+        <div className="sidebar-utility-actions">
+          {sidebarTab === "files" ? (
+            <button type="button" className="sidebar-utility-button" onClick={onPickWorkspace}>
+              {workspaceRoot ? "Change folder" : "Open folder"}
+            </button>
+          ) : null}
+          {activeFilePath ? (
+            <button type="button" className="sidebar-utility-button" onClick={onRevealCurrentFile}>
+              Reveal file
+            </button>
+          ) : null}
         </div>
       </div>
 
@@ -131,7 +139,7 @@ export default function Sidebar({
         <input
           className="find-input sidebar-input"
           type="text"
-          placeholder={sidebarTab === "files" ? "过滤文件" : "过滤标题"}
+          placeholder={sidebarTab === "files" ? "Filter files" : "Filter headings"}
           value={filterText}
           onChange={(event) => onFilterChange(event.target.value)}
         />
@@ -139,7 +147,6 @@ export default function Sidebar({
 
       {sidebarTab === "outline" ? (
         <div className="sidebar-content">
-          <div className="panel-heading">Outline</div>
           {outline
             .filter((item) => !normalizedFilter || item.text.toLowerCase().includes(normalizedFilter))
             .map((item, index) => (
@@ -152,15 +159,14 @@ export default function Sidebar({
                 {item.text}
               </button>
             ))}
-          {outline.length === 0 ? <div className="outline-empty">暂无标题结构</div> : null}
+          {outline.length === 0 ? <div className="outline-empty">No headings yet</div> : null}
         </div>
       ) : (
         <div className="sidebar-content">
-          <div className="panel-heading">{workspaceRoot || "未打开文件夹"}</div>
           {filteredTree ? (
             <FileTreeNode node={filteredTree} activeFilePath={activeFilePath} onOpenFile={onOpenFile} />
           ) : (
-            <div className="outline-empty">没有可显示的 Markdown 文件</div>
+            <div className="outline-empty">No Markdown files to display</div>
           )}
         </div>
       )}
