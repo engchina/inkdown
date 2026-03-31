@@ -2980,6 +2980,48 @@ export default function App() {
     if (!editor) {
       return undefined;
     }
+
+    const applyTableMatrixPaste = (text) => {
+      const selection = editor.state.selection;
+      if (!(selection instanceof CellSelection)) {
+        return false;
+      }
+
+      const rows = String(text || "")
+        .replace(/\r/g, "")
+        .split("\n")
+        .filter((row) => row.length > 0)
+        .map((row) => row.split("\t"));
+
+      if (rows.length === 0 || (rows.length === 1 && rows[0].length === 1)) {
+        return false;
+      }
+
+      const cells = [];
+      selection.forEachCell((cell, pos) => {
+        cells.push({ cell, pos });
+      });
+      if (cells.length === 0) {
+        return false;
+      }
+
+      const width = Math.max(...rows.map((row) => row.length));
+      const { tr, schema } = editor.state;
+
+      cells.forEach(({ cell, pos }, index) => {
+        const rowIndex = Math.floor(index / width);
+        const colIndex = index % width;
+        const nextValue = rows[rowIndex]?.[colIndex];
+        if (nextValue === undefined) {
+          return;
+        }
+        tr.replaceWith(pos + 1, pos + cell.nodeSize - 1, buildParagraphNode(schema, nextValue));
+      });
+
+      editor.view.dispatch(tr);
+      return true;
+    };
+
     const handleDrop = async (event) => {
       const files = Array.from(event.dataTransfer?.files || []);
       const markdownFile = files.find((file) => isMarkdownFilePath(file.path));
@@ -3016,6 +3058,12 @@ export default function App() {
           setStatus(`Linked selection to ${pastedText}`);
           return;
         }
+      }
+
+      if (pastedText && editorFocused && /[\t\n]/.test(pastedText) && applyTableMatrixPaste(pastedText)) {
+        event.preventDefault();
+        setStatus("Pasted matrix into selected cells");
+        return;
       }
 
       if (pastedText && editorFocused && looksLikeMarkdownSnippet(pastedText)) {
@@ -3485,6 +3533,11 @@ export default function App() {
 
   function commitFrontMatterFields(nextFields) {
     setMarkdownText((current) => updateMarkdownFrontMatter(current, nextFields));
+    setIsDirty(true);
+  }
+
+  function updateFrontMatterRaw(raw) {
+    setMarkdownText((current) => replaceFrontMatterRaw(current, raw));
     setIsDirty(true);
   }
 
@@ -4193,13 +4246,9 @@ export default function App() {
             sidebarTab={preferences.sidebarTab}
             onSidebarTabChange={(tab) => updatePreferences({ sidebarTab: tab })}
             filterText={sidebarFilter}
-            frontMatterFields={frontMatterState.fields}
             frontMatterRaw={frontMatterState.raw}
-            isSimpleFrontMatter={frontMatterState.isSimple}
-            onAddFrontMatterField={addFrontMatterField}
-            onFrontMatterFieldChange={updateFrontMatterField}
             onFilterChange={setSidebarFilter}
-            onRemoveFrontMatterField={removeFrontMatterField}
+            onFrontMatterRawChange={updateFrontMatterRaw}
           />
         ) : null}
 

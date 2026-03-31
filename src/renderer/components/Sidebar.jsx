@@ -74,13 +74,9 @@ export default function Sidebar({
   activeFilePath,
   activeOutlineId,
   filterText,
-  frontMatterFields,
   frontMatterRaw,
-  isSimpleFrontMatter,
-  onAddFrontMatterField,
   onFilterChange,
-  onFrontMatterFieldChange,
-  onRemoveFrontMatterField,
+  onFrontMatterRawChange,
   onJumpOutline,
   onOpenFile,
   onPickWorkspace,
@@ -192,12 +188,8 @@ export default function Sidebar({
       ) : (
         <div className="sidebar-content">
           <PropertiesPanel
-            fields={frontMatterFields}
-            isEditable={isSimpleFrontMatter}
             rawFrontMatter={frontMatterRaw}
-            onAddField={onAddFrontMatterField}
-            onRemoveField={onRemoveFrontMatterField}
-            onUpdateField={onFrontMatterFieldChange}
+            onRawChange={onFrontMatterRawChange}
           />
         </div>
       )}
