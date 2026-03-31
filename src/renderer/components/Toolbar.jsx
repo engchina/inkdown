@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React from "react";
 
 function ToolButton({ active = false, children, className = "", disabled = false, onClick, title, variant = "default" }) {
   return (
@@ -14,13 +14,6 @@ function ToolButton({ active = false, children, className = "", disabled = false
   );
 }
 
-function MenuButton({ children, onClick }) {
-  return (
-    <button className="toolbar-menu-item" type="button" onClick={onClick}>
-      {children}
-    </button>
-  );
-}
 
 export default function Toolbar({
   documentPath,
@@ -44,29 +37,6 @@ export default function Toolbar({
   sidebarVisible,
   viewMode
 }) {
-  const [menuOpen, setMenuOpen] = useState(false);
-  const menuRef = useRef(null);
-
-  useEffect(() => {
-    if (!menuOpen) {
-      return undefined;
-    }
-
-    function handlePointerDown(event) {
-      if (menuRef.current && !menuRef.current.contains(event.target)) {
-        setMenuOpen(false);
-      }
-    }
-
-    document.addEventListener("pointerdown", handlePointerDown);
-    return () => document.removeEventListener("pointerdown", handlePointerDown);
-  }, [menuOpen]);
-
-  function runMenuAction(action) {
-    setMenuOpen(false);
-    action();
-  }
-
   return (
     <header className="toolbar-shell">
       <div className="toolbar document-toolbar">
@@ -107,6 +77,14 @@ export default function Toolbar({
               Edit
             </ToolButton>
             <ToolButton
+              title="Source Mode"
+              active={viewMode === "source"}
+              variant="ghost"
+              onClick={() => onSetViewMode("source")}
+            >
+              Source
+            </ToolButton>
+            <ToolButton
               title="Split View"
               active={viewMode === "split"}
               variant="ghost"
@@ -122,32 +100,6 @@ export default function Toolbar({
             >
               Preview
             </ToolButton>
-          </div>
-
-          <div ref={menuRef} className={`toolbar-menu${menuOpen ? " open" : ""}`}>
-            <ToolButton
-              className="menu-trigger"
-              title="More Actions"
-              variant="ghost"
-              onClick={() => setMenuOpen((current) => !current)}
-            >
-              ...
-            </ToolButton>
-
-            {menuOpen ? (
-              <div className="toolbar-menu-panel">
-                <MenuButton onClick={() => runMenuAction(onNew)}>New Document</MenuButton>
-                <MenuButton onClick={() => runMenuAction(onOpen)}>Open Document</MenuButton>
-                <MenuButton onClick={() => runMenuAction(onSaveAs)}>Save As</MenuButton>
-                <MenuButton onClick={() => runMenuAction(() => onSetViewMode("source"))}>Source Mode</MenuButton>
-                {documentPath ? (
-                  <MenuButton onClick={() => runMenuAction(onRevealCurrentFile)}>Reveal in Folder</MenuButton>
-                ) : null}
-                <MenuButton onClick={() => runMenuAction(onExport)}>Export HTML</MenuButton>
-                <MenuButton onClick={() => runMenuAction(onExportPdf)}>Export PDF</MenuButton>
-                <MenuButton onClick={() => runMenuAction(onOpenPreferences)}>Preferences</MenuButton>
-              </div>
-            ) : null}
           </div>
         </div>
       </div>

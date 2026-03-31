@@ -1,69 +1,99 @@
 :root {
   --editor-font-size: 18px;
   --paper-width: 900px;
-  --content-line-height: 1.62;
+  --content-line-height: 1.7;
   --content-block-gap: 0.6em;
-  --content-block-gap-lg: 0.95em;
-  --content-heading-gap-top: 1.3em;
-  --content-heading-gap-bottom: 0.45em;
-  --editor-heading-gap-top: 0.38em;
-  --editor-heading-gap-bottom: 0.16em;
-  --heading-scale-1: 1.56;
-  --heading-scale-2: 1.36;
+  --content-block-gap-lg: 1.1em;
+  --content-heading-gap-top: 1.5em;
+  --content-heading-gap-bottom: 0.5em;
+  --editor-heading-gap-top: 0.45em;
+  --editor-heading-gap-bottom: 0.2em;
+  --heading-scale-1: 1.6;
+  --heading-scale-2: 1.35;
   --heading-scale-3: 1.2;
-  --heading-scale-4: 1.08;
+  --heading-scale-4: 1.05;
   --heading-scale-5: 1;
-  --heading-scale-6: 0.92;
-  --bg-0: #f7f2e9;
-  --bg-1: #f0e6d8;
-  --panel: rgba(249, 244, 236, 0.85);
-  --panel-strong: rgba(255, 255, 255, 0.88);
-  --panel-soft: rgba(243, 237, 228, 0.72);
-  --border: rgba(114, 93, 62, 0.14);
-  --text: #1a2230;
-  --text-soft: #675947;
-  --accent: #9a5a26;
-  --accent-soft: #d9bf9a;
-  --code-bg: #23262d;
-  --code-fg: #f5f7fa;
-  --quote: #765943;
-  font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+  --heading-scale-6: 0.9;
+  
+  --bg-0: #f8fafc;
+  --bg-1: #f1f5f9;
+  --panel: rgba(255, 255, 255, 0.6);
+  --panel-strong: rgba(255, 255, 255, 0.85);
+  --panel-soft: rgba(248, 250, 252, 0.45);
+  --border: rgba(15, 23, 42, 0.08);
+  --border-strong: rgba(15, 23, 42, 0.15);
+  --text: #0f172a;
+  --text-soft: #475569;
+  --accent: #4f46e5;
+  --accent-soft: rgba(79, 70, 229, 0.12);
+  --code-bg: #1e293b;
+  --code-fg: #f8fafc;
+  --quote: #64748b;
+  
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.08), 0 2px 4px -1px rgba(0, 0, 0, 0.04);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.08), 0 4px 6px -2px rgba(0, 0, 0, 0.04);
+  --shadow-xl: 0 24px 48px -12px rgba(0, 0, 0, 0.12), 0 12px 24px -12px rgba(0, 0, 0, 0.04);
+  
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   color: var(--text);
   background:
-    radial-gradient(circle at top left, rgba(214, 180, 131, 0.28), transparent 24%),
-    radial-gradient(circle at top right, rgba(139, 167, 142, 0.18), transparent 22%),
+    radial-gradient(circle at 15% 10%, rgba(199, 210, 254, 0.5) 0%, transparent 45%),
+    radial-gradient(circle at 85% 15%, rgba(253, 230, 138, 0.3) 0%, transparent 40%),
+    radial-gradient(circle at 50% 90%, rgba(191, 219, 254, 0.4) 0%, transparent 50%),
     linear-gradient(180deg, var(--bg-0) 0%, var(--bg-1) 100%);
+  background-attachment: fixed;
   color-scheme: light;
 }
 
 :root[data-theme="forest"] {
-  --bg-0: #ecf6ee;
-  --bg-1: #dcebdd;
-  --panel: rgba(235, 245, 237, 0.88);
-  --panel-strong: rgba(255, 255, 255, 0.92);
-  --panel-soft: rgba(224, 238, 225, 0.78);
-  --border: rgba(67, 109, 75, 0.14);
-  --text: #18251b;
-  --text-soft: #526356;
-  --accent: #2f6b44;
-  --accent-soft: #b7d6c0;
-  --quote: #3f5a47;
+  --bg-0: #f0fdf4;
+  --bg-1: #dcfce7;
+  --panel: rgba(255, 255, 255, 0.5);
+  --panel-strong: rgba(255, 255, 255, 0.75);
+  --panel-soft: rgba(240, 253, 244, 0.5);
+  --border: rgba(6, 78, 59, 0.08);
+  --border-strong: rgba(6, 78, 59, 0.18);
+  --text: #064e3b;
+  --text-soft: #047857;
+  --accent: #059669;
+  --accent-soft: rgba(5, 150, 105, 0.15);
+  --quote: #065f46;
+  background:
+    radial-gradient(circle at 10% 20%, rgba(167, 243, 208, 0.5) 0%, transparent 50%),
+    radial-gradient(circle at 90% 10%, rgba(217, 249, 157, 0.4) 0%, transparent 45%),
+    radial-gradient(circle at 80% 90%, rgba(134, 239, 172, 0.4) 0%, transparent 55%),
+    linear-gradient(180deg, var(--bg-0) 0%, var(--bg-1) 100%);
+  background-attachment: fixed;
 }
 
 :root[data-theme="midnight"] {
-  --bg-0: #101726;
-  --bg-1: #0b1120;
-  --panel: rgba(15, 22, 36, 0.88);
-  --panel-strong: rgba(16, 24, 39, 0.94);
-  --panel-soft: rgba(18, 28, 43, 0.86);
-  --border: rgba(146, 173, 206, 0.14);
-  --text: #e7eef8;
-  --text-soft: #a6b6cb;
-  --accent: #7ec7a0;
-  --accent-soft: #243f39;
-  --code-bg: #0f172a;
-  --code-fg: #eff6ff;
-  --quote: #c6d2e3;
+  --bg-0: #0b0f19;
+  --bg-1: #06090f;
+  --panel: rgba(17, 24, 39, 0.65);
+  --panel-strong: rgba(31, 41, 55, 0.8);
+  --panel-soft: rgba(17, 24, 39, 0.45);
+  --border: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.16);
+  --text: #f8fafc;
+  --text-soft: #94a3b8;
+  --accent: #818cf8;
+  --accent-soft: rgba(129, 140, 248, 0.18);
+  --code-bg: #000000;
+  --code-fg: #f1f5f9;
+  --quote: #cbd5e1;
+  
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.4), 0 2px 4px -1px rgba(0, 0, 0, 0.2);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.6), 0 4px 6px -2px rgba(0, 0, 0, 0.3);
+  --shadow-xl: 0 32px 64px -12px rgba(0, 0, 0, 0.8), 0 16px 32px -12px rgba(0, 0, 0, 0.4);
+  
+  background:
+    radial-gradient(circle at 0% 0%, rgba(56, 189, 248, 0.12) 0%, transparent 45%),
+    radial-gradient(circle at 100% 100%, rgba(167, 139, 250, 0.12) 0%, transparent 50%),
+    radial-gradient(circle at 50% 50%, rgba(79, 70, 229, 0.08) 0%, transparent 60%),
+    linear-gradient(180deg, var(--bg-0) 0%, var(--bg-1) 100%);
+  background-attachment: fixed;
   color-scheme: dark;
 }
 
@@ -112,9 +142,12 @@ select {
   z-index: 24;
   display: flex;
   flex-direction: column;
-  backdrop-filter: blur(18px);
-  background: color-mix(in srgb, var(--panel) 94%, transparent);
+  backdrop-filter: blur(32px) saturate(180%);
+  -webkit-backdrop-filter: blur(32px) saturate(180%);
+  background: var(--panel);
   border-bottom: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+  transition: background 0.3s ease, border-color 0.3s ease;
 }
 
 .toolbar {
@@ -141,7 +174,9 @@ select {
   gap: 12px;
   align-items: center;
   padding: 10px 22px;
-  background: color-mix(in srgb, var(--panel) 96%, transparent);
+  backdrop-filter: blur(32px) saturate(180%);
+  -webkit-backdrop-filter: blur(32px) saturate(180%);
+  background: var(--panel);
   border-bottom: 1px solid var(--border);
 }
 
@@ -243,26 +278,25 @@ select {
   height: 34px;
   padding: 0 11px;
   border: 1px solid var(--border);
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--panel-strong) 68%, transparent);
+  border-radius: 8px;
+  background: var(--panel-strong);
   color: var(--text-soft);
   cursor: pointer;
-  transition:
-    border-color 120ms ease,
-    background 120ms ease,
-    color 120ms ease;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   -webkit-app-region: no-drag;
 }
 
 .tool-button:hover {
-  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
-  color: var(--text);
+  border-color: var(--accent);
+  color: var(--accent);
+  transform: translateY(-1px) scale(1.03);
+  box-shadow: var(--shadow-md);
 }
 
 .tool-button.active {
   background: var(--accent-soft);
   color: var(--text);
-  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  border-color: var(--accent);
 }
 
 .tool-button:disabled {
@@ -357,7 +391,10 @@ select {
   min-height: 0;
   padding: 16px 12px 14px;
   border-right: 1px solid var(--border);
-  background: color-mix(in srgb, var(--panel-soft) 92%, transparent);
+  background: var(--panel-soft);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  transition: background 0.3s ease;
 }
 
 .sidebar-header {
@@ -462,12 +499,14 @@ select {
   text-align: left;
   color: var(--text-soft);
   cursor: pointer;
+  transition: all 0.15s ease;
 }
 
 .outline-item:hover,
 .outline-item.active {
-  background: color-mix(in srgb, var(--accent-soft) 75%, transparent);
+  background: var(--accent-soft);
   color: var(--text);
+  transform: translateX(4px);
 }
 
 .outline-item.level-2 {
@@ -510,12 +549,14 @@ select {
 
 .file-leaf {
   cursor: pointer;
+  transition: all 0.15s ease;
 }
 
 .file-leaf:hover,
 .file-leaf.active {
-  background: color-mix(in srgb, var(--accent-soft) 75%, transparent);
+  background: var(--accent-soft);
   color: var(--text);
+  transform: translateX(4px);
 }
 
 .file-node-icon {
@@ -547,16 +588,15 @@ select {
 
 .paper {
   max-width: var(--paper-width);
-  margin: 0 auto;
-  padding: 28px 54px 56px;
-  border: 1px solid color-mix(in srgb, var(--border) 68%, transparent);
-  border-radius: 28px;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.78), rgba(255, 255, 255, 0.94)),
-    linear-gradient(180deg, color-mix(in srgb, var(--bg-0) 30%, white), color-mix(in srgb, var(--bg-1) 35%, white));
-  box-shadow:
-    0 24px 64px rgba(0, 0, 0, 0.1),
-    inset 0 1px 0 rgba(255, 255, 255, 0.55);
+  margin: 28px auto;
+  padding: 40px 64px 64px;
+  border: 1px solid var(--border-strong);
+  border-radius: 20px;
+  background: var(--panel-strong);
+  backdrop-filter: blur(32px) saturate(180%);
+  -webkit-backdrop-filter: blur(32px) saturate(180%);
+  box-shadow: var(--shadow-xl), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  transition: background 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
 }
 
 .paper-header {
@@ -724,28 +764,32 @@ select {
 .editor-surface blockquote,
 .preview-surface blockquote {
   margin: var(--content-block-gap-lg) 0;
-  padding-left: 1.1em;
-  border-left: 4px solid color-mix(in srgb, var(--accent-soft) 75%, transparent);
+  padding: 12px 18px;
+  border-left: 4px solid var(--accent);
+  border-radius: 0 12px 12px 0;
+  background: var(--panel-soft);
   color: var(--quote);
 }
 
 .editor-surface code,
 .preview-surface code {
-  padding: 0.14em 0.36em;
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--accent-soft) 18%, transparent);
-  font-family: "Cascadia Code", "JetBrains Mono", monospace;
-  font-size: 0.92em;
+  padding: 0.2em 0.4em;
+  border-radius: 6px;
+  background: var(--accent-soft);
+  font-family: "Fira Code", "JetBrains Mono", monospace;
+  font-size: 0.9em;
 }
 
 .editor-surface pre,
 .preview-surface pre {
   margin: var(--content-block-gap-lg) 0;
-  padding: 18px 20px;
+  padding: 20px;
   border-radius: 16px;
+  border: 1px solid var(--border-strong);
   background: var(--code-bg);
   color: var(--code-fg);
   overflow: auto;
+  box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.15);
 }
 
 .editor-surface pre code,
@@ -794,14 +838,14 @@ select {
 .editor-surface td,
 .preview-surface th,
 .preview-surface td {
-  border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
-  padding: 10px 12px;
+  border: 1px solid var(--border-strong);
+  padding: 12px 16px;
   vertical-align: top;
 }
 
 .editor-surface th,
 .preview-surface th {
-  background: color-mix(in srgb, var(--accent-soft) 30%, transparent);
+  background: var(--panel-soft);
 }
 
 .side-pane {
@@ -809,7 +853,9 @@ select {
   flex-direction: column;
   gap: 10px;
   border-left: 1px solid var(--border);
-  background: color-mix(in srgb, var(--panel-soft) 74%, transparent);
+  background: var(--panel-soft);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
 }
 
 .source-textarea {
@@ -907,11 +953,11 @@ select {
 
 .callout {
   position: relative;
-  padding: 14px 16px 14px 18px;
-  border-left-width: 0;
-  border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
-  border-radius: 18px;
-  background: color-mix(in srgb, var(--panel-strong) 94%, transparent);
+  padding: 16px 18px 16px 20px;
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  background: var(--panel-soft);
+  box-shadow: var(--shadow-sm);
 }
 
 .callout::before {
@@ -1000,8 +1046,9 @@ select {
   min-height: 28px;
   padding: 4px 12px;
   border-top: 1px solid var(--border);
-  backdrop-filter: blur(18px);
-  background: color-mix(in srgb, var(--panel) 92%, transparent);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  background: var(--panel);
   color: var(--text-soft);
   font-size: 12px;
   line-height: 1.2;
@@ -1053,17 +1100,21 @@ select {
   z-index: 40;
   display: grid;
   place-items: center;
-  background: rgba(5, 10, 18, 0.34);
-  backdrop-filter: blur(8px);
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
 }
 
 .preferences-dialog {
   width: min(520px, calc(100vw - 32px));
-  padding: 24px;
-  border: 1px solid var(--border);
+  padding: 32px;
+  border: 1px solid var(--border-strong);
   border-radius: 24px;
   background: var(--panel-strong);
-  box-shadow: 0 26px 80px rgba(0, 0, 0, 0.22);
+  backdrop-filter: blur(32px) saturate(180%);
+  -webkit-backdrop-filter: blur(32px) saturate(180%);
+  box-shadow: var(--shadow-xl), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
 
 .dialog-header {
