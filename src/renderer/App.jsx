@@ -1713,13 +1713,18 @@ export default function App() {
   const showSource = preferences.viewMode === "source";
   const showPreview = preferences.viewMode === "split" || preferences.viewMode === "preview";
   const findSummary = findOpen && findQuery ? `${matches.length === 0 ? "0" : `${matchIndex + 1}/${matches.length}`} matches` : null;
+  const documentPathLabel = filePath || preferences.workspaceRoot || "";
 
   return (
     <div className={`app-shell theme-${preferences.theme}`}>
       <Toolbar
+        documentPath={documentPathLabel}
+        documentTitle={documentTitle}
         editor={editor}
+        isDirty={isDirty}
         onNew={createNewDocument}
         onOpen={openDocument}
+        onRevealCurrentFile={revealCurrentFile}
         onInsertImage={insertImage}
         onInsertTable={insertTable}
         onApplyFormat={applyFormatting}
@@ -1730,6 +1735,8 @@ export default function App() {
         onOpenFind={openFindReplace}
         onOpenPreferences={() => setPreferencesOpen(true)}
         onSetViewMode={(mode) => updatePreferences({ viewMode: mode })}
+        onToggleSidebar={() => updatePreferences({ sidebarVisible: !preferences.sidebarVisible })}
+        sidebarVisible={preferences.sidebarVisible}
         viewMode={preferences.viewMode}
       />
 
@@ -1775,9 +1782,8 @@ export default function App() {
                   <div>
                     <div className="eyebrow">Markdown Document</div>
                     <h1>{documentTitle}</h1>
-                    {preferences.workspaceRoot ? <div className="paper-subtitle">{preferences.workspaceRoot}</div> : null}
+                    {documentPathLabel ? <div className="paper-subtitle">{documentPathLabel}</div> : null}
                   </div>
-                  <div className={`sync-state${isDirty ? " dirty" : ""}`}>{isDirty ? "Unsaved" : "Saved"}</div>
                 </div>
                 <EditorContent editor={editor} />
                 <div className="editor-end-hitbox" onMouseDown={handleEditorEndMouseDown} />
@@ -1809,8 +1815,6 @@ export default function App() {
       </div>
 
       <StatusBar
-        documentTitle={documentTitle}
-        isDirty={isDirty}
         lineCount={stats.lineCount}
         wordCount={stats.wordCount}
         charCount={stats.charCount}

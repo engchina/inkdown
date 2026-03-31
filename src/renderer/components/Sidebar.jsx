@@ -21,9 +21,7 @@ function filterTree(node, keyword) {
     return matchesFilter(node, keyword) ? node : null;
   }
 
-  const children = (node.children || [])
-    .map((child) => filterTree(child, keyword))
-    .filter(Boolean);
+  const children = (node.children || []).map((child) => filterTree(child, keyword)).filter(Boolean);
 
   if (children.length > 0 || matchesFilter(node, keyword)) {
     return {
@@ -72,25 +70,23 @@ function FileTreeNode({ node, activeFilePath, onOpenFile, depth = 0 }) {
 }
 
 export default function Sidebar({
-  outline,
-  activeOutlineId,
-  onJumpOutline,
-  workspaceRoot,
-  workspaceTree,
   activeFilePath,
+  activeOutlineId,
+  filterText,
+  onFilterChange,
+  onJumpOutline,
   onOpenFile,
   onPickWorkspace,
   onRevealCurrentFile,
-  sidebarTab,
   onSidebarTabChange,
-  filterText,
-  onFilterChange
+  outline,
+  sidebarTab,
+  workspaceRoot,
+  workspaceTree
 }) {
   const normalizedFilter = filterText.trim().toLowerCase();
-  const filteredTree = useMemo(
-    () => filterTree(workspaceTree, normalizedFilter),
-    [workspaceTree, normalizedFilter]
-  );
+  const filteredTree = useMemo(() => filterTree(workspaceTree, normalizedFilter), [workspaceTree, normalizedFilter]);
+  const fileRootLabel = workspaceRoot ? workspaceRoot.split(/[\\/]/).filter(Boolean).pop() : "No folder opened";
 
   return (
     <aside className="sidebar-panel">
@@ -111,19 +107,31 @@ export default function Sidebar({
             Files
           </button>
         </div>
+      </div>
 
-        <div className="sidebar-actions">
-          <button type="button" className="tool-button compact" onClick={onPickWorkspace} title="Open Folder">
-            Folder
-          </button>
-          <button
-            type="button"
-            className="tool-button compact"
-            onClick={onRevealCurrentFile}
-            title="Reveal Current File in Folder"
-          >
-            Reveal
-          </button>
+      <div className="sidebar-meta">
+        <div>
+          <div className="panel-heading">{sidebarTab === "outline" ? "Document map" : fileRootLabel}</div>
+          <div className="sidebar-caption">
+            {sidebarTab === "outline"
+              ? `${outline.length} headings`
+              : workspaceRoot
+                ? workspaceRoot
+                : "Open a folder to browse Markdown files"}
+          </div>
+        </div>
+
+        <div className="sidebar-utility-actions">
+          {sidebarTab === "files" ? (
+            <button type="button" className="sidebar-utility-button" onClick={onPickWorkspace}>
+              {workspaceRoot ? "Change folder" : "Open folder"}
+            </button>
+          ) : null}
+          {activeFilePath ? (
+            <button type="button" className="sidebar-utility-button" onClick={onRevealCurrentFile}>
+              Reveal file
+            </button>
+          ) : null}
         </div>
       </div>
 
@@ -139,7 +147,6 @@ export default function Sidebar({
 
       {sidebarTab === "outline" ? (
         <div className="sidebar-content">
-          <div className="panel-heading">Outline</div>
           {outline
             .filter((item) => !normalizedFilter || item.text.toLowerCase().includes(normalizedFilter))
             .map((item, index) => (
@@ -156,7 +163,6 @@ export default function Sidebar({
         </div>
       ) : (
         <div className="sidebar-content">
-          <div className="panel-heading">{workspaceRoot || "No folder opened"}</div>
           {filteredTree ? (
             <FileTreeNode node={filteredTree} activeFilePath={activeFilePath} onOpenFile={onOpenFile} />
           ) : (

@@ -1,8 +1,6 @@
 import React, { useMemo, useState } from "react";
 
 export default function StatusBar({
-  documentTitle,
-  isDirty,
   lineCount,
   wordCount,
   charCount,
@@ -36,17 +34,7 @@ export default function StatusBar({
   return (
     <footer className="status-bar">
       <div className="status-bar-section status-bar-main">
-        <span className="status-title" title={documentTitle}>
-          {documentTitle}
-        </span>
-        <span className={`status-indicator${isDirty ? " dirty" : ""}`}>
-          {isDirty ? "Unsaved" : "Saved"}
-        </span>
-        {showTransientStatus ? (
-          <span className="status-message" title={statusMessage}>
-            {statusMessage}
-          </span>
-        ) : null}
+        <span className="status-meta-item">{showTransientStatus ? statusMessage : "Ready"}</span>
       </div>
 
       <div className="status-bar-section status-bar-meta">
@@ -60,7 +48,6 @@ export default function StatusBar({
         >
           {activeMetric.label}
         </button>
-        {!showTransientStatus ? <span className="status-meta-item">Ready</span> : null}
       </div>
     </footer>
   );
