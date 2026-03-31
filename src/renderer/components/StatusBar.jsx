@@ -7,7 +7,9 @@ export default function StatusBar({
   readingMinutes,
   viewMode,
   statusMessage,
-  findSummary
+  statusKind,
+  findSummary,
+  onDisableHints
 }) {
   const [metricIndex, setMetricIndex] = useState(0);
   const metrics = useMemo(
@@ -30,11 +32,17 @@ export default function StatusBar({
       source: "Source"
     }[viewMode] || viewMode;
   const showTransientStatus = statusMessage && statusMessage !== "Ready";
+  const isHint = statusKind === "hint";
 
   return (
     <footer className="status-bar">
-      <div className="status-bar-section status-bar-main">
+      <div className={`status-bar-section status-bar-main${isHint ? " is-hint" : ""}`}>
         <span className="status-meta-item">{showTransientStatus ? statusMessage : "Ready"}</span>
+        {isHint ? (
+          <button type="button" className="status-hint-dismiss" onClick={onDisableHints}>
+            Hide hints
+          </button>
+        ) : null}
       </div>
 
       <div className="status-bar-section status-bar-meta">

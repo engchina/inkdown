@@ -41,6 +41,8 @@ import CommandPalette from "./components/CommandPalette";
 import SlashCommandMenu from "./components/SlashCommandMenu";
 import TableToolbar from "./components/TableToolbar";
 import FrontMatterMergeDialog from "./components/FrontMatterMergeDialog";
+import TableSelectionHandles from "./components/TableSelectionHandles";
+import EditingCheatsheetDialog from "./components/EditingCheatsheetDialog";
 
 const editorMarked = new Marked({ gfm: true, breaks: true });
 const previewMarked = new Marked({ gfm: true, breaks: true });
@@ -68,6 +70,16 @@ const defaultPreferences = {
   sidebarTab: "outline",
   focusMode: false,
   typewriterMode: false,
+  smartMarkdownTransform: true,
+  smartTransformHints: true,
+  smartTransformRules: {
+    heading: true,
+    blockquote: true,
+    bulletList: true,
+    orderedList: true,
+    taskList: true,
+    codeFence: true
+  },
   workspaceRoot: null,
   recentFiles: [],
   paletteUsage: {},
@@ -335,6 +347,14 @@ function CodeBlockNodeView({ editor, getPos, node, updateAttributes }) {
         replaceCodeBlockText(formatSqlLikeText(node.textContent || ""));
         return;
       }
+      if (["yaml", "yml"].includes(activeValue)) {
+        replaceCodeBlockText(formatYamlLikeText(node.textContent || ""));
+        return;
+      }
+      if (["md", "markdown"].includes(activeValue)) {
+        replaceCodeBlockText(normalizeMarkdownBlock(node.textContent || ""));
+        return;
+      }
       if (activeValue === "mermaid") {
         setMermaidRefreshKey((current) => current + 1);
       }
@@ -342,7 +362,17 @@ function CodeBlockNodeView({ editor, getPos, node, updateAttributes }) {
   }
 
   const toolLabel =
-    activeValue === "json" ? "Format JSON" : activeValue === "sql" ? "Format SQL" : activeValue === "mermaid" ? "Refresh" : null;
+    activeValue === "json"
+      ? "Format JSON"
+      : activeValue === "sql"
+        ? "Format SQL"
+        : ["yaml", "yml"].includes(activeValue)
+          ? "Format YAML"
+          : ["md", "markdown"].includes(activeValue)
+            ? "Normalize MD"
+            : activeValue === "mermaid"
+              ? "Refresh"
+              : null;
 
   return (
     <NodeViewWrapper className="code-block-node">
@@ -1582,6 +1612,20 @@ function formatSqlLikeText(value) {
     .replace(/\s+(AND|OR)\b/g, "\n  $1");
 }
 
+function formatYamlLikeText(value) {
+  const parsed = yaml.load(String(value || ""));
+  return yaml.dump(parsed, { lineWidth: 100, noRefs: true }).trim();
+}
+
+function normalizeMarkdownBlock(value) {
+  return String(value || "")
+    .replace(/\r/g, "")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/^(#{1,6})(\S)/gm, "$1 $2")
+    .trim();
+}
+
 function getTableLayoutDocumentKey(filePath) {
   return filePath || "__untitled__";
 }
@@ -1926,17 +1970,19 @@ export default function App() {
   const [preferences, setPreferences] = useState(defaultPreferences);
   const [preferencesReady, setPreferencesReady] = useState(false);
   const [preferencesOpen, setPreferencesOpen] = useState(false);
+  const [editingCheatsheetOpen, setEditingCheatsheetOpen] = useState(false);
   const [findOpen, setFindOpen] = useState(false);
   const [findQuery, setFindQuery] = useState("");
   const [replaceValue, setReplaceValue] = useState("");
   const [matchIndex, setMatchIndex] = useState(0);
-  const [statusMessage, setStatusMessage] = useState("Ready");
+  const [statusState, setStatusState] = useState({ message: "Ready", kind: "default" });
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [commandPaletteQuery, setCommandPaletteQuery] = useState("");
   const [slashMenuState, setSlashMenuState] = useState({ open: false, query: "", top: 0, left: 0 });
   const [slashMenuIndex, setSlashMenuIndex] = useState(0);
   const [tableToolbarVisible, setTableToolbarVisible] = useState(false);
   const [tableSelectionCount, setTableSelectionCount] = useState(0);
+  const [tableHandleState, setTableHandleState] = useState({ visible: false, rows: [], cols: [] });
   const [frontMatterMergeState, setFrontMatterMergeState] = useState(null);
 
   const sourceRef = useRef(null);
@@ -1950,6 +1996,8 @@ export default function App() {
   const slashMenuStateRef = useRef({ open: false, query: "", top: 0, left: 0 });
   const slashCommandItemsRef = useRef([]);
   const executeSlashCommandRef = useRef(null);
+  const paperRef = useRef(null);
+  const suppressNextSmartTransformRef = useRef(false);
 
   const deferredMarkdown = useDeferredValue(markdownText);
   const matches = useMemo(() => findMatches(markdownText, findQuery), [markdownText, findQuery]);
@@ -2312,8 +2360,21 @@ export default function App() {
     }
   }
 
+  function flashActiveEditorBlock(instance = editor) {
+    const target = getActiveEditorBlock(instance);
+    if (!(target instanceof HTMLElement)) {
+      return;
+    }
+    target.classList.remove("editor-block-flash");
+    window.requestAnimationFrame(() => {
+      target.classList.add("editor-block-flash");
+      window.setTimeout(() => target.classList.remove("editor-block-flash"), 520);
+    });
+  }
+
   function syncTableToolbar(instance) {
-    setTableToolbarVisible(Boolean(instance?.isActive?.("table")));
+    const tableActive = Boolean(instance?.isActive?.("table"));
+    setTableToolbarVisible(tableActive);
     const selection = instance?.state?.selection;
     if (selection instanceof CellSelection) {
       const cells = [];
@@ -2321,9 +2382,46 @@ export default function App() {
         cells.push({ cell, pos });
       });
       setTableSelectionCount(cells.length);
+    } else {
+      setTableSelectionCount(0);
+    }
+
+    if (!tableActive || !paperRef.current || !hasMountedEditorView(instance)) {
+      setTableHandleState({ visible: false, rows: [], cols: [] });
       return;
     }
-    setTableSelectionCount(0);
+
+    const selectedCell = instance.view.dom.querySelector(".selectedCell");
+    const table = selectedCell?.closest("table");
+    if (!(table instanceof HTMLElement)) {
+      setTableHandleState({ visible: false, rows: [], cols: [] });
+      return;
+    }
+
+    const paperRect = paperRef.current.getBoundingClientRect();
+    const rowElements = Array.from(table.rows || []);
+    const rows = rowElements.map((row, index) => {
+      const rect = row.getBoundingClientRect();
+      return {
+        index,
+        top: rect.top - paperRect.top,
+        left: rect.left - paperRect.left - 72,
+        height: rect.height
+      };
+    });
+
+    const headerCells = Array.from(rowElements[0]?.cells || []);
+    const cols = headerCells.map((cell, index) => {
+      const rect = cell.getBoundingClientRect();
+      return {
+        index,
+        left: rect.left - paperRect.left,
+        top: rect.top - paperRect.top - 34,
+        width: rect.width
+      };
+    });
+
+    setTableHandleState({ visible: true, rows, cols });
   }
 
   function captureTableLayouts(instance) {
@@ -2538,12 +2636,41 @@ export default function App() {
       return true;
     }
 
+    if (event.key === "Backspace" && cursorAtStart && emptyTextblock) {
+      if ($from.parent.type.name === "heading") {
+        event.preventDefault();
+        runEditorCommand((chain) => chain.setParagraph().run());
+        return true;
+      }
+
+      if ($from.parent.type.name === "blockquote") {
+        event.preventDefault();
+        runEditorCommand((chain) => chain.toggleBlockquote().run());
+        return true;
+      }
+
+      if ($from.parent.type.name === "codeBlock") {
+        event.preventDefault();
+        runEditorCommand((chain) => chain.clearNodes().setParagraph().run());
+        return true;
+      }
+    }
+
     return false;
   }
 
   function handleEditorSmartMarkdown(view, event) {
     if (handleEditorStructuredEditing(view, event)) {
       return true;
+    }
+
+    if (!preferencesRef.current.smartMarkdownTransform) {
+      return false;
+    }
+
+    if (suppressNextSmartTransformRef.current) {
+      suppressNextSmartTransformRef.current = false;
+      return false;
     }
 
     const selection = view.state.selection;
@@ -2559,46 +2686,81 @@ export default function App() {
 
     const beforeCursor = parent.textContent.slice(0, $from.parentOffset);
     const shortcutFrom = selection.from - beforeCursor.length;
+    const escapedSpacePrefix = /^\\(#{1,6}|>|[-*+]|\d+\.|[-*+]\s\[(?: |x|X)\])$/.exec(beforeCursor);
+    const transformRules = preferencesRef.current.smartTransformRules || {};
 
     if (event.key === " ") {
-      if (/^#{1,6}$/.test(beforeCursor)) {
+      if (escapedSpacePrefix) {
+        event.preventDefault();
+        applyEditorMarkdownShortcut(shortcutFrom, selection.from, (chain) =>
+          chain.insertContent(`${escapedSpacePrefix[1]} `).run()
+        );
+        setHint("Inserted literal Markdown marker.");
+        return true;
+      }
+
+      if ((transformRules.heading ?? true) && /^#{1,6}$/.test(beforeCursor)) {
         event.preventDefault();
         applyEditorMarkdownShortcut(shortcutFrom, selection.from, (chain) =>
           chain.toggleHeading({ level: beforeCursor.length }).run()
         );
+        flashActiveEditorBlock();
+        setHint(`Heading ${beforeCursor.length}. Backspace on empty heading returns to paragraph.`);
         return true;
       }
 
-      if (/^>$/.test(beforeCursor)) {
+      if ((transformRules.blockquote ?? true) && /^>$/.test(beforeCursor)) {
         event.preventDefault();
         applyEditorMarkdownShortcut(shortcutFrom, selection.from, (chain) => chain.toggleBlockquote().run());
+        flashActiveEditorBlock();
+        setHint("Blockquote. Backspace on empty quote returns to paragraph.");
         return true;
       }
 
-      if (/^[-*+]$/.test(beforeCursor)) {
+      if ((transformRules.bulletList ?? true) && /^[-*+]$/.test(beforeCursor)) {
         event.preventDefault();
         applyEditorMarkdownShortcut(shortcutFrom, selection.from, (chain) => chain.toggleBulletList().run());
+        flashActiveEditorBlock();
+        setHint("Bullet list. Backspace on empty item exits the list.");
         return true;
       }
 
-      if (/^\d+\.$/.test(beforeCursor)) {
+      if ((transformRules.orderedList ?? true) && /^\d+\.$/.test(beforeCursor)) {
         event.preventDefault();
         applyEditorMarkdownShortcut(shortcutFrom, selection.from, (chain) => chain.toggleOrderedList().run());
+        flashActiveEditorBlock();
+        setHint("Ordered list. Backspace on empty item exits the list.");
         return true;
       }
 
-      if (/^[-*+]\s\[(?: |x|X)\]$/.test(beforeCursor)) {
+      if ((transformRules.taskList ?? true) && /^[-*+]\s\[(?: |x|X)\]$/.test(beforeCursor)) {
         event.preventDefault();
         applyEditorMarkdownShortcut(shortcutFrom, selection.from, (chain) => chain.toggleTaskList().run());
+        flashActiveEditorBlock();
+        setHint("Task list. Backspace on empty item exits the list.");
         return true;
       }
     }
 
+    const escapedFenceMatch = /^\\((?:```|~~~)([A-Za-z0-9_-]+)?)$/.exec(beforeCursor);
+    if (event.key === "Enter" && escapedFenceMatch) {
+      event.preventDefault();
+      applyEditorMarkdownShortcut(shortcutFrom, selection.from, (chain) => chain.insertContent(`${escapedFenceMatch[1]}\n`).run());
+      setHint("Inserted literal code fence.");
+      return true;
+    }
+
     const codeFenceMatch = /^(?:```|~~~)([A-Za-z0-9_-]+)?$/.exec(beforeCursor);
-    if (event.key === "Enter" && codeFenceMatch) {
+    if ((transformRules.codeFence ?? true) && event.key === "Enter" && codeFenceMatch) {
       event.preventDefault();
       applyEditorMarkdownShortcut(shortcutFrom, selection.from, (chain) =>
         chain.setNode("codeBlock", { language: codeFenceMatch[1] || null }).run()
+      );
+      flashActiveEditorBlock();
+      setHint(
+        codeFenceMatch[1]
+          ? `${codeFenceMatch[1]} code block. Backspace on empty block returns to paragraph.`
+          : "Code block. Backspace on empty block returns to paragraph."
       );
       return true;
     }
@@ -2882,6 +3044,9 @@ export default function App() {
         case "open-preferences":
           setPreferencesOpen(true);
           break;
+        case "open-editing-cheatsheet":
+          setEditingCheatsheetOpen(true);
+          break;
         case "open-command-palette":
           openCommandPalette();
           break;
@@ -2939,6 +3104,12 @@ export default function App() {
       if (event.key === "Escape" && slashMenuStateRef.current.open) {
         event.preventDefault();
         closeSlashMenu();
+        return;
+      }
+
+      if (event.key === "Escape" && editor?.isFocused) {
+        suppressNextSmartTransformRef.current = true;
+        setHint("Next smart transform skipped. Use \\# or \\``` for literal markers.");
       }
     };
 
@@ -2997,26 +3168,35 @@ export default function App() {
         return false;
       }
 
-      const cells = [];
-      selection.forEachCell((cell, pos) => {
-        cells.push({ cell, pos });
-      });
-      if (cells.length === 0) {
+      const $anchor = selection.$anchorCell;
+      const table = $anchor.node(-1);
+      const tableStart = $anchor.start(-1);
+      const map = TableMap.get(table);
+      const anchorRect = map.findCell($anchor.pos - tableStart);
+      const headRect = map.findCell(selection.$headCell.pos - tableStart);
+      const left = Math.min(anchorRect.left, headRect.left);
+      const right = Math.max(anchorRect.right, headRect.right);
+      const top = Math.min(anchorRect.top, headRect.top);
+      const bottom = Math.max(anchorRect.bottom, headRect.bottom);
+
+      if (left === undefined || top === undefined) {
         return false;
       }
 
       const width = Math.max(...rows.map((row) => row.length));
       const { tr, schema } = editor.state;
-
-      cells.forEach(({ cell, pos }, index) => {
-        const rowIndex = Math.floor(index / width);
-        const colIndex = index % width;
-        const nextValue = rows[rowIndex]?.[colIndex];
-        if (nextValue === undefined) {
-          return;
+      for (let rowIndex = top; rowIndex < bottom; rowIndex += 1) {
+        for (let colIndex = left; colIndex < right; colIndex += 1) {
+          const mapIndex = rowIndex * map.width + colIndex;
+          const cellPos = tableStart + map.map[mapIndex];
+          const cell = tr.doc.nodeAt(cellPos);
+          if (!cell) {
+            continue;
+          }
+          const nextValue = rows[(rowIndex - top) % rows.length]?.[(colIndex - left) % width];
+          tr.replaceWith(cellPos + 1, cellPos + cell.nodeSize - 1, buildParagraphNode(schema, nextValue || ""));
         }
-        tr.replaceWith(pos + 1, pos + cell.nodeSize - 1, buildParagraphNode(schema, nextValue));
-      });
+      }
 
       editor.view.dispatch(tr);
       return true;
@@ -3189,11 +3369,22 @@ export default function App() {
   }
 
   function setStatus(message) {
-    setStatusMessage(message);
+    setStatusState({ message, kind: "default" });
     if (statusTimerRef.current) {
       window.clearTimeout(statusTimerRef.current);
     }
-    statusTimerRef.current = window.setTimeout(() => setStatusMessage("Ready"), 3200);
+    statusTimerRef.current = window.setTimeout(() => setStatusState({ message: "Ready", kind: "default" }), 3200);
+  }
+
+  function setHint(message) {
+    if (!preferencesRef.current.smartTransformHints) {
+      return;
+    }
+    setStatusState({ message, kind: "hint" });
+    if (statusTimerRef.current) {
+      window.clearTimeout(statusTimerRef.current);
+    }
+    statusTimerRef.current = window.setTimeout(() => setStatusState({ message: "Ready", kind: "default" }), 3600);
   }
 
   function syncWorkspaceWithFile(nextFilePath) {
@@ -3500,6 +3691,32 @@ export default function App() {
     }
 
     setStatus("Updated table");
+  }
+
+  function selectTableAxisByIndex(axis, index) {
+    if (!editor) {
+      return;
+    }
+    const selection = editor.state.selection;
+    const tableSelection = selection instanceof CellSelection ? selection : null;
+    if (!tableSelection) {
+      return;
+    }
+
+    const $cell = tableSelection.$anchorCell;
+    const table = $cell.node(-1);
+    const tableStart = $cell.start(-1);
+    const map = TableMap.get(table);
+    const anchorIndex = axis === "row" ? index * map.width : index;
+    const headIndex = axis === "row" ? index * map.width + (map.width - 1) : index + map.width * (map.height - 1);
+    runEditorCommand((chain) =>
+      chain
+        .setCellSelection({
+          anchorCell: tableStart + map.map[anchorIndex],
+          headCell: tableStart + map.map[headIndex]
+        })
+        .run()
+    );
   }
 
   function jumpToOutline(item, index) {
@@ -4255,8 +4472,15 @@ export default function App() {
         <main className={`workspace-main mode-${preferences.viewMode}${findOpen ? " find-open" : ""}`}>
           {showEditor ? (
             <section className="editor-pane">
-              <div className="paper">
+              <div ref={paperRef} className="paper">
                 <TableToolbar visible={tableToolbarVisible} selectionCount={tableSelectionCount} onAction={handleTableAction} />
+                <TableSelectionHandles
+                  visible={tableHandleState.visible}
+                  rows={tableHandleState.rows}
+                  cols={tableHandleState.cols}
+                  onSelectRow={(index) => selectTableAxisByIndex("row", index)}
+                  onSelectColumn={(index) => selectTableAxisByIndex("col", index)}
+                />
                 <EditorContent editor={editor} />
                 <div className="editor-end-hitbox" onMouseDown={handleEditorEndMouseDown} />
               </div>
@@ -4301,14 +4525,17 @@ export default function App() {
         charCount={stats.charCount}
         readingMinutes={stats.readingMinutes}
         viewMode={preferences.viewMode}
-        statusMessage={statusMessage}
+        statusMessage={statusState.message}
+        statusKind={statusState.kind}
         findSummary={findSummary}
+        onDisableHints={() => updatePreferences({ smartTransformHints: false })}
       />
 
       <PreferencesDialog
         open={preferencesOpen}
         preferences={preferences}
         onChange={updatePreferences}
+        onOpenCheatsheet={() => setEditingCheatsheetOpen(true)}
         onClose={() => setPreferencesOpen(false)}
       />
 
@@ -4367,6 +4594,8 @@ export default function App() {
         onBodyOnly={() => applyFrontMatterMergeAndInsert({ bodyOnly: true })}
         onCancel={closeFrontMatterMergeDialog}
       />
+
+      <EditingCheatsheetDialog open={editingCheatsheetOpen} onClose={() => setEditingCheatsheetOpen(false)} />
     </div>
   );
 }

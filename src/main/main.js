@@ -48,6 +48,16 @@ function getDefaultPreferences() {
     sidebarTab: "outline",
     focusMode: false,
     typewriterMode: false,
+    smartMarkdownTransform: true,
+    smartTransformHints: true,
+    smartTransformRules: {
+      heading: true,
+      blockquote: true,
+      bulletList: true,
+      orderedList: true,
+      taskList: true,
+      codeFence: true
+    },
     workspaceRoot: null,
     recentFiles: [],
     paletteUsage: {},
@@ -789,6 +799,11 @@ function rebuildMenu(window) {
         {
           label: "Markdown Reference",
           click: () => shell.openExternal(HELP_LINKS.markdownReference)
+        },
+        {
+          label: "Editing Cheatsheet",
+          accelerator: "CmdOrCtrl+/",
+          click: () => emitMenuAction(window, { type: "open-editing-cheatsheet" })
         },
         {
           label: "Custom Themes",

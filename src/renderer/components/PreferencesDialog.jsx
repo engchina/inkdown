@@ -6,7 +6,16 @@ const themes = [
   { value: "midnight", label: "Midnight" }
 ];
 
-export default function PreferencesDialog({ open, preferences, onChange, onClose }) {
+const transformRuleOptions = [
+  { key: "heading", label: "Heading" },
+  { key: "blockquote", label: "Blockquote" },
+  { key: "bulletList", label: "Bullet List" },
+  { key: "orderedList", label: "Ordered List" },
+  { key: "taskList", label: "Task List" },
+  { key: "codeFence", label: "Code Fence" }
+];
+
+export default function PreferencesDialog({ open, preferences, onChange, onClose, onOpenCheatsheet }) {
   if (!open) {
     return null;
   }
@@ -61,6 +70,52 @@ export default function PreferencesDialog({ open, preferences, onChange, onClose
         </label>
 
         <label className="pref-row">
+          <span>Smart Markdown</span>
+          <input
+            type="checkbox"
+            checked={preferences.smartMarkdownTransform}
+            onChange={(event) => onChange({ smartMarkdownTransform: event.target.checked })}
+          />
+        </label>
+
+        <label className="pref-row">
+          <span>Transform Hints</span>
+          <input
+            type="checkbox"
+            checked={preferences.smartTransformHints}
+            onChange={(event) => onChange({ smartTransformHints: event.target.checked })}
+          />
+        </label>
+
+        <section className="preferences-group">
+          <div className="preferences-group-header">
+            <h3>Transform Categories</h3>
+            <button className="tool-button tool-button-ghost" type="button" onClick={onOpenCheatsheet}>
+              Cheatsheet
+            </button>
+          </div>
+          <div className="preferences-rule-grid">
+            {transformRuleOptions.map((rule) => (
+              <label key={rule.key} className="preferences-rule-item">
+                <span>{rule.label}</span>
+                <input
+                  type="checkbox"
+                  checked={preferences.smartTransformRules?.[rule.key] ?? true}
+                  onChange={(event) =>
+                    onChange({
+                      smartTransformRules: {
+                        ...(preferences.smartTransformRules || {}),
+                        [rule.key]: event.target.checked
+                      }
+                    })
+                  }
+                />
+              </label>
+            ))}
+          </div>
+        </section>
+
+        <label className="pref-row">
           <span>Font Size</span>
           <input
             type="range"
@@ -84,6 +139,20 @@ export default function PreferencesDialog({ open, preferences, onChange, onClose
           />
           <strong>{preferences.lineWidth}px</strong>
         </label>
+
+        <section className="preferences-help">
+          <h3>Smart Transform Rules</h3>
+          <div className="preferences-help-grid">
+            <div><code>#</code> + Space {"->"} Heading</div>
+            <div><code>&gt;</code> + Space {"->"} Blockquote</div>
+            <div><code>-</code> / <code>*</code> + Space {"->"} Bullet List</div>
+            <div><code>1.</code> + Space {"->"} Ordered List</div>
+            <div><code>- [ ]</code> + Space {"->"} Task List</div>
+            <div><code>```</code> + Enter {"->"} Code Block</div>
+            <div><code>Esc</code> {"->"} Skip next transform</div>
+            <div><code>\#</code> or <code>\```</code> {"->"} Literal Markdown</div>
+          </div>
+        </section>
       </section>
     </div>
   );
