@@ -7,9 +7,61 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <title>Inkdown</title>
+    <style>
+      body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: transparent; font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+      #splash-screen {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        z-index: 99999;
+        color: #64748b; /* Neutral slate text that works on all themes */
+      }
+      .splash-logo {
+        width: 72px;
+        height: 72px;
+        border-radius: 20px;
+        background: linear-gradient(135deg, #4f46e5, #818cf8);
+        box-shadow: 0 12px 32px rgba(79, 70, 229, 0.3);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-size: 36px;
+        font-weight: 800;
+        margin-bottom: 24px;
+        animation: pulse-logo 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+      }
+      .splash-title {
+        font-size: 24px;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+        margin-bottom: 8px;
+        color: inherit;
+      }
+      .splash-subtitle {
+        font-size: 14px;
+        opacity: 0.6;
+        font-weight: 500;
+      }
+      @keyframes pulse-logo {
+        0%, 100% { transform: scale(1); box-shadow: 0 12px 32px rgba(79, 70, 229, 0.3); }
+        50% { transform: scale(1.05); box-shadow: 0 16px 48px rgba(79, 70, 229, 0.45); }
+      }
+      /* Prevent scrolling while loading */
+      body { overflow: hidden; }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div id="splash-screen">
+        <div class="splash-logo">I</div>
+        <div class="splash-title">Inkdown</div>
+        <div class="splash-subtitle">Loading workspace...</div>
+      </div>
+    </div>
     <script type="module" src="/src/renderer/main.jsx"></script>
   </body>
-  </html>
+</html>

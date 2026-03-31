@@ -111,7 +111,31 @@ const MarkdownImage = Image.extend({
         default: null,
         parseHTML: (element) => element.getAttribute("data-md-src"),
         renderHTML: (attributes) => (attributes.markdownSource ? { "data-md-src": attributes.markdownSource } : {})
+      },
+      width: {
+        default: null,
+        parseHTML: (element) => element.getAttribute("width"),
+        renderHTML: (attributes) => (attributes.width ? { width: attributes.width } : {})
+      },
+      height: {
+        default: null,
+        parseHTML: (element) => element.getAttribute("height"),
+        renderHTML: (attributes) => (attributes.height ? { height: attributes.height } : {})
       }
+    };
+  },
+  addCommands() {
+    return {
+      ...this.parent?.(),
+      setImage:
+        (options) =>
+        ({ tr, dispatch }) => {
+          const node = this.type.create(options);
+          if (dispatch) {
+            tr.replaceSelectionWith(node);
+          }
+          return true;
+        }
     };
   }
 });
@@ -797,6 +821,58 @@ function hasMountedEditorView(editor) {
   }
 }
 
+function getEditorScrollContainer(editor) {
+  if (!hasMountedEditorView(editor)) {
+    return null;
+  }
+  return editor.view.dom.closest(".editor-pane");
+}
+
+function restoreScrollPosition(container, scrollTop, scrollLeft) {
+  if (!(container instanceof HTMLElement)) {
+    return;
+  }
+  container.scrollTop = scrollTop;
+  container.scrollLeft = scrollLeft;
+}
+
+function isNodeWithin(target, container) {
+  return target instanceof Node && container instanceof Node && (target === container || container.contains(target));
+}
+
+function isEditingSurfaceTarget(editor, sourceElement, target) {
+  const activeElement = document.activeElement;
+  if (isNodeWithin(target, sourceElement) || isNodeWithin(activeElement, sourceElement)) {
+    return true;
+  }
+  if (!hasMountedEditorView(editor)) {
+    return false;
+  }
+  const editorRoot = editor.view.dom;
+  return isNodeWithin(target, editorRoot) || isNodeWithin(activeElement, editorRoot);
+}
+
+function lockScrollPosition(container) {
+  if (!(container instanceof HTMLElement)) {
+    return () => {};
+  }
+  const scrollTop = container.scrollTop;
+  const scrollLeft = container.scrollLeft;
+  const handler = () => {
+    container.scrollTop = scrollTop;
+    container.scrollLeft = scrollLeft;
+  };
+  container.addEventListener("scroll", handler);
+  return () => {
+    handler();
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        container.removeEventListener("scroll", handler);
+      });
+    });
+  };
+}
+
 function getLineBoundaries(markdown, selectionStart, selectionEnd) {
   const start = Math.max(0, selectionStart ?? 0);
   const end = Math.max(start, selectionEnd ?? start);
@@ -858,7 +934,7 @@ turndown.addRule("images", {
     }
     const alt = escapeMarkdownImageAlt(node.getAttribute("alt"));
     const title = node.getAttribute("title");
-    return `![${alt}](${source}${title ? ` "${escapeMarkdownTitle(title)}"` : ""})`;
+    return `\n\n![${alt}](${source}${title ? ` "${escapeMarkdownTitle(title)}"` : ""})\n\n`;
   }
 });
 
@@ -928,6 +1004,7 @@ export default function App() {
   const sourceRef = useRef(null);
   const programmaticEditorSyncRef = useRef(false);
   const programmaticMarkdownSyncRef = useRef(false);
+  const lastEditorMarkdownRef = useRef(initialMarkdown);
   const editorHeadingsRef = useRef([]);
   const statusTimerRef = useRef(null);
   const preferencesRef = useRef(defaultPreferences);
@@ -939,6 +1016,36 @@ export default function App() {
     () => renderMarkdownForPreview(deferredMarkdown, filePath, outline),
     [deferredMarkdown, filePath, outline]
   );
+
+  function runEditorCommand(execute, { preserveScroll = true } = {}) {
+    if (!editor) {
+      return false;
+    }
+
+    const shouldPreserveScroll = preserveScroll && !preferencesRef.current.typewriterMode;
+    const scrollContainer = shouldPreserveScroll ? getEditorScrollContainer(editor) : null;
+    const scrollTop = scrollContainer?.scrollTop ?? 0;
+    const scrollLeft = scrollContainer?.scrollLeft ?? 0;
+
+    const restore = () => restoreScrollPosition(scrollContainer, scrollTop, scrollLeft);
+    const scheduleRestore = () => {
+      restore();
+      window.requestAnimationFrame(() => {
+        restore();
+        window.requestAnimationFrame(restore);
+      });
+    };
+
+    const result = execute(editor.chain().focus(undefined, { scrollIntoView: false }), editor);
+    if (!scrollContainer) {
+      return result;
+    }
+    if (result && typeof result.finally === "function") {
+      return result.finally(scheduleRestore);
+    }
+    scheduleRestore();
+    return result;
+  }
 
   function syncEditorModes(instance) {
     if (!hasMountedEditorView(instance)) {
@@ -1023,6 +1130,7 @@ export default function App() {
           extractYamlFrontMatter(markdownText).raw,
           turndown.turndown(instance.getHTML())
         );
+        lastEditorMarkdownRef.current = nextMarkdown;
         startTransition(() => {
           const nextOutline = extractOutlineFromMarkdown(nextMarkdown);
           setMarkdownText(nextMarkdown);
@@ -1095,6 +1203,9 @@ export default function App() {
 
   useEffect(() => {
     if (!editor) {
+      return;
+    }
+    if (markdownText === lastEditorMarkdownRef.current) {
       return;
     }
     if (programmaticMarkdownSyncRef.current) {
@@ -1229,10 +1340,15 @@ export default function App() {
         await openDocumentFromPath(markdownFile.path);
         return;
       }
+      const unlock = lockScrollPosition(getEditorScrollContainer(editor));
       await insertImageFromFile(imageFile.path);
+      unlock();
     };
 
     const handlePaste = async (event) => {
+      if (!isEditingSurfaceTarget(editor, sourceRef.current, event.target)) {
+        return;
+      }
       const imageItem = Array.from(event.clipboardData?.items || []).find((item) => item.type.startsWith("image/"));
       if (!imageItem) {
         return;
@@ -1242,20 +1358,39 @@ export default function App() {
       if (!blob) {
         return;
       }
+
+      const unlock = lockScrollPosition(getEditorScrollContainer(editor));
+
+      const objectUrl = URL.createObjectURL(blob);
+      const dimensions = await new Promise((resolve) => {
+        const img = new window.Image();
+        img.onload = () => {
+          resolve({ width: img.naturalWidth, height: img.naturalHeight });
+          URL.revokeObjectURL(objectUrl);
+        };
+        img.onerror = () => {
+          resolve(null);
+          URL.revokeObjectURL(objectUrl);
+        };
+        img.src = objectUrl;
+      });
+
       const bytes = new Uint8Array(await blob.arrayBuffer());
       const extension = blob.type.split("/")[1] || "png";
       const persisted = await window.editorApi.persistImageBuffer({ bytes: Array.from(bytes), extension });
-      insertMarkdownImage(persisted.markdownPath, persisted.absolutePath);
+      insertMarkdownImage(persisted.markdownPath, persisted.absolutePath, dimensions);
+      unlock();
     };
 
     const handleDragOver = (event) => event.preventDefault();
 
     window.addEventListener("drop", handleDrop);
-    window.addEventListener("paste", handlePaste);
+    window.addEventListener("paste", handlePaste, true);
     window.addEventListener("dragover", handleDragOver);
+
     return () => {
       window.removeEventListener("drop", handleDrop);
-      window.removeEventListener("paste", handlePaste);
+      window.removeEventListener("paste", handlePaste, true);
       window.removeEventListener("dragover", handleDragOver);
     };
   }, [editor, filePath, markdownText, preferences.viewMode]);
@@ -1433,11 +1568,17 @@ export default function App() {
 
   async function insertImageFromFile(imagePath) {
     const persisted = await window.editorApi.persistImageFile(imagePath);
-    insertMarkdownImage(persisted.markdownPath, persisted.absolutePath);
+    const dimensions = await new Promise((resolve) => {
+      const img = new window.Image();
+      img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
+      img.onerror = () => resolve(null);
+      img.src = window.editorApi.toAssetUrl(imagePath);
+    });
+    insertMarkdownImage(persisted.markdownPath, persisted.absolutePath, dimensions);
     setStatus(`Inserted image ${basenamePath(persisted.absolutePath)}`);
   }
 
-  function insertMarkdownImage(markdownPath, absolutePath) {
+  function insertMarkdownImage(markdownPath, absolutePath, dimensions = null) {
     const alt = basenamePath(absolutePath) || "image";
     const markdownImage = `![${alt}](${markdownPath})`;
     if (preferences.viewMode === "source" && sourceRef.current) {
@@ -1445,11 +1586,18 @@ export default function App() {
       return;
     }
     if (editor) {
-      editor.chain().focus().setImage({
-        src: window.editorApi.toAssetUrl(absolutePath),
-        alt,
-        markdownSource: markdownPath
-      }).run();
+      runEditorCommand(
+        (chain) =>
+          chain
+            .setImage({
+              src: window.editorApi.toAssetUrl(absolutePath),
+              alt,
+              markdownSource: markdownPath,
+              ...(dimensions ? { width: String(dimensions.width), height: String(dimensions.height) } : {})
+            })
+            .run(),
+        { preserveScroll: true }
+      );
       return;
     }
     setMarkdownText((current) => `${current.trimEnd()}${current.trimEnd() ? "\n\n" : ""}${markdownImage}\n`);
@@ -1462,7 +1610,7 @@ export default function App() {
       setStatus("Inserted table template");
       return;
     }
-    editor?.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run();
+    runEditorCommand((chain) => chain.insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run());
     setStatus("Inserted table");
   }
 
@@ -1680,63 +1828,63 @@ export default function App() {
 
     switch (format) {
       case "paragraph":
-        editor.chain().focus().setParagraph().run();
+        runEditorCommand((chain) => chain.setParagraph().run());
         break;
       case "heading-1":
-        editor.chain().focus().toggleHeading({ level: 1 }).run();
+        runEditorCommand((chain) => chain.toggleHeading({ level: 1 }).run());
         break;
       case "heading-2":
-        editor.chain().focus().toggleHeading({ level: 2 }).run();
+        runEditorCommand((chain) => chain.toggleHeading({ level: 2 }).run());
         break;
       case "heading-3":
-        editor.chain().focus().toggleHeading({ level: 3 }).run();
+        runEditorCommand((chain) => chain.toggleHeading({ level: 3 }).run());
         break;
       case "bullet-list":
-        editor.chain().focus().toggleBulletList().run();
+        runEditorCommand((chain) => chain.toggleBulletList().run());
         break;
       case "ordered-list":
-        editor.chain().focus().toggleOrderedList().run();
+        runEditorCommand((chain) => chain.toggleOrderedList().run());
         break;
       case "task-list":
-        editor.chain().focus().toggleTaskList().run();
+        runEditorCommand((chain) => chain.toggleTaskList().run());
         break;
       case "blockquote":
-        editor.chain().focus().toggleBlockquote().run();
+        runEditorCommand((chain) => chain.toggleBlockquote().run());
         break;
       case "code-block":
-        editor.chain().focus().toggleCodeBlock().run();
+        runEditorCommand((chain) => chain.toggleCodeBlock().run());
         break;
       case "horizontal-rule":
-        editor.chain().focus().setHorizontalRule().run();
+        runEditorCommand((chain) => chain.setHorizontalRule().run());
         break;
       case "bold":
-        editor.chain().focus().toggleBold().run();
+        runEditorCommand((chain) => chain.toggleBold().run());
         break;
       case "italic":
-        editor.chain().focus().toggleItalic().run();
+        runEditorCommand((chain) => chain.toggleItalic().run());
         break;
       case "underline":
-        editor.chain().focus().toggleUnderline().run();
+        runEditorCommand((chain) => chain.toggleUnderline().run());
         break;
       case "strike":
-        editor.chain().focus().toggleStrike().run();
+        runEditorCommand((chain) => chain.toggleStrike().run());
         break;
       case "highlight":
-        editor.chain().focus().toggleHighlight().run();
+        runEditorCommand((chain) => chain.toggleHighlight().run());
         break;
       case "subscript":
-        editor.chain().focus().toggleSubscript().run();
+        runEditorCommand((chain) => chain.toggleSubscript().run());
         break;
       case "superscript":
-        editor.chain().focus().toggleSuperscript().run();
+        runEditorCommand((chain) => chain.toggleSuperscript().run());
         break;
       case "inline-code":
-        editor.chain().focus().toggleCode().run();
+        runEditorCommand((chain) => chain.toggleCode().run());
         break;
       case "link": {
         const href = window.prompt("Enter a link URL");
         if (href) {
-          editor.chain().focus().extendMarkRange("link").setLink({ href }).run();
+          runEditorCommand((chain) => chain.extendMarkRange("link").setLink({ href }).run());
         }
         break;
       }

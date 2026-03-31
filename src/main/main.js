@@ -798,12 +798,17 @@ function rebuildMenu(window) {
 }
 
 async function createWindow() {
+  const theme = state.preferences?.theme || "paper";
+  let bgColor = "#f8fafc"; // paper
+  if (theme === "midnight") bgColor = "#0b0f19";
+  if (theme === "forest") bgColor = "#f0fdf4";
+
   const browserWindowOptions = {
     width: 1440,
     height: 920,
     minWidth: 1080,
     minHeight: 720,
-    backgroundColor: "#f5f0e7",
+    backgroundColor: bgColor,
     autoHideMenuBar: false,
     webPreferences: {
       preload: path.join(__dirname, "../preload/preload.js"),
