@@ -6,6 +6,8 @@ export default function TableToolbar({ onAction, selectionCount = 0, visible }) 
   }
 
   const actions = [
+    { id: "select-row", label: "Select row" },
+    { id: "select-col", label: "Select col" },
     { id: "add-row-before", label: "Row +" },
     { id: "add-row-after", label: "Row below" },
     { id: "delete-row", label: "Delete row" },
@@ -20,6 +22,7 @@ export default function TableToolbar({ onAction, selectionCount = 0, visible }) 
     { id: "toggle-header", label: "Header" },
     { id: "toggle-header-cell", label: "Header cell" },
     { id: "toggle-header-column", label: "Header col" },
+    { id: "clear-cells", label: "Clear" },
     { id: "delete-table", label: "Delete table" }
   ];
 
