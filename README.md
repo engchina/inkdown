@@ -1,56 +1,56 @@
 # Inkdown
 
-Inkdown 是一个可打包为 Windows 安装程序的桌面 Markdown 编辑器基础版，目标是做出接近 Typora 的沉浸式单栏编辑体验。
+Inkdown is a desktop Markdown editor starter that can be packaged as a Windows installer, with the goal of delivering an immersive single-column editing experience similar to Typora.
 
-## 当前能力
+## Current Features
 
-- 单栏所见即所得编辑体验
-- 编辑器 / 源码 / 预览三种视图
-- 标题、加粗、斜体、下划线、删除线、代码块、引用
-- 高亮、上标、下标
-- 无序列表、有序列表、任务列表
-- 链接、图片、表格插入
-- YAML Front Matter、脚注、GitHub 风格 Callout
-- 拖拽和粘贴图片，已保存文档时自动落到相对路径资源目录
-- Markdown 打开、保存、另存为
-- HTML 导出
-- PDF 导出
-- Mermaid 图表与数学公式预览
-- 查找替换
-- 文档大纲、字数统计、未保存状态提示
-- 主题与排版偏好设置
-- `electron-builder` 的 Windows `nsis` 安装包配置
+- Single-column WYSIWYG editing experience
+- Three view modes: editor, source, and preview
+- Headings, bold, italic, underline, strikethrough, code blocks, and blockquotes
+- Highlight, superscript, and subscript
+- Bulleted lists, numbered lists, and task lists
+- Link, image, and table insertion
+- YAML front matter, footnotes, and GitHub-style callouts
+- Drag-and-drop and paste image support, with saved documents automatically storing assets in a relative resources directory
+- Open, save, and save-as for Markdown files
+- HTML export
+- PDF export
+- Mermaid diagram and math expression preview
+- Find and replace
+- Document outline, word count, and unsaved-changes indicators
+- Theme and typography preferences
+- Windows `nsis` installer configuration via `electron-builder`
 
-## 开发
+## Development
 
 ```bash
 npm install
 npm run dev
 ```
 
-如果你是在 Windows PowerShell 下做 Electron 调试，不要直接写 Unix 风格的环境变量前缀命令（例如 `FOO=bar command`），PowerShell 会把 `=true`、`=*` 之类内容当成独立命令而报错。仓库里已经提供了可直接使用的调试脚本：
+If you are debugging Electron in Windows PowerShell, do not use Unix-style environment variable prefixes directly (for example, `FOO=bar command`). PowerShell will treat values such as `=true` or `=*` as standalone commands and fail. This repository already includes a debug script you can run directly:
 
 ```bash
 npm run dev:debug
 ```
 
-它会安全地注入这些调试变量：
+It safely injects these debug variables:
 
 - `ELECTRON_ENABLE_LOGGING=true`
 - `ELECTRON_ENABLE_STACK_DUMPING=true`
 - `DEBUG=*`
 - `NODE_OPTIONS=--trace-warnings`
 
-## 打包
+## Packaging
 
 ```bash
 npm run build
 ```
 
-Windows 安装包使用：
+To build the Windows installer, run:
 
 ```bash
 npm run package:win
 ```
 
-产物默认输出到 `release/` 目录。当前仓库是在 Linux/WSL 环境初始化的，Windows 安装包能否实际生成还取决于本机是否具备 `wine` 等交叉打包依赖。
+Build artifacts are written to the `release/` directory by default. This repository was initialized in a Linux/WSL environment, so whether the Windows installer can actually be produced also depends on whether the machine has cross-packaging dependencies such as `wine`.
