@@ -100,9 +100,10 @@ select {
 }
 
 .app-shell {
-  display: grid;
-  grid-template-rows: auto auto 1fr auto;
-  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
 }
 
 .toolbar,
@@ -189,6 +190,7 @@ select {
 }
 
 .workspace {
+  flex: 1;
   display: grid;
   grid-template-columns: 260px minmax(0, 1fr);
   min-height: 0;
@@ -836,6 +838,9 @@ select {
 }
 
 .status-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 20;
   display: flex;
   align-items: center;
   justify-content: space-between;
