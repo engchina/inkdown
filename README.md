@@ -1,6 +1,8 @@
 # Inkdown
 
-Inkdown is a desktop Markdown editor starter that can be packaged as a Windows installer, with the goal of delivering an immersive single-column editing experience similar to Typora.
+Inkdown is a desktop Markdown editor that aims to become a best-in-class writing tool, with a focused single-column experience inspired by products such as Typora.
+
+The repository-wide mission and engineering standard live in [AGENTS.md](./AGENTS.md). Treat that file as the default decision framework for product, UX, and implementation work.
 
 ## Current Features
 
