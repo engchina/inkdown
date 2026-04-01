@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { Columns2, Eye, FileCode2, PenSquare } from "lucide-react";
+import { Columns2, Eye, FileCode2, PanelLeftClose, PanelLeftOpen, PenSquare } from "lucide-react";
 
 export default function StatusBar({
   activePane,
@@ -18,6 +18,7 @@ export default function StatusBar({
   onDisableHints
 }) {
   const [metricIndex, setMetricIndex] = useState(0);
+  const SidebarToggleIcon = sidebarVisible ? PanelLeftClose : PanelLeftOpen;
   const metrics = useMemo(
     () => [
       { label: `${wordCount} words`, detail: `Words ${wordCount}` },
@@ -53,8 +54,7 @@ export default function StatusBar({
           onClick={onToggleSidebar}
         >
           <span className={`status-sidebar-icon${sidebarVisible ? " is-split" : " is-collapsed"}`} aria-hidden="true">
-            <span className="status-sidebar-icon-rail" />
-            <span className="status-sidebar-icon-main" />
+            <SidebarToggleIcon size={14} strokeWidth={1.9} />
           </span>
         </button>
         <span className={`status-meta-item status-state${showTransientStatus ? " is-active" : ""}`}>{statusLabel}</span>

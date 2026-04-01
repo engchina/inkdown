@@ -2924,52 +2924,21 @@ select {
 }
 
 .status-sidebar-icon {
-  position: relative;
-  display: grid;
-  grid-template-columns: auto 1fr;
-  align-items: stretch;
-  gap: 2px;
-  width: 13px;
-  height: 11px;
-  transition: gap 0.16s ease, transform 0.16s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  color: color-mix(in srgb, var(--text-soft) 88%, var(--text));
+  transition: color 0.16s ease, transform 0.16s ease;
 }
 
-.status-sidebar-icon-rail,
-.status-sidebar-icon-main {
-  border-radius: 2px;
-  background: color-mix(in srgb, var(--text-soft) 88%, var(--text));
-  transition: width 0.16s ease, opacity 0.16s ease, background 0.16s ease, box-shadow 0.16s ease;
+.status-sidebar-icon svg {
+  display: block;
 }
 
-.status-sidebar-icon-rail {
-  width: 4px;
-  box-shadow: inset -1px 0 0 color-mix(in srgb, var(--panel-strong) 35%, transparent);
-}
-
-.status-sidebar-icon-main {
-  width: 7px;
-  opacity: 0.88;
-}
-
-.status-sidebar-icon.is-split .status-sidebar-icon-rail {
-  width: 4px;
-}
-
-.status-sidebar-icon.is-split .status-sidebar-icon-main {
-  width: 7px;
-}
-
-.status-sidebar-icon.is-collapsed {
-  gap: 3px;
-}
-
-.status-sidebar-icon.is-collapsed .status-sidebar-icon-rail {
-  width: 2px;
-  opacity: 0.72;
-}
-
-.status-sidebar-icon.is-collapsed .status-sidebar-icon-main {
-  width: 9px;
+.status-sidebar-icon.is-collapsed svg {
+  transform: translateX(-0.2px);
 }
 
 .status-sidebar-toggle:hover,
@@ -2987,11 +2956,9 @@ select {
   transform: scale(1.03);
 }
 
-.status-sidebar-toggle:hover .status-sidebar-icon-rail,
-.status-sidebar-toggle:hover .status-sidebar-icon-main,
-.status-sidebar-toggle.is-active .status-sidebar-icon-rail,
-.status-sidebar-toggle.is-active .status-sidebar-icon-main {
-  background: color-mix(in srgb, var(--accent) 72%, var(--text));
+.status-sidebar-toggle:hover .status-sidebar-icon,
+.status-sidebar-toggle.is-active .status-sidebar-icon {
+  color: color-mix(in srgb, var(--accent) 72%, var(--text));
 }
 
 .status-bar-meta {

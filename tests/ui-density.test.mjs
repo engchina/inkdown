@@ -31,6 +31,8 @@ test("status bar renders emphasized state and hosts sidebar and view controls", 
   assert.match(statusSource, /status-sidebar-icon/);
   assert.match(statusSource, /is-split/);
   assert.match(statusSource, /is-collapsed/);
+  assert.match(statusSource, /PanelLeftClose/);
+  assert.match(statusSource, /PanelLeftOpen/);
   assert.match(statusSource, /aria-label=\{sidebarVisible \? "Hide sidebar" : "Show sidebar"\}/);
   assert.doesNotMatch(toolbarSource, /sidebar-toggle-button/);
 });
@@ -44,8 +46,8 @@ test("styles define denser sidebar and status presentation", () => {
   assert.match(stylesSource, /\.status-pill \{/);
   assert.match(stylesSource, /\.status-sidebar-toggle \{/);
   assert.match(stylesSource, /\.status-sidebar-icon \{/);
+  assert.match(stylesSource, /\.status-sidebar-icon svg \{/);
   assert.match(stylesSource, /\.status-view-switch \{/);
-  assert.match(stylesSource, /\.status-sidebar-icon\.is-collapsed \{/);
-  assert.match(stylesSource, /\.status-sidebar-icon\.is-split \.status-sidebar-icon-main \{/);
+  assert.match(stylesSource, /\.status-sidebar-icon\.is-collapsed svg \{/);
   assert.match(stylesSource, /\.toolbar-theme-switch \{/);
 });
