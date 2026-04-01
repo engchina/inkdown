@@ -936,6 +936,15 @@ select {
   font-size: 0.9em;
 }
 
+.mark-syntax-reveal {
+  color: var(--text-soft);
+  font-size: 0.85em;
+  opacity: 0.7;
+  font-family: "Fira Code", "JetBrains Mono", monospace;
+  pointer-events: none;
+  user-select: none;
+}
+
 .editor-surface pre,
 .preview-surface pre {
   margin: var(--content-block-gap-lg) 0;

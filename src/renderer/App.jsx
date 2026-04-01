@@ -1,6 +1,8 @@
 import React, { startTransition, useDeferredValue, useEffect, useId, useMemo, useRef, useState } from "react";
-import { Mark, mergeAttributes } from "@tiptap/core";
-import { Selection, TextSelection } from "@tiptap/pm/state";
+import { Mark, mergeAttributes, Extension } from "@tiptap/core";
+import Heading from "@tiptap/extension-heading";
+import { Plugin, PluginKey, Selection, TextSelection } from "@tiptap/pm/state";
+import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import { CellSelection, TableMap } from "@tiptap/pm/tables";
 import { EditorContent, NodeViewContent, NodeViewWrapper, ReactNodeViewRenderer, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
@@ -476,6 +478,54 @@ function CodeBlockNodeView({ editor, getPos, node, updateAttributes }) {
   );
 }
 
+const codeFenceEnterKey = new PluginKey("codeFenceEnter");
+
+const CodeFenceEnterFallback = Extension.create({
+  name: "codeFenceEnterFallback",
+
+  addProseMirrorPlugins() {
+    const codeBlockType = () => this.editor.schema.nodes.codeBlock;
+    return [
+      new Plugin({
+        key: codeFenceEnterKey,
+        appendTransaction(transactions, oldState, newState) {
+          if (!transactions.some((tr) => tr.docChanged)) return null;
+
+          const sel = newState.selection;
+          if (!sel.empty) return null;
+
+          const $from = sel.$from;
+          const parent = $from.parent;
+          if (parent.type.name !== "paragraph" || parent.textContent.trim() !== "") return null;
+
+          const pos = $from.before();
+          if (pos < 2) return null;
+
+          const prevResolved = newState.doc.resolve(pos - 1);
+          const prevNode = prevResolved.parent.type.name === "paragraph" ? prevResolved.parent : null;
+          if (!prevNode) return null;
+
+          const prevText = prevNode.textContent;
+          const codeFenceMatch = /^(?:```|~~~)([A-Za-z0-9_-]+)?$/.exec(prevText);
+          if (!codeFenceMatch) return null;
+
+          const cbType = codeBlockType();
+          if (!cbType) return null;
+
+          const prevStart = prevResolved.before();
+          const emptyStart = pos;
+          const emptyEnd = pos + parent.nodeSize;
+          const tr = newState.tr;
+          tr.delete(emptyStart, emptyEnd);
+          tr.replaceWith(prevStart, prevStart + prevNode.nodeSize + 2, cbType.create({ language: codeFenceMatch[1] || null }));
+          tr.setSelection(TextSelection.create(tr.doc, prevStart + 1));
+          return tr;
+        }
+      })
+    ];
+  }
+});
+
 const CodeBlockWithLanguage = CodeBlock.extend({
   addAttributes() {
     return {
@@ -590,6 +640,121 @@ function createInlineTagMark(name, tagName) {
 const Highlight = createInlineTagMark("highlight", "mark");
 const Subscript = createInlineTagMark("subscript", "sub");
 const Superscript = createInlineTagMark("superscript", "sup");
+
+const MARK_SYNTAX = {
+  bold: "**",
+  italic: "*",
+  strike: "~~",
+  code: "`",
+  highlight: "==",
+  subscript: "~",
+  superscript: "^"
+};
+
+const inlineMarkRevealKey = new PluginKey("inlineMarkReveal");
+
+function collectMarkRanges(parent, parentStart) {
+  const ranges = [];
+  const seen = new Set();
+  const nodes = [];
+  parent.forEach((node, offset) => {
+    nodes.push({ node, from: parentStart + offset, to: parentStart + offset + node.nodeSize });
+  });
+
+  for (let i = 0; i < nodes.length; i++) {
+    const { node, from: nodeFrom } = nodes[i];
+    if (!node.isText || !node.marks.length) continue;
+
+    for (const mark of node.marks) {
+      const syntax = MARK_SYNTAX[mark.type.name];
+      if (!syntax) continue;
+
+      let rangeFrom = nodeFrom;
+      let rangeTo = nodes[i].to;
+
+      for (let j = i - 1; j >= 0; j--) {
+        if (nodes[j].node.isText && nodes[j].to === rangeFrom && nodes[j].node.marks.some((m) => m.type === mark.type)) {
+          rangeFrom = nodes[j].from;
+        } else {
+          break;
+        }
+      }
+      for (let j = i + 1; j < nodes.length; j++) {
+        if (nodes[j].node.isText && nodes[j].from === rangeTo && nodes[j].node.marks.some((m) => m.type === mark.type)) {
+          rangeTo = nodes[j].to;
+        } else {
+          break;
+        }
+      }
+
+      const rangeKey = `${mark.type.name}:${rangeFrom}-${rangeTo}`;
+      if (!seen.has(rangeKey)) {
+        seen.add(rangeKey);
+        ranges.push({ markName: mark.type.name, syntax, from: rangeFrom, to: rangeTo });
+      }
+    }
+  }
+  return ranges;
+}
+
+const InlineMarkReveal = Extension.create({
+  name: "inlineMarkReveal",
+
+  addProseMirrorPlugins() {
+    return [
+      new Plugin({
+        key: inlineMarkRevealKey,
+        state: {
+          init() {
+            return DecorationSet.empty;
+          },
+          apply(tr, oldSet, oldState, newState) {
+            const sel = newState.selection;
+            if (!sel.empty || !sel.$from.parent.isTextblock || sel.$from.parent.type.name === "codeBlock") {
+              return DecorationSet.empty;
+            }
+
+            const $from = sel.$from;
+            const parent = $from.parent;
+            const parentStart = $from.start();
+            const ranges = collectMarkRanges(parent, parentStart);
+
+            const decorations = [];
+            for (const range of ranges) {
+              if (sel.from < range.from || sel.from > range.to) {
+                continue;
+              }
+
+              decorations.push(
+                Decoration.widget(range.from, () => {
+                  const span = document.createElement("span");
+                  span.className = "mark-syntax-reveal";
+                  span.textContent = range.syntax;
+                  return span;
+                }, { side: -1, key: `mark-open-${range.markName}-${range.from}` })
+              );
+              decorations.push(
+                Decoration.widget(range.to, () => {
+                  const span = document.createElement("span");
+                  span.className = "mark-syntax-reveal";
+                  span.textContent = range.syntax;
+                  return span;
+                }, { side: 1, key: `mark-close-${range.markName}-${range.to}` })
+              );
+            }
+
+            return decorations.length ? DecorationSet.create(newState.doc, decorations) : DecorationSet.empty;
+          }
+        },
+        props: {
+          decorations(state) {
+            return this.getState(state);
+          }
+        }
+      })
+    ];
+  }
+});
 
 const calloutLabels = {
   note: "Note",
@@ -2027,6 +2192,7 @@ export default function App() {
   const programmaticEditorSyncRef = useRef(false);
   const programmaticMarkdownSyncRef = useRef(false);
   const lastEditorMarkdownRef = useRef(initialMarkdown);
+  const prevBlockTypeRef = useRef("paragraph");
   const editorHeadingsRef = useRef([]);
   const statusTimerRef = useRef(null);
   const preferencesRef = useRef(defaultPreferences);
@@ -2642,6 +2808,50 @@ export default function App() {
     return false;
   }
 
+  function insertParagraphAfterCurrentBlock(view) {
+    const { state, dispatch } = view;
+    const { selection, schema } = state;
+    if (!selection.empty) {
+      return false;
+    }
+
+    const paragraphType = schema.nodes.paragraph;
+    if (!paragraphType) {
+      return false;
+    }
+
+    const insertPos = selection.$from.after();
+    const tr = state.tr.insert(insertPos, paragraphType.create());
+    tr.setSelection(TextSelection.create(tr.doc, insertPos + 1));
+    dispatch(tr.scrollIntoView());
+    return true;
+  }
+
+  function convertFenceParagraphToCodeBlock(view, language = null) {
+    const { state, dispatch } = view;
+    const { selection, schema } = state;
+    if (!selection.empty) {
+      return false;
+    }
+
+    const { $from } = selection;
+    if ($from.parent.type.name !== "paragraph") {
+      return false;
+    }
+
+    const codeBlockType = schema.nodes.codeBlock;
+    if (!codeBlockType) {
+      return false;
+    }
+
+    const blockFrom = $from.before();
+    const blockTo = $from.after();
+    const tr = state.tr.replaceWith(blockFrom, blockTo, codeBlockType.create({ language }));
+    tr.setSelection(TextSelection.create(tr.doc, blockFrom + 1));
+    dispatch(tr.scrollIntoView());
+    return true;
+  }
+
   function handleEditorStructuredEditing(view, event) {
     const selection = view.state.selection;
     if (!selection.empty) {
@@ -2671,12 +2881,18 @@ export default function App() {
     }
 
     if (event.key === "Enter" && state.inHeading) {
-      event.preventDefault();
       if (emptyTextblock) {
-        runEditorCommand((chain) => chain.setParagraph().run());
+        const applied = runEditorCommand((chain) => chain.setParagraph().run());
+        if (applied === false) {
+          return false;
+        }
+        event.preventDefault();
         return true;
       }
-      runEditorCommand((chain) => chain.splitBlock().setParagraph().run());
+      if (!insertParagraphAfterCurrentBlock(view)) {
+        return false;
+      }
+      event.preventDefault();
       return true;
     }
 
@@ -2786,37 +3002,7 @@ export default function App() {
       return true;
     }
 
-    if ((transformRules.heading ?? true) && /^#{1,6}$/.test(beforeCursor) && !afterCursor.length) {
-      applyEditorMarkdownShortcut(shortcutFrom, selection.from, (chain) =>
-        chain.toggleHeading({ level: beforeCursor.length }).run()
-      );
-      flashActiveEditorBlock();
-      setHint(`Heading ${beforeCursor.length}. Backspace on empty heading returns to paragraph.`);
-      return true;
-    }
-
-    if ((transformRules.blockquote ?? true) && /^>$/.test(beforeCursor) && !afterCursor.length) {
-      applyEditorMarkdownShortcut(shortcutFrom, selection.from, (chain) => chain.toggleBlockquote().run());
-      flashActiveEditorBlock();
-      setHint("Blockquote. Backspace on empty quote returns to paragraph.");
-      return true;
-    }
-
-    if ((transformRules.bulletList ?? true) && /^[-*+]$/.test(beforeCursor) && !afterCursor.length) {
-      applyEditorMarkdownShortcut(shortcutFrom, selection.from, (chain) => chain.toggleBulletList().run());
-      flashActiveEditorBlock();
-      setHint("Bullet list. Backspace on empty item exits the list.");
-      return true;
-    }
-
-    if ((transformRules.orderedList ?? true) && /^\d+\.$/.test(beforeCursor) && !afterCursor.length) {
-      applyEditorMarkdownShortcut(shortcutFrom, selection.from, (chain) => chain.toggleOrderedList().run());
-      flashActiveEditorBlock();
-      setHint("Ordered list. Backspace on empty item exits the list.");
-      return true;
-    }
-
-    if ((transformRules.taskList ?? true) && /^[-*+]\s\[(?: |x|X)\]$/.test(beforeCursor) && !afterCursor.length) {
+    if ((transformRules.taskList ?? true) && /^[-*+]\s\[(?: |x|X)\]$/.test(beforeCursor)) {
       applyEditorMarkdownShortcut(shortcutFrom, selection.from, (chain) => chain.toggleTaskList().run());
       flashActiveEditorBlock();
       setHint("Task list. Backspace on empty item exits the list.");
@@ -2868,41 +3054,7 @@ export default function App() {
         return true;
       }
 
-      if ((transformRules.heading ?? true) && /^#{1,6}$/.test(beforeCursor) && !afterCursor.length) {
-        event.preventDefault();
-        applyEditorMarkdownShortcut(shortcutFrom, selection.from, (chain) =>
-          chain.toggleHeading({ level: beforeCursor.length }).run()
-        );
-        flashActiveEditorBlock();
-        setHint(`Heading ${beforeCursor.length}. Backspace on empty heading returns to paragraph.`);
-        return true;
-      }
-
-      if ((transformRules.blockquote ?? true) && /^>$/.test(beforeCursor) && !afterCursor.length) {
-        event.preventDefault();
-        applyEditorMarkdownShortcut(shortcutFrom, selection.from, (chain) => chain.toggleBlockquote().run());
-        flashActiveEditorBlock();
-        setHint("Blockquote. Backspace on empty quote returns to paragraph.");
-        return true;
-      }
-
-      if ((transformRules.bulletList ?? true) && /^[-*+]$/.test(beforeCursor) && !afterCursor.length) {
-        event.preventDefault();
-        applyEditorMarkdownShortcut(shortcutFrom, selection.from, (chain) => chain.toggleBulletList().run());
-        flashActiveEditorBlock();
-        setHint("Bullet list. Backspace on empty item exits the list.");
-        return true;
-      }
-
-      if ((transformRules.orderedList ?? true) && /^\d+\.$/.test(beforeCursor) && !afterCursor.length) {
-        event.preventDefault();
-        applyEditorMarkdownShortcut(shortcutFrom, selection.from, (chain) => chain.toggleOrderedList().run());
-        flashActiveEditorBlock();
-        setHint("Ordered list. Backspace on empty item exits the list.");
-        return true;
-      }
-
-      if ((transformRules.taskList ?? true) && /^[-*+]\s\[(?: |x|X)\]$/.test(beforeCursor) && !afterCursor.length) {
+      if ((transformRules.taskList ?? true) && /^[-*+]\s\[(?: |x|X)\]$/.test(beforeCursor)) {
         event.preventDefault();
         applyEditorMarkdownShortcut(shortcutFrom, selection.from, (chain) => chain.toggleTaskList().run());
         flashActiveEditorBlock();
@@ -2919,14 +3071,12 @@ export default function App() {
     }
 
     const codeFenceMatch = /^(?:```|~~~)([A-Za-z0-9_-]+)?$/.exec(beforeCursor);
-    if ((transformRules.codeFence ?? true) && event.key === "Enter" && codeFenceMatch && !afterCursor.length) {
-      event.preventDefault();
-      const applied = applyEditorMarkdownShortcut(shortcutFrom, selection.from, (chain) =>
-        chain.toggleCodeBlock({ language: codeFenceMatch[1] || null }).run()
-      );
-      if (applied === false) {
+    if ((transformRules.codeFence ?? true) && event.key === "Enter" && codeFenceMatch) {
+      const applied = convertFenceParagraphToCodeBlock(view, codeFenceMatch[1] || null);
+      if (!applied) {
         return false;
       }
+      event.preventDefault();
       flashActiveEditorBlock();
       setHint(
         codeFenceMatch[1]
@@ -2944,11 +3094,12 @@ export default function App() {
       immediatelyRender: false,
       extensions: [
         StarterKit.configure({
-          heading: { levels: [1, 2, 3, 4, 5, 6] },
+          heading: false,
           codeBlock: false,
           link: false,
           underline: false
         }),
+        Heading.configure({ levels: [1, 2, 3, 4, 5, 6] }),
         Underline,
         CodeBlockWithLanguage,
         Highlight,
@@ -2962,7 +3113,9 @@ export default function App() {
         Table.configure({ resizable: true }),
         TableRow,
         TableHeaderWithAlignment,
-        TableCellWithAlignment
+        TableCellWithAlignment,
+        InlineMarkReveal,
+        CodeFenceEnterFallback
       ],
       content: renderMarkdownForEditor(markdownText, filePath, outline),
       editorProps: {
@@ -3038,6 +3191,28 @@ export default function App() {
         syncSlashMenu(instance);
         syncTableToolbar(instance);
         captureTableLayouts(instance);
+
+        const sel = instance.state.selection;
+        if (sel.empty) {
+          const currentType = sel.$from.parent.type.name;
+          const prevType = prevBlockTypeRef.current;
+          if (currentType !== prevType && prevType === "paragraph") {
+            const hints = {
+              heading: `Heading ${sel.$from.parent.attrs?.level || ""}. Backspace on empty heading returns to paragraph.`,
+              blockquote: "Blockquote. Backspace on empty quote returns to paragraph.",
+              bulletList: "Bullet list. Backspace on empty item exits the list.",
+              orderedList: "Ordered list. Backspace on empty item exits the list.",
+              codeBlock: "Code block. Backspace on empty block returns to paragraph.",
+              listItem: "List item.",
+              taskItem: "Task item."
+            };
+            if (hints[currentType]) {
+              flashActiveEditorBlock(instance);
+              setHint(hints[currentType]);
+            }
+          }
+          prevBlockTypeRef.current = currentType;
+        }
         if (programmaticEditorSyncRef.current) {
           programmaticEditorSyncRef.current = false;
           return;
@@ -3053,7 +3228,11 @@ export default function App() {
         setIsDirty(true);
       },
       onSelectionUpdate({ editor: instance }) {
-        const currentPos = instance.state.selection.from;
+        const sel = instance.state.selection;
+        if (sel.empty) {
+          prevBlockTypeRef.current = sel.$from.parent.type.name;
+        }
+        const currentPos = sel.from;
         const currentHeadingIndex = editorHeadingsRef.current.findIndex((heading, index) => {
           const nextHeading = editorHeadingsRef.current[index + 1];
           return currentPos >= heading.pos && (!nextHeading || currentPos < nextHeading.pos);
