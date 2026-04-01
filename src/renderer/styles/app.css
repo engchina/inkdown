@@ -1387,7 +1387,9 @@ select {
 .source-editor-shell {
   flex: 1;
   width: 100%;
+  max-width: var(--paper-width);
   min-height: 360px;
+  margin: 0 auto;
   position: relative;
   border: 1px solid var(--border);
   border-radius: 18px;
@@ -1452,6 +1454,9 @@ select {
 
 .preview-pane .preview-surface {
   flex: 1;
+  width: 100%;
+  max-width: var(--paper-width);
+  margin: 0 auto;
   padding: 18px 22px 42px;
   border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
   border-radius: 18px;

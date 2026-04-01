@@ -1662,14 +1662,17 @@ function buildStandaloneHtml(title, bodyHtml, theme) {
     <style>
       ${katexStyles}
       :root { color-scheme: ${theme === "midnight" ? "dark" : "light"}; }
+      html { margin: 0; padding: 0; background: ${theme === "midnight" ? "#0f1724" : theme === "forest" ? "#eef5ee" : "#faf7f1"}; }
       body {
         max-width: 900px;
         margin: 0 auto;
-        padding: 48px 24px 96px;
+        padding: 24px 24px 96px;
         font: 18px/1.8 "Segoe UI", "Microsoft YaHei", sans-serif;
         color: ${theme === "midnight" ? "#e8eef8" : "#1d232e"};
         background: ${theme === "midnight" ? "#0f1724" : theme === "forest" ? "#eef5ee" : "#faf7f1"};
       }
+      .export-document > :first-child { margin-top: 0; }
+      .export-document > :last-child { margin-bottom: 0; }
       img { max-width: 100%; border-radius: 12px; }
       pre { overflow-x: auto; padding: 16px; border-radius: 14px; background: ${theme === "midnight" ? "#1c2434" : "#22252b"}; color: #f5f7fa; }
       code { font-family: "Cascadia Code", "JetBrains Mono", monospace; }
@@ -1743,7 +1746,7 @@ function buildStandaloneHtml(title, bodyHtml, theme) {
       .mermaid { margin: 1.5rem 0; }
     </style>
   </head>
-  <body>${bodyHtml}</body>
+  <body><main class="export-document">${bodyHtml}</main></body>
 </html>`;
 }
 
