@@ -2265,6 +2265,8 @@ export default function App() {
   const [frontMatterMergeState, setFrontMatterMergeState] = useState(null);
 
   const sourceRef = useRef(null);
+  const sourcePaneRef = useRef(null);
+  const sourceEditorShellRef = useRef(null);
   const sourceHighlightRef = useRef(null);
   const programmaticEditorSyncRef = useRef(false);
   const programmaticMarkdownSyncRef = useRef(false);
@@ -2619,11 +2621,16 @@ export default function App() {
   );
 
   function syncSourceHighlightScroll() {
-    if (!sourceRef.current || !sourceHighlightRef.current) {
+    if (!sourceHighlightRef.current) {
       return;
     }
-    sourceHighlightRef.current.scrollTop = sourceRef.current.scrollTop;
-    sourceHighlightRef.current.scrollLeft = sourceRef.current.scrollLeft;
+    sourceHighlightRef.current.scrollTop = 0;
+    sourceHighlightRef.current.scrollLeft = 0;
+  }
+
+  function syncSourceEditorHeight(target = sourceRef.current) {
+    target?.style?.removeProperty("height");
+    sourceEditorShellRef.current?.style?.removeProperty("height");
   }
 
   function markSourceAsActive() {
@@ -3787,6 +3794,10 @@ export default function App() {
   }, [findOpen, matchIndex, matches, preferences.viewMode]);
 
   useEffect(() => {
+    syncSourceEditorHeight();
+  }, [markdownText, preferences.viewMode]);
+
+  useEffect(() => {
     if (!findOpen || !findQuery) {
       return;
     }
@@ -4464,7 +4475,9 @@ export default function App() {
       const offset = getLineStartIndex(markdownText, item.line);
       sourceRef.current.focus();
       sourceRef.current.setSelectionRange(offset, offset + item.text.length);
-      sourceRef.current.scrollTop = Math.max(0, item.line - 3) * 24;
+      if (sourcePaneRef.current) {
+        sourcePaneRef.current.scrollTop = Math.max(0, item.line - 3) * 24;
+      }
       return;
     }
     const editorHeading = editorHeadingsRef.current[index];
@@ -4706,6 +4719,7 @@ export default function App() {
   }
 
   function handleSourceChange(event) {
+    syncSourceEditorHeight(event.target);
     setMarkdownText(event.target.value);
     setIsDirty(true);
   }
@@ -4724,10 +4738,6 @@ export default function App() {
     }
   }
 
-  function handleSourceScroll() {
-    syncSourceHighlightScroll();
-  }
-
   function applySourceTextUpdate(nextText, nextSelectionStart, nextSelectionEnd = nextSelectionStart) {
     setMarkdownText(nextText);
     setIsDirty(true);
@@ -4736,6 +4746,7 @@ export default function App() {
       if (!textarea) {
         return;
       }
+      syncSourceEditorHeight(textarea);
       textarea.focus();
       textarea.setSelectionRange(nextSelectionStart, nextSelectionEnd);
       syncSourceHighlightScroll();
@@ -5450,13 +5461,15 @@ export default function App() {
           ) : null}
 
           {showSource ? (
-            <section className={`side-pane source-pane${activePane === "source" ? " pane-active" : ""}`}>
-              <div className={`source-editor-shell${findOpen && findQuery ? " searching" : ""}`}>
-                {findOpen && findQuery ? (
-                  <div ref={sourceHighlightRef} className="source-highlight-layer" aria-hidden="true">
-                    {sourceHighlightContent}
-                  </div>
-                ) : null}
+            <section ref={sourcePaneRef} className={`side-pane source-pane${activePane === "source" ? " pane-active" : ""}`}>
+              <div ref={sourceEditorShellRef} className={`source-editor-shell${findOpen && findQuery ? " searching" : ""}`}>
+                <div
+                  ref={sourceHighlightRef}
+                  className={`source-highlight-layer${findOpen && findQuery ? " searching" : " measure-only"}`}
+                  aria-hidden="true"
+                >
+                  {findOpen && findQuery ? sourceHighlightContent : `${markdownText}\n`}
+                </div>
                 <textarea
                   ref={sourceRef}
                   className={`source-textarea${findOpen && findQuery ? " searching" : ""}`}
@@ -5481,7 +5494,6 @@ export default function App() {
                     handleSourceKeyDown(event);
                   }}
                   onKeyUp={handleSourceSelection}
-                  onScroll={handleSourceScroll}
                 />
               </div>
             </section>
