@@ -1247,11 +1247,11 @@ function getEditorSlashContext(instance) {
   };
 }
 
-function serializeEditorHtmlToMarkdown(html) {
+function serializeEditorHtmlToMarkdown(html, existingRawFrontMatter = "") {
   const container = document.createElement("div");
   container.innerHTML = String(html || "");
   const frontMatterNode = container.querySelector(":scope > .yaml-front-matter");
-  const rawFrontMatter = frontMatterNode ? buildRawFrontMatter(frontMatterNode.textContent || "") : "";
+  const rawFrontMatter = frontMatterNode ? buildRawFrontMatter(frontMatterNode.textContent || "") : existingRawFrontMatter;
   if (frontMatterNode) {
     frontMatterNode.remove();
   }
@@ -1628,13 +1628,13 @@ function decorateRenderedHtml(container, outline, options = {}) {
 }
 
 function renderMarkdownForEditor(markdown, currentFilePath, outline) {
-  const { content: frontMatterContent, body } = extractYamlFrontMatter(markdown);
+  const { body } = extractYamlFrontMatter(markdown);
   const container = resolveImageSources(
     editorMarked.parse(preprocessMarkdownSyntax(body, { enableExtendedInlineSyntax: true })),
     currentFilePath,
     window.editorApi.resolveMarkdownAsset
   );
-  return decorateRenderedHtml(container, outline, { frontMatterContent, enableCallouts: true });
+  return decorateRenderedHtml(container, outline, { enableCallouts: true });
 }
 
 function renderMarkdownSnippetForEditor(markdown, currentFilePath) {
@@ -2265,6 +2265,8 @@ export default function App() {
   const [frontMatterMergeState, setFrontMatterMergeState] = useState(null);
 
   const sourceRef = useRef(null);
+  const sourcePaneRef = useRef(null);
+  const sourceEditorShellRef = useRef(null);
   const sourceHighlightRef = useRef(null);
   const programmaticEditorSyncRef = useRef(false);
   const programmaticMarkdownSyncRef = useRef(false);
@@ -2619,11 +2621,16 @@ export default function App() {
   );
 
   function syncSourceHighlightScroll() {
-    if (!sourceRef.current || !sourceHighlightRef.current) {
+    if (!sourceHighlightRef.current) {
       return;
     }
-    sourceHighlightRef.current.scrollTop = sourceRef.current.scrollTop;
-    sourceHighlightRef.current.scrollLeft = sourceRef.current.scrollLeft;
+    sourceHighlightRef.current.scrollTop = 0;
+    sourceHighlightRef.current.scrollLeft = 0;
+  }
+
+  function syncSourceEditorHeight(target = sourceRef.current) {
+    target?.style?.removeProperty("height");
+    sourceEditorShellRef.current?.style?.removeProperty("height");
   }
 
   function markSourceAsActive() {
@@ -2638,16 +2645,6 @@ export default function App() {
 
   function markPreviewAsActive() {
     setActivePane("preview");
-  }
-
-  function focusSourcePane() {
-    sourceRef.current?.focus();
-    markSourceAsActive();
-  }
-
-  function focusEditorPane() {
-    markEditorAsActive();
-    editor?.chain().focus().run();
   }
 
   function copyPreviewHtmlToClipboard() {
@@ -3464,24 +3461,6 @@ export default function App() {
 
     return { kind: "paragraph", label: "Paragraph" };
   }, [editor, tableSelectionCount, tableToolbarVisible]);
-  const editorObjectGuidance = useMemo(() => {
-    switch (editorObjectContext?.kind) {
-      case "heading":
-        return "Enter creates a sibling heading. Backspace at start returns to paragraph.";
-      case "code":
-        return "Tab indents code. Backspace on an empty block returns to paragraph.";
-      case "task":
-        return "Enter adds the next task. Backspace on an empty item exits the list.";
-      case "list":
-        return "Enter continues the list. Backspace on an empty item exits.";
-      case "quote":
-        return "Enter continues the quote. Backspace on an empty quote exits.";
-      case "table":
-        return "Use the table toolbar above to add rows, columns, and alignment.";
-      default:
-        return "Use slash commands or the format toolbar to structure the current block.";
-    }
-  }, [editorObjectContext]);
   const toolbarContext = useMemo(() => {
     if (activePane === "source" && sourceObjectContext) {
       return {
@@ -3547,14 +3526,6 @@ export default function App() {
         { id: "editor-add-row", label: "Add Row", onSelect: () => handleTableAction("add-row-after") },
         { id: "editor-add-column", label: "Add Column", onSelect: () => handleTableAction("add-col-after") },
         { id: "editor-delete-table", label: "Delete Table", onSelect: () => handleTableAction("delete-table"), tone: "danger" }
-      ];
-    }
-
-    if (activePane === "editor" && editorObjectContext?.kind === "heading") {
-      return [
-        { id: "heading-1", label: "H1", onSelect: () => applyFormatting("heading-1") },
-        { id: "heading-2", label: "H2", onSelect: () => applyFormatting("heading-2") },
-        { id: "heading-3", label: "H3", onSelect: () => applyFormatting("heading-3") }
       ];
     }
 
@@ -3813,6 +3784,10 @@ export default function App() {
     }
     selectMatch(matchIndex, { focusSource: false });
   }, [findOpen, matchIndex, matches, preferences.viewMode]);
+
+  useEffect(() => {
+    syncSourceEditorHeight();
+  }, [markdownText, preferences.viewMode]);
 
   useEffect(() => {
     if (!findOpen || !findQuery) {
@@ -4492,7 +4467,9 @@ export default function App() {
       const offset = getLineStartIndex(markdownText, item.line);
       sourceRef.current.focus();
       sourceRef.current.setSelectionRange(offset, offset + item.text.length);
-      sourceRef.current.scrollTop = Math.max(0, item.line - 3) * 24;
+      if (sourcePaneRef.current) {
+        sourcePaneRef.current.scrollTop = Math.max(0, item.line - 3) * 24;
+      }
       return;
     }
     const editorHeading = editorHeadingsRef.current[index];
@@ -4723,7 +4700,7 @@ export default function App() {
 
   function syncMarkdownFromEditor(instance) {
     programmaticMarkdownSyncRef.current = true;
-    const nextMarkdown = serializeEditorHtmlToMarkdown(instance.getHTML());
+    const nextMarkdown = serializeEditorHtmlToMarkdown(instance.getHTML(), frontMatterState.raw);
     lastEditorMarkdownRef.current = nextMarkdown;
     startTransition(() => {
       const nextOutline = extractOutlineFromMarkdown(nextMarkdown);
@@ -4734,6 +4711,7 @@ export default function App() {
   }
 
   function handleSourceChange(event) {
+    syncSourceEditorHeight(event.target);
     setMarkdownText(event.target.value);
     setIsDirty(true);
   }
@@ -4752,10 +4730,6 @@ export default function App() {
     }
   }
 
-  function handleSourceScroll() {
-    syncSourceHighlightScroll();
-  }
-
   function applySourceTextUpdate(nextText, nextSelectionStart, nextSelectionEnd = nextSelectionStart) {
     setMarkdownText(nextText);
     setIsDirty(true);
@@ -4764,6 +4738,7 @@ export default function App() {
       if (!textarea) {
         return;
       }
+      syncSourceEditorHeight(textarea);
       textarea.focus();
       textarea.setSelectionRange(nextSelectionStart, nextSelectionEnd);
       syncSourceHighlightScroll();
@@ -5404,19 +5379,15 @@ export default function App() {
   return (
     <div className={`app-shell theme-${preferences.theme}`}>
       <Toolbar
-        activePane={toolbarContext.pane}
-        contextLabel={toolbarContext.label}
         contextActions={toolbarContextActions}
         currentContext={toolbarContext}
         editor={editor}
-        onSetTheme={(theme) => updatePreferences({ theme })}
         onOpenPalette={openCommandPalette}
         onInsertImage={insertImage}
         onInsertTable={insertTable}
         onApplyFormat={applyFormatting}
         onSave={() => saveDocument(false)}
         onOpenFind={openFindReplace}
-        theme={preferences.theme}
       />
 
       <FindReplaceBar
@@ -5466,19 +5437,6 @@ export default function App() {
               aria-hidden={preferences.viewMode === "editor" ? undefined : true}
               onMouseDown={markEditorAsActive}
             >
-              <div className="side-pane-header-row editor-pane-header-row">
-                <div className="side-pane-header">Editor</div>
-                <div className="side-pane-header-meta">
-                  <span className={`side-pane-chip${activePane === "editor" ? " active" : ""}`}>Rich Text</span>
-                  {editorObjectContext ? <span className="side-pane-chip">{editorObjectContext.label}</span> : null}
-                </div>
-              </div>
-              <div className="side-pane-guidance editor-pane-guidance">{editorObjectGuidance}</div>
-              <div className="side-pane-actions editor-pane-actions">
-                <button type="button" className="side-pane-action-button" onClick={focusEditorPane}>
-                  Focus Editor
-                </button>
-              </div>
               <div ref={paperRef} className="paper">
                 <TableToolbar visible={tableToolbarVisible} selectionCount={tableSelectionCount} onAction={handleTableAction} />
                 <TableSelectionHandles
@@ -5495,54 +5453,15 @@ export default function App() {
           ) : null}
 
           {showSource ? (
-            <section className={`side-pane source-pane${activePane === "source" ? " pane-active" : ""}`}>
-              <div className="side-pane-header-row">
-                <div className="side-pane-header">Source</div>
-                <div className="side-pane-header-meta">
-                  <span className={`side-pane-chip${activePane === "source" ? " active" : ""}`}>Markdown</span>
-                  {paneFindLabel ? <span className="side-pane-chip">Find {paneFindLabel}</span> : null}
-                  <span className="side-pane-chip position-chip">{sourceSelectionMeta.lineLabel}</span>
-                  <span className="side-pane-chip position-chip">{sourceSelectionMeta.columnLabel}</span>
-                  {sourceSelectionMeta.selectionLabel ? <span className="side-pane-chip position-chip">{sourceSelectionMeta.selectionLabel}</span> : null}
-                  {sourceObjectContext ? <span className="side-pane-chip">{sourceObjectContext.label}</span> : null}
+            <section ref={sourcePaneRef} className={`side-pane source-pane${activePane === "source" ? " pane-active" : ""}`}>
+              <div ref={sourceEditorShellRef} className={`source-editor-shell${findOpen && findQuery ? " searching" : ""}`}>
+                <div
+                  ref={sourceHighlightRef}
+                  className={`source-highlight-layer${findOpen && findQuery ? " searching" : " measure-only"}`}
+                  aria-hidden="true"
+                >
+                  {findOpen && findQuery ? sourceHighlightContent : `${markdownText}\n`}
                 </div>
-              </div>
-              <div className="side-pane-actions">
-                <button type="button" className="side-pane-action-button" onClick={focusSourcePane}>
-                  Focus Source
-                </button>
-                {sourceObjectContext?.kind === "link" ? (
-                  <>
-                    <button type="button" className="side-pane-action-button" onClick={openLinkDialog}>
-                      Edit Link
-                    </button>
-                    <button type="button" className="side-pane-action-button" onClick={removeLinkAtSourceSelection}>
-                      Remove Link
-                    </button>
-                  </>
-                ) : null}
-                {sourceObjectContext?.kind === "image" ? (
-                  <>
-                    <button type="button" className="side-pane-action-button" onClick={insertImage}>
-                      Replace Image
-                    </button>
-                    <button type="button" className="side-pane-action-button" onClick={removeImageAtSourceSelection}>
-                      Remove Image
-                    </button>
-                  </>
-                ) : null}
-                {sourceObjectContext?.kind === "table" ? (
-                  <button type="button" className="side-pane-action-button" onClick={insertTable}>
-                    Add Table Row
-                  </button>
-                ) : null}
-              </div>
-              <div className={`source-editor-shell${findOpen && findQuery ? " searching" : ""}`}>
-                {findOpen && findQuery ? (
-                  <div ref={sourceHighlightRef} className="source-highlight-layer" aria-hidden="true">
-                    {sourceHighlightContent}
-                  </div>
-                ) : null}
                 <textarea
                   ref={sourceRef}
                   className={`source-textarea${findOpen && findQuery ? " searching" : ""}`}
@@ -5567,7 +5486,6 @@ export default function App() {
                     handleSourceKeyDown(event);
                   }}
                   onKeyUp={handleSourceSelection}
-                  onScroll={handleSourceScroll}
                 />
               </div>
             </section>
@@ -5575,26 +5493,6 @@ export default function App() {
 
           {showPreview ? (
             <section className={`side-pane preview-pane${activePane === "preview" ? " pane-active" : ""}`} onMouseDown={markPreviewAsActive}>
-              <div className="side-pane-header-row">
-                <div className="side-pane-header">Preview</div>
-                <div className="side-pane-header-meta">
-                  <span className={`side-pane-chip${activePane === "preview" ? " active" : ""}`}>Live</span>
-                  {paneFindLabel ? <span className="side-pane-chip">Find {paneFindLabel}</span> : null}
-                  {!preferences.allowInsecureRemoteMedia ? <span className="side-pane-chip">HTTP Media Blocked</span> : null}
-                </div>
-              </div>
-              <div className="side-pane-actions">
-                <button type="button" className="side-pane-action-button" onClick={copyPreviewHtmlToClipboard}>
-                  Copy HTML
-                </button>
-                <button
-                  type="button"
-                  className={`side-pane-action-button${preferences.allowInsecureRemoteMedia ? " active" : ""}`}
-                  onClick={() => updatePreferences({ allowInsecureRemoteMedia: !preferences.allowInsecureRemoteMedia })}
-                >
-                  {preferences.allowInsecureRemoteMedia ? "HTTP Media On" : "HTTP Media Off"}
-                </button>
-              </div>
               <MarkdownPreview
                 html={previewHtml}
                 theme={preferences.theme}
@@ -5702,3 +5600,4 @@ export default function App() {
     </div>
   );
 }
+
