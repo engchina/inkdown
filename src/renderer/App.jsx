@@ -1668,7 +1668,7 @@ function buildStandaloneHtml(title, bodyHtml, theme) {
         margin: 0 auto;
         padding: 14px 26px 56px;
         font: 17px/1.68 "Segoe UI", "Microsoft YaHei", sans-serif;
-        color: ${theme === "midnight" ? "#e8eef8" : "#1d232e"};
+        color: ${theme === "midnight" ? "#dbe4f0" : theme === "forest" ? "#243328" : "#2f3437"};
         background: ${theme === "midnight" ? "#0f1724" : theme === "forest" ? "#eef5ee" : "#faf7f1"};
       }
       .export-document {
@@ -1680,23 +1680,31 @@ function buildStandaloneHtml(title, bodyHtml, theme) {
       h1, h2, h3, h4, h5, h6 {
         margin: 1.35em 0 0.42em;
         line-height: 1.24;
-        color: ${theme === "midnight" ? "#e8eef8" : "#1d232e"};
+        color: ${theme === "midnight" ? "#edf3fb" : theme === "forest" ? "#17241a" : "#22262b"};
         font-weight: 650;
         letter-spacing: -0.015em;
       }
-      h1 { font-size: 1.86em; line-height: 1.14; }
-      h2 { font-size: 1.55em; }
-      h3 { font-size: 1.34em; }
-      h4 { font-size: 1.17em; }
+      h1 { font-size: 1.96em; line-height: 1.12; }
+      h2 { font-size: 1.62em; }
+      h3 { font-size: 1.36em; }
+      h4 { font-size: 1.15em; }
       h5 { font-size: 1.03em; }
       h6 { font-size: 0.94em; }
-      p { margin: 0.52em 0; }
-      ul, ol { margin: 0.52em 0; padding-left: 1.35em; }
-      li { margin: 0.14em 0; }
+      p { margin: 0.52em 0; color: inherit; }
+      ul, ol { margin: 0.5em 0; padding-left: 1.55em; }
+      li { margin: 0.1em 0; }
       li > p { margin: 0.2em 0; }
+      ul ul, ul ol, ol ul, ol ol { margin: 0.16em 0; }
       img { display: block; max-width: 100%; margin: 0.95em 0; border-radius: 12px; }
       pre { overflow-x: auto; margin: 0.88em 0; padding: 14px 16px; border-radius: 12px; background: ${theme === "midnight" ? "#1c2434" : "#22252b"}; color: #f5f7fa; }
       code { font-family: "Cascadia Code", "JetBrains Mono", monospace; }
+      :not(pre) > code {
+        padding: 0.08em 0.34em;
+        border-radius: 0.34em;
+        background: ${theme === "midnight" ? "rgba(148, 163, 184, 0.16)" : "rgba(15, 23, 42, 0.06)"};
+        color: inherit;
+        font-size: 0.92em;
+      }
       .hljs { color: inherit; background: transparent; }
       .hljs-comment, .hljs-quote { color: #94a3b8; font-style: italic; }
       .hljs-keyword, .hljs-selector-tag, .hljs-literal, .hljs-name, .hljs-tag { color: #f97316; }
@@ -1707,39 +1715,30 @@ function buildStandaloneHtml(title, bodyHtml, theme) {
       mark { padding: 0.08em 0.32em; border-radius: 0.36em; background: ${theme === "midnight" ? "#5a4300" : "#ffe08a"}; color: inherit; }
       sub, sup { font-size: 0.78em; }
       blockquote:not(.callout) {
-        min-height: 1.6em;
-        margin: 0.95em 0;
-        padding: 0.22em 0 0.22em 0.95em;
-        border-left: 3px solid ${
+        min-height: 1.4em;
+        margin: 0.88em 0;
+        padding: 0.08em 0 0.08em 1em;
+        border-left: 2px solid ${
           theme === "midnight"
-            ? "rgba(148, 163, 184, 0.5)"
+            ? "rgba(148, 163, 184, 0.42)"
             : theme === "forest"
-              ? "rgba(5, 150, 105, 0.28)"
-              : "rgba(79, 70, 229, 0.26)"
+              ? "rgba(5, 150, 105, 0.22)"
+              : "rgba(120, 128, 140, 0.34)"
         };
-        border-radius: 0 10px 10px 0;
-        background: linear-gradient(
-          90deg,
-          ${
-            theme === "midnight"
-              ? "rgba(30, 41, 59, 0.52)"
-              : theme === "forest"
-                ? "rgba(255, 255, 255, 0.48)"
-                : "rgba(255, 255, 255, 0.52)"
-          } 0%,
-          transparent 82%
-        );
-        color: ${theme === "midnight" ? "#d3dbe8" : theme === "forest" ? "#065f46" : "#5b6476"};
+        border-radius: 0;
+        background: transparent;
+        color: ${theme === "midnight" ? "#b9c6d8" : theme === "forest" ? "#4c6853" : "#6b7280"};
+        font-size: 0.98em;
       }
       blockquote:not(.callout) > :first-child { margin-top: 0; }
       blockquote:not(.callout) > :last-child { margin-bottom: 0; }
-      blockquote:not(.callout) p { margin: 0.32em 0; }
+      blockquote:not(.callout) p { margin: 0.24em 0; }
       blockquote:not(.callout) blockquote:not(.callout) {
         min-height: 0;
-        margin: 0.55em 0 0.28em;
-        padding-left: 0.9em;
+        margin: 0.45em 0 0.22em;
+        padding-left: 0.85em;
         border-left-width: 2px;
-        border-radius: 0 8px 8px 0;
+        border-radius: 0;
         background: none;
       }
       table { width: 100%; margin: 0.95em 0; border-collapse: collapse; }
