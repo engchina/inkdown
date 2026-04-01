@@ -2,11 +2,14 @@ const { app, BrowserWindow, Menu, dialog, ipcMain, net, protocol, shell } = requ
 const path = require("node:path");
 const fs = require("node:fs/promises");
 const { fileURLToPath, pathToFileURL } = require("node:url");
+const { isSafeExternalUrl } = require("./utils/externalLinks");
+const { buildIoErrorMessage } = require("./utils/ioErrors");
+const { isAllowedRendererUrl, isTrustedIpcSender } = require("./utils/rendererTrust");
+const { DEFAULT_MARKDOWN_EXTENSIONS, DEFAULT_IGNORED_WORKSPACE_DIRS, listWorkspaceTree } = require("./utils/workspaceTree");
 
 const isDev = Boolean(process.env.VITE_DEV_SERVER_URL);
 const ASSET_PROTOCOL = "inkdown-asset";
-const MARKDOWN_EXTENSIONS = new Set([".md", ".markdown", ".mdown", ".mkd", ".txt"]);
-const IGNORED_WORKSPACE_DIRS = new Set([".git", "node_modules", "dist", "release", "build", "coverage"]);
+const MARKDOWN_EXTENSIONS = new Set(DEFAULT_MARKDOWN_EXTENSIONS);
 const HELP_LINKS = {
   quickStart: "https://support.typora.io/Quick-Start/",
   markdownReference: "https://support.typora.io/Markdown-Reference/",
@@ -64,6 +67,7 @@ function getDefaultPreferences() {
       autoPair: true,
       literalEscape: true
     },
+    allowInsecureRemoteMedia: false,
     workspaceRoot: null,
     recentFiles: [],
     paletteUsage: {},
@@ -75,6 +79,25 @@ function updateWindowTitle(window) {
   const name = state.currentFilePath ? path.basename(state.currentFilePath) : "Untitled.md";
   const dirtySuffix = state.isDirty ? " *" : "";
   window.setTitle(`${name}${dirtySuffix} - Inkdown`);
+}
+
+function getRendererEntryUrl() {
+  return isDev ? process.env.VITE_DEV_SERVER_URL : pathToFileURL(path.join(app.getAppPath(), "dist/index.html")).toString();
+}
+
+function getRendererTrustOptions() {
+  return {
+    devServerUrl: process.env.VITE_DEV_SERVER_URL,
+    productionAppUrl: !isDev ? getRendererEntryUrl() : null
+  };
+}
+
+function requireTrustedIpcEvent(event) {
+  if (!isTrustedIpcSender(event, getRendererTrustOptions())) {
+    throw new Error(`Blocked IPC from untrusted sender: ${event?.senderFrame?.url || event?.sender?.getURL?.() || "unknown"}`);
+  }
+
+  return BrowserWindow.fromWebContents(event.sender);
 }
 
 function emitMenuAction(window, payload) {
@@ -451,68 +474,6 @@ async function persistImageFromBuffer(bytes, extension = ".png") {
   };
 }
 
-function compareFileNodes(left, right) {
-  if (left.type !== right.type) {
-    return left.type === "directory" ? -1 : 1;
-  }
-
-  return left.name.localeCompare(right.name, "en", { numeric: true, sensitivity: "base" });
-}
-
-async function buildWorkspaceNode(targetPath, isRoot = false) {
-  const entryName = path.basename(targetPath);
-  const stats = await fs.stat(targetPath);
-
-  if (!stats.isDirectory()) {
-    if (!isMarkdownFilePath(targetPath)) {
-      return null;
-    }
-
-    return {
-      type: "file",
-      name: entryName,
-      path: targetPath
-    };
-  }
-
-  if (IGNORED_WORKSPACE_DIRS.has(entryName)) {
-    return null;
-  }
-
-  const entries = await fs.readdir(targetPath, { withFileTypes: true });
-  const visibleEntries = entries.filter((entry) => !entry.name.startsWith("."));
-  const children = (
-    await Promise.all(
-      visibleEntries.map(async (entry) => buildWorkspaceNode(path.join(targetPath, entry.name)))
-    )
-  )
-    .filter(Boolean)
-    .sort(compareFileNodes);
-
-  if (!isRoot && children.length === 0) {
-    return null;
-  }
-
-  return {
-    type: "directory",
-    name: entryName,
-    path: targetPath,
-    children
-  };
-}
-
-async function listWorkspaceTree(rootPath) {
-  if (!rootPath) {
-    return null;
-  }
-
-  if (!(await pathExists(rootPath))) {
-    return null;
-  }
-
-  return buildWorkspaceNode(rootPath, true);
-}
-
 function sendThemeAction(window, theme) {
   state.preferences = {
     ...state.preferences,
@@ -868,7 +829,7 @@ async function createWindow() {
     autoHideMenuBar: false,
     webPreferences: {
       preload: path.join(__dirname, "../preload/preload.js"),
-      sandbox: false,
+      sandbox: true,
       contextIsolation: true,
       nodeIntegration: false,
       spellcheck: true
@@ -880,6 +841,24 @@ async function createWindow() {
   }
 
   const mainWindow = new BrowserWindow(browserWindowOptions);
+
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (isSafeExternalUrl(url)) {
+      shell.openExternal(url).catch(() => {});
+    }
+    return { action: "deny" };
+  });
+
+  mainWindow.webContents.on("will-navigate", (event, targetUrl) => {
+    if (isAllowedRendererUrl(targetUrl, getRendererTrustOptions())) {
+      return;
+    }
+
+    event.preventDefault();
+    if (isSafeExternalUrl(targetUrl)) {
+      shell.openExternal(targetUrl).catch(() => {});
+    }
+  });
 
   if (isDev) {
     await mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
@@ -929,8 +908,8 @@ app.on("activate", () => {
   }
 });
 
-ipcMain.handle("dialog:open-markdown", async () => {
-  const window = BrowserWindow.getFocusedWindow();
+ipcMain.handle("dialog:open-markdown", async (event) => {
+  const window = requireTrustedIpcEvent(event);
   const result = await dialog.showOpenDialog(window, {
     title: "Open Markdown Document",
     properties: ["openFile"],
@@ -944,8 +923,8 @@ ipcMain.handle("dialog:open-markdown", async () => {
   return safeOpenMarkdownFile(window, result.filePaths[0]);
 });
 
-ipcMain.handle("dialog:pick-workspace", async () => {
-  const window = BrowserWindow.getFocusedWindow();
+ipcMain.handle("dialog:pick-workspace", async (event) => {
+  const window = requireTrustedIpcEvent(event);
   const result = await dialog.showOpenDialog(window, {
     title: "Open Folder",
     properties: ["openDirectory"]
@@ -961,15 +940,15 @@ ipcMain.handle("dialog:pick-workspace", async () => {
   };
 });
 
-ipcMain.handle("dialog:confirm-discard-changes", async () => {
-  const window = BrowserWindow.getFocusedWindow();
+ipcMain.handle("dialog:confirm-discard-changes", async (event) => {
+  const window = requireTrustedIpcEvent(event);
   return {
     shouldContinue: await maybeContinueWithUnsavedChanges(window)
   };
 });
 
-ipcMain.handle("dialog:pick-image", async () => {
-  const window = BrowserWindow.getFocusedWindow();
+ipcMain.handle("dialog:pick-image", async (event) => {
+  const window = requireTrustedIpcEvent(event);
   const result = await dialog.showOpenDialog(window, {
     title: "Insert Image",
     properties: ["openFile"],
@@ -983,15 +962,52 @@ ipcMain.handle("dialog:pick-image", async () => {
   return { canceled: false, filePath: result.filePaths[0] };
 });
 
-ipcMain.handle("file:save-markdown", async (_, payload) => {
-  const window = BrowserWindow.getFocusedWindow();
+ipcMain.handle("file:save-markdown", async (event, payload) => {
+  const window = requireTrustedIpcEvent(event);
   let targetPath = payload.filePath || state.currentFilePath;
 
-  if (!targetPath) {
+  try {
+    if (!targetPath) {
+      const result = await dialog.showSaveDialog(window, {
+        title: "Save Markdown Document",
+        defaultPath: "Untitled.md",
+        filters: [{ name: "Markdown", extensions: ["md"] }]
+      });
+
+      if (result.canceled || !result.filePath) {
+        return { canceled: true };
+      }
+
+      targetPath = result.filePath;
+    }
+
+    const normalizedMarkdown = await relocateMarkdownImages(payload.markdown, targetPath);
+    await fs.writeFile(targetPath, normalizedMarkdown, "utf8");
+    state.currentFilePath = targetPath;
+    state.isDirty = false;
+    rebuildMenu(window);
+    if (window) {
+      updateWindowTitle(window);
+    }
+
+    return { canceled: false, filePath: targetPath, markdown: normalizedMarkdown };
+  } catch (error) {
+    return { canceled: true, error: buildIoErrorMessage("save document", error, targetPath) };
+  }
+});
+
+ipcMain.handle("file:save-html", async (event, payload) => {
+  const window = requireTrustedIpcEvent(event);
+  const defaultName = state.currentFilePath
+    ? `${path.basename(state.currentFilePath, path.extname(state.currentFilePath))}.html`
+    : "Untitled.html";
+  let targetPath = "";
+
+  try {
     const result = await dialog.showSaveDialog(window, {
-      title: "Save Markdown Document",
-      defaultPath: "Untitled.md",
-      filters: [{ name: "Markdown", extensions: ["md"] }]
+      title: "Export HTML",
+      defaultPath: defaultName,
+      filters: [{ name: "HTML", extensions: ["html"] }]
     });
 
     if (result.canceled || !result.filePath) {
@@ -999,78 +1015,82 @@ ipcMain.handle("file:save-markdown", async (_, payload) => {
     }
 
     targetPath = result.filePath;
+    await fs.writeFile(result.filePath, payload.html, "utf8");
+    return { canceled: false, filePath: result.filePath };
+  } catch (error) {
+    return { canceled: true, error: buildIoErrorMessage("export HTML", error, targetPath || defaultName) };
   }
-
-  const normalizedMarkdown = await relocateMarkdownImages(payload.markdown, targetPath);
-  await fs.writeFile(targetPath, normalizedMarkdown, "utf8");
-  state.currentFilePath = targetPath;
-  state.isDirty = false;
-  rebuildMenu(window);
-  if (window) {
-    updateWindowTitle(window);
-  }
-
-  return { canceled: false, filePath: targetPath, markdown: normalizedMarkdown };
 });
 
-ipcMain.handle("file:save-html", async (_, payload) => {
-  const window = BrowserWindow.getFocusedWindow();
-  const defaultName = state.currentFilePath
-    ? `${path.basename(state.currentFilePath, path.extname(state.currentFilePath))}.html`
-    : "Untitled.html";
-
-  const result = await dialog.showSaveDialog(window, {
-    title: "Export HTML",
-    defaultPath: defaultName,
-    filters: [{ name: "HTML", extensions: ["html"] }]
-  });
-
-  if (result.canceled || !result.filePath) {
-    return { canceled: true };
+ipcMain.handle("file:save-pdf", async (event, payload) => {
+  const window = requireTrustedIpcEvent(event);
+  try {
+    return await createPdfFromHtml(window, payload);
+  } catch (error) {
+    return { canceled: true, error: buildIoErrorMessage("export PDF", error, state.currentFilePath) };
   }
-
-  await fs.writeFile(result.filePath, payload.html, "utf8");
-  return { canceled: false, filePath: result.filePath };
 });
 
-ipcMain.handle("file:save-pdf", async (_, payload) => {
-  const window = BrowserWindow.getFocusedWindow();
-  return createPdfFromHtml(window, payload);
-});
-
-ipcMain.handle("file:open-markdown-path", async (_, filePath) => {
-  const window = BrowserWindow.getFocusedWindow();
+ipcMain.handle("file:open-markdown-path", async (event, filePath) => {
+  const window = requireTrustedIpcEvent(event);
   return safeOpenMarkdownFile(window, filePath);
 });
 
-ipcMain.handle("file:list-workspace-tree", async (_, rootPath) => {
-  return listWorkspaceTree(rootPath);
+ipcMain.handle("file:list-workspace-tree", async (event, rootPath) => {
+  requireTrustedIpcEvent(event);
+  return listWorkspaceTree(rootPath, {
+    ignoredWorkspaceDirs: DEFAULT_IGNORED_WORKSPACE_DIRS,
+    markdownExtensions: DEFAULT_MARKDOWN_EXTENSIONS
+  });
 });
 
-ipcMain.handle("file:persist-image-file", async (_, sourcePath) => persistImageFromPath(sourcePath));
+ipcMain.handle("file:persist-image-file", async (event, sourcePath) => {
+  requireTrustedIpcEvent(event);
+  try {
+    return await persistImageFromPath(sourcePath);
+  } catch (error) {
+    return { error: buildIoErrorMessage("insert image", error, sourcePath) };
+  }
+});
 
-ipcMain.handle("file:persist-image-buffer", async (_, payload) =>
-  persistImageFromBuffer(payload.bytes, payload.extension)
-);
+ipcMain.handle("file:persist-image-buffer", async (event, payload) => {
+  requireTrustedIpcEvent(event);
+  try {
+    return await persistImageFromBuffer(payload.bytes, payload.extension);
+  } catch (error) {
+    return { error: buildIoErrorMessage("insert pasted image", error) };
+  }
+});
 
-ipcMain.handle("preferences:load", async () => state.preferences);
+ipcMain.handle("preferences:load", async (event) => {
+  requireTrustedIpcEvent(event);
+  return state.preferences;
+});
 
-ipcMain.handle("preferences:save", async (_, preferences) => savePreferences(preferences));
+ipcMain.handle("preferences:save", async (event, preferences) => {
+  requireTrustedIpcEvent(event);
+  return savePreferences(preferences);
+});
 
-ipcMain.handle("shell:open-external", async (_, targetUrl) => {
+ipcMain.handle("shell:open-external", async (event, targetUrl) => {
+  requireTrustedIpcEvent(event);
+  if (!isSafeExternalUrl(targetUrl)) {
+    return { ok: false, error: "Blocked unsafe external URL." };
+  }
   await shell.openExternal(targetUrl);
   return { ok: true };
 });
 
-ipcMain.handle("shell:show-item-in-folder", async (_, filePath) => {
+ipcMain.handle("shell:show-item-in-folder", async (event, filePath) => {
+  requireTrustedIpcEvent(event);
   if (filePath) {
     shell.showItemInFolder(filePath);
   }
   return { ok: true };
 });
 
-ipcMain.handle("document:set-dirty", (_, value) => {
-  const window = BrowserWindow.getFocusedWindow();
+ipcMain.handle("document:set-dirty", (event, value) => {
+  const window = requireTrustedIpcEvent(event);
   state.isDirty = Boolean(value);
   if (window) {
     updateWindowTitle(window);
@@ -1078,12 +1098,17 @@ ipcMain.handle("document:set-dirty", (_, value) => {
   return { ok: true };
 });
 
-ipcMain.handle("document:set-file-path", (_, filePath) => {
-  const window = BrowserWindow.getFocusedWindow();
+ipcMain.handle("document:set-file-path", (event, filePath) => {
+  const window = requireTrustedIpcEvent(event);
   state.currentFilePath = filePath || null;
   if (window) {
     rebuildMenu(window);
     updateWindowTitle(window);
   }
   return { ok: true };
+});
+
+ipcMain.on("app:get-path", (event, name) => {
+  requireTrustedIpcEvent(event);
+  event.returnValue = app.getPath(name);
 });

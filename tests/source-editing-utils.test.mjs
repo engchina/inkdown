@@ -1,14 +1,22 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  findLiteralMatches,
+  buildExpandedMarkdownTableSelection,
+  buildLinkedSourceSelection,
+  buildRemovedMarkdownImageSelection,
+  buildSourceInsertion,
   buildPrefixedSourceLines,
   buildToggledPrefixedSourceLines,
   buildToggledWrappedSourceSelection,
+  buildUpdatedMarkdownImageSelection,
+  buildUpdatedMarkdownLinkSelection,
+  buildWrappedSourceSelection,
+  findLiteralMatches,
+  findMarkdownImageAtSelection,
+  findMarkdownLinkAtSelection,
+  findMarkdownTableAtSelection,
   replaceAllLiteralMatches,
-  replaceCurrentLiteralMatch,
-  buildSourceInsertion,
-  buildWrappedSourceSelection
+  replaceCurrentLiteralMatch
 } from "../src/renderer/utils/sourceEditing.mjs";
 
 test("buildSourceInsertion keeps the caret after inserted block content", () => {
@@ -30,6 +38,87 @@ test("buildWrappedSourceSelection selects placeholder text when there was no sel
   assert.equal(result.text, "Hello`code`");
   assert.equal(result.selectionStart, 6);
   assert.equal(result.selectionEnd, 10);
+});
+
+test("buildLinkedSourceSelection uses the selected text as the default label", () => {
+  const result = buildLinkedSourceSelection("Hello world", 6, 11, "", "https://example.com");
+  assert.equal(result.text, "Hello [world](https://example.com)");
+  assert.equal(result.selectionStart, 7);
+  assert.equal(result.selectionEnd, 12);
+});
+
+test("buildLinkedSourceSelection uses provided text when there is no selection", () => {
+  const result = buildLinkedSourceSelection("Hello", 5, 5, "Inkdown", "https://example.com");
+  assert.equal(result.text, "Hello[Inkdown](https://example.com)");
+  assert.equal(result.selectionStart, 6);
+  assert.equal(result.selectionEnd, 13);
+});
+
+test("findMarkdownLinkAtSelection returns link context for a cursor inside markdown link", () => {
+  const result = findMarkdownLinkAtSelection("Hello [Inkdown](https://example.com) world", 10, 10);
+  assert.deepEqual(result, {
+    start: 6,
+    end: 36,
+    text: "Inkdown",
+    url: "https://example.com",
+    textStart: 7,
+    textEnd: 14
+  });
+});
+
+test("buildUpdatedMarkdownLinkSelection updates the current link target in place", () => {
+  const result = buildUpdatedMarkdownLinkSelection("Hello [Inkdown](https://example.com) world", 10, 10, {
+    url: "https://inkdown.app"
+  });
+  assert.equal(result.text, "Hello [Inkdown](https://inkdown.app) world");
+  assert.equal(result.selectionStart, 7);
+  assert.equal(result.selectionEnd, 14);
+});
+
+test("findMarkdownImageAtSelection returns image context for a cursor inside markdown image", () => {
+  const result = findMarkdownImageAtSelection('Before ![Diagram](./images/diagram.png "Wide") after', 12, 12);
+  assert.deepEqual(result, {
+    start: 7,
+    end: 46,
+    alt: "Diagram",
+    url: "./images/diagram.png",
+    title: "Wide"
+  });
+});
+
+test("buildUpdatedMarkdownImageSelection replaces the current markdown image in place", () => {
+  const result = buildUpdatedMarkdownImageSelection('Before ![Diagram](./images/diagram.png "Wide") after', 12, 12, {
+    alt: "Diagram",
+    url: "./images/final.png",
+    title: "Wide"
+  });
+  assert.equal(result.text, 'Before ![Diagram](./images/final.png "Wide") after');
+  assert.equal(result.selectionStart, 9);
+  assert.equal(result.selectionEnd, 16);
+});
+
+test("buildRemovedMarkdownImageSelection removes the current markdown image and keeps alt text", () => {
+  const result = buildRemovedMarkdownImageSelection('Before ![Diagram](./images/diagram.png "Wide") after', 12, 12);
+  assert.equal(result.text, 'Before Diagram after');
+  assert.equal(result.selectionStart, 7);
+  assert.equal(result.selectionEnd, 14);
+});
+
+test("findMarkdownTableAtSelection returns table metadata for a cursor inside a markdown table", () => {
+  const result = findMarkdownTableAtSelection('| A | B |\n| --- | --- |\n| 1 | 2 |', 5);
+  assert.deepEqual(result, {
+    start: 0,
+    end: 33,
+    insertAt: 33,
+    columnCount: 2
+  });
+});
+
+test("buildExpandedMarkdownTableSelection appends a row to the current markdown table", () => {
+  const result = buildExpandedMarkdownTableSelection('| A | B |\n| --- | --- |\n| 1 | 2 |', 5);
+  assert.equal(result.text, '| A | B |\n| --- | --- |\n| 1 | 2 |\n| Value | Value |');
+  assert.equal(result.selectionStart, 36);
+  assert.equal(result.selectionEnd, 41);
 });
 
 test("buildToggledWrappedSourceSelection unwraps when the selection is already surrounded", () => {

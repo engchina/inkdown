@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import * as yaml from "js-yaml";
 
 function formatScalar(value) {
@@ -61,6 +61,8 @@ function removeAtPath(value, path) {
 }
 
 function StructuredTree({ editable = false, onChange, path = [], value }) {
+  const [newFieldName, setNewFieldName] = useState("");
+
   if (Array.isArray(value)) {
     return (
       <div className="front-matter-tree-node" style={{ "--depth": path.length }}>
@@ -86,6 +88,15 @@ function StructuredTree({ editable = false, onChange, path = [], value }) {
   }
 
   if (value && typeof value === "object") {
+    function commitNewField() {
+      const nextKey = newFieldName.trim();
+      if (!nextKey || Object.prototype.hasOwnProperty.call(value || {}, nextKey)) {
+        return;
+      }
+      onChange({ ...(value || {}), [nextKey]: "" }, path);
+      setNewFieldName("");
+    }
+
     return (
       <div className="front-matter-tree-node" style={{ "--depth": path.length }}>
         <div className="front-matter-tree-children">
@@ -101,19 +112,24 @@ function StructuredTree({ editable = false, onChange, path = [], value }) {
             </div>
           ))}
           {editable ? (
-            <button
-              className="tool-button tool-button-ghost"
-              type="button"
-              onClick={() => {
-                const nextKey = window.prompt("Property name");
-                if (!nextKey) {
-                  return;
-                }
-                onChange({ ...(value || {}), [nextKey]: "" }, path);
-              }}
-            >
-              Add Field
-            </button>
+            <div className="front-matter-tree-add-row">
+              <input
+                className="find-input front-matter-tree-input"
+                type="text"
+                value={newFieldName}
+                placeholder="New field name"
+                onChange={(event) => setNewFieldName(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    commitNewField();
+                  }
+                }}
+              />
+              <button className="tool-button tool-button-ghost" type="button" onClick={commitNewField} disabled={!newFieldName.trim()}>
+                Add Field
+              </button>
+            </div>
           ) : null}
         </div>
       </div>
@@ -190,9 +206,9 @@ export default function FrontMatterMergeDialog(props) {
     <div className="dialog-backdrop" role="presentation" onClick={onCancel}>
       <section className="front-matter-merge-dialog" role="dialog" onClick={(event) => event.stopPropagation()}>
         <div className="dialog-header">
-          <div>
-            <h2>Merge Front Matter</h2>
-            <div className="sidebar-caption">Edit the merged tree directly, or fine-tune the YAML below.</div>
+          <div className="dialog-header-copy">
+            <h2 className="dialog-title">Merge Front Matter</h2>
+            <div className="dialog-caption">Edit the merged tree directly, or fine-tune the YAML below.</div>
           </div>
           <button className="tool-button" type="button" onClick={onCancel}>
             Close

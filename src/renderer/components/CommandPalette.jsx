@@ -3,6 +3,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 export default function CommandPalette({ items, onClose, onQueryChange, onSelect, open, query, suggestions = [] }) {
   const inputRef = useRef(null);
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [scope, setScope] = useState("all");
 
   useEffect(() => {
     if (!open) {
@@ -11,15 +12,23 @@ export default function CommandPalette({ items, onClose, onQueryChange, onSelect
     inputRef.current?.focus();
     inputRef.current?.select();
     setSelectedIndex(0);
+    setScope("all");
   }, [open]);
 
   useEffect(() => {
     setSelectedIndex(0);
-  }, [query, items.length]);
+  }, [query, items.length, scope]);
+
+  const visibleItems = useMemo(() => {
+    if (scope === "all") {
+      return items;
+    }
+    return items.filter((item) => item.kind === scope);
+  }, [items, scope]);
 
   const groupedItems = useMemo(() => {
     const groups = [];
-    items.forEach((item, index) => {
+    visibleItems.forEach((item, index) => {
       const lastGroup = groups[groups.length - 1];
       if (!lastGroup || lastGroup.section !== item.section) {
         groups.push({ section: item.section, entries: [{ ...item, index }] });
@@ -28,23 +37,35 @@ export default function CommandPalette({ items, onClose, onQueryChange, onSelect
       lastGroup.entries.push({ ...item, index });
     });
     return groups;
-  }, [items]);
+  }, [visibleItems]);
+
+  const scopeCounts = useMemo(
+    () => ({
+      all: items.length,
+      command: items.filter((item) => item.kind === "command").length,
+      file: items.filter((item) => item.kind === "file").length
+    }),
+    [items]
+  );
 
   if (!open) {
     return null;
   }
 
-  const clampedIndex = items.length === 0 ? 0 : Math.min(selectedIndex, items.length - 1);
+  const clampedIndex = visibleItems.length === 0 ? 0 : Math.min(selectedIndex, visibleItems.length - 1);
+  const activeItem = visibleItems[clampedIndex] || null;
+  const activeDescription = activeItem?.description || (scope === "file" ? "Browse recent and workspace documents." : "Run commands without leaving the keyboard.");
+  const visibleSuggestions = scope === "file" ? suggestions.filter((item) => item.kind !== "command") : suggestions;
 
   function moveSelection(offset) {
-    if (items.length === 0) {
+    if (visibleItems.length === 0) {
       return;
     }
-    setSelectedIndex((current) => (current + offset + items.length) % items.length);
+    setSelectedIndex((current) => (current + offset + visibleItems.length) % visibleItems.length);
   }
 
   function handleSubmit(index = clampedIndex) {
-    const item = items[index];
+    const item = visibleItems[index];
     if (!item) {
       return;
     }
@@ -59,6 +80,12 @@ export default function CommandPalette({ items, onClose, onQueryChange, onSelect
         aria-label="Command palette"
         onClick={(event) => event.stopPropagation()}
       >
+        <div className="command-palette-topline">
+          <div className="dialog-header-copy">
+            <div className="dialog-title command-palette-title">Command Palette</div>
+            <div className="dialog-caption">Jump to commands, files, and views without leaving the keyboard.</div>
+          </div>
+        </div>
         <div className="command-palette-header">
           <input
             ref={inputRef}
@@ -94,6 +121,35 @@ export default function CommandPalette({ items, onClose, onQueryChange, onSelect
           </button>
         </div>
 
+        <div className="command-palette-toolbar">
+          <div className="command-palette-scope" role="tablist" aria-label="Command palette scope">
+            <button
+              type="button"
+              className={`command-palette-scope-chip${scope === "all" ? " active" : ""}`}
+              onClick={() => setScope("all")}
+            >
+              All {scopeCounts.all}
+            </button>
+            <button
+              type="button"
+              className={`command-palette-scope-chip${scope === "command" ? " active" : ""}`}
+              onClick={() => setScope("command")}
+            >
+              Commands {scopeCounts.command}
+            </button>
+            <button
+              type="button"
+              className={`command-palette-scope-chip${scope === "file" ? " active" : ""}`}
+              onClick={() => setScope("file")}
+            >
+              Files {scopeCounts.file}
+            </button>
+          </div>
+          <div className="command-palette-results-meta">
+            {query ? `${visibleItems.length} result${visibleItems.length === 1 ? "" : "s"} for "${query}"` : `Browsing ${scope === "all" ? "everything" : scope === "file" ? "files" : "commands"}`}
+          </div>
+        </div>
+
         <div className="command-palette-results">
           {groupedItems.length > 0 ? (
             groupedItems.map((group) => (
@@ -121,12 +177,12 @@ export default function CommandPalette({ items, onClose, onQueryChange, onSelect
             ))
           ) : (
             <div className="command-palette-empty">
-              <div className="command-palette-empty-title">No exact match yet</div>
+              <div className="command-palette-empty-title">{query ? "No exact match yet" : "Nothing in this scope yet"}</div>
               <div className="command-palette-empty-copy">
-                Try one of these next steps instead of starting over.
+                {query ? "Try one of these next steps instead of starting over." : "Switch scope or use one of these next steps."}
               </div>
               <div className="command-palette-suggestions">
-                {suggestions.map((item) => (
+                {visibleSuggestions.map((item) => (
                   <button
                     key={item.id}
                     type="button"
@@ -143,6 +199,21 @@ export default function CommandPalette({ items, onClose, onQueryChange, onSelect
               </div>
             </div>
           )}
+        </div>
+        <div className="command-palette-footer">
+          <div className="command-palette-footer-selection">
+            {activeItem ? (
+              <>
+                <span className={`command-palette-badge kind-${activeItem.kind}`}>{activeItem.badge}</span>
+                <span className="command-palette-footer-label">{activeItem.label}</span>
+                <span className="command-palette-footer-description">{activeDescription}</span>
+                {activeItem.shortcut ? <span className="command-palette-item-shortcut">{activeItem.shortcut}</span> : null}
+              </>
+            ) : (
+              <span className="command-palette-footer-description">{activeDescription}</span>
+            )}
+          </div>
+          <span className="command-palette-footer-note">Enter to run, arrows to move, Esc to close.</span>
         </div>
       </section>
     </div>

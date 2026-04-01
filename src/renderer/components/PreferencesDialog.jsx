@@ -30,7 +30,10 @@ export default function PreferencesDialog({ open, preferences, onChange, onClose
     <div className="dialog-backdrop" role="presentation" onClick={onClose}>
       <section className="preferences-dialog" role="dialog" onClick={(event) => event.stopPropagation()}>
         <div className="dialog-header">
-          <h2>Preferences</h2>
+          <div className="dialog-header-copy">
+            <h2 className="dialog-title">Preferences</h2>
+            <div className="dialog-caption">Tune writing defaults, editing behavior, and reading comfort.</div>
+          </div>
           <button className="tool-button" type="button" onClick={onClose}>
             Close
           </button>
@@ -92,6 +95,24 @@ export default function PreferencesDialog({ open, preferences, onChange, onClose
             onChange={(event) => onChange({ smartTransformHints: event.target.checked })}
           />
         </label>
+
+        <label className="pref-row">
+          <span>Allow HTTP Media</span>
+          <input
+            type="checkbox"
+            checked={Boolean(preferences.allowInsecureRemoteMedia)}
+            onChange={(event) => onChange({ allowInsecureRemoteMedia: event.target.checked })}
+          />
+        </label>
+
+        <section className="preferences-help">
+          <h3>Remote Media Policy</h3>
+          <div className="preferences-help-grid">
+            <div>Default blocks <code>http://</code> images and media inside preview/export.</div>
+            <div>Links still open explicitly through the external browser.</div>
+            <div>Enable only if your notes depend on insecure remote media hosts.</div>
+          </div>
+        </section>
 
         <section className="preferences-group">
           <div className="preferences-group-header">

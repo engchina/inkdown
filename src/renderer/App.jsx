@@ -1,5 +1,5 @@
 import React, { startTransition, useDeferredValue, useEffect, useId, useMemo, useRef, useState } from "react";
-import { Mark, mergeAttributes, Extension } from "@tiptap/core";
+import { Mark, mergeAttributes, Extension, getMarkRange } from "@tiptap/core";
 import Heading from "@tiptap/extension-heading";
 import { Plugin, PluginKey, Selection, TextSelection } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
@@ -45,12 +45,24 @@ import TableToolbar from "./components/TableToolbar";
 import FrontMatterMergeDialog from "./components/FrontMatterMergeDialog";
 import TableSelectionHandles from "./components/TableSelectionHandles";
 import EditingCheatsheetDialog from "./components/EditingCheatsheetDialog";
+import LinkDialog from "./components/LinkDialog";
 import { summarizeFrontMatter } from "./utils/frontMatter.mjs";
+import { resolveEditingSurface } from "./utils/editingSurface.mjs";
+import { escapeHtml, sanitizePreviewContainer } from "./utils/previewSanitizer.mjs";
 import {
+  buildRemovedMarkdownLinkSelection,
+  buildLinkedSourceSelection,
   buildSourceInsertion,
   buildToggledPrefixedSourceLines,
   buildToggledWrappedSourceSelection,
+  buildExpandedMarkdownTableSelection,
+  buildUpdatedMarkdownImageSelection,
+  buildUpdatedMarkdownLinkSelection,
+  buildRemovedMarkdownImageSelection,
   buildWrappedSourceSelection,
+  findMarkdownImageAtSelection,
+  findMarkdownLinkAtSelection,
+  findMarkdownTableAtSelection,
   findLiteralMatches,
   replaceAllLiteralMatches,
   replaceCurrentLiteralMatch
@@ -99,6 +111,7 @@ const defaultPreferences = {
     autoPair: true,
     literalEscape: true
   },
+  allowInsecureRemoteMedia: false,
   workspaceRoot: null,
   recentFiles: [],
   paletteUsage: {},
@@ -804,14 +817,6 @@ function isFileInsideRoot(filePath, rootPath) {
   const normalizedFile = normalizeComparablePath(filePath);
   const normalizedRoot = normalizeComparablePath(rootPath);
   return normalizedFile === normalizedRoot || normalizedFile.startsWith(`${normalizedRoot}/`);
-}
-
-function escapeHtml(value) {
-  return String(value)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
 }
 
 function sanitizeDomIdFragment(value) {
@@ -1567,7 +1572,14 @@ function buildFootnotesElement(definitions, order, currentFilePath, resolveAsset
 }
 
 function decorateRenderedHtml(container, outline, options = {}) {
-  const { frontMatterContent = "", enableCallouts = false, footnotes = null, currentFilePath = null, resolveAsset } = options;
+  const {
+    frontMatterContent = "",
+    enableCallouts = false,
+    footnotes = null,
+    currentFilePath = null,
+    resolveAsset,
+    sanitizeOptions = {}
+  } = options;
 
   if (frontMatterContent) {
     container.prepend(buildYamlFrontMatterElement(frontMatterContent));
@@ -1606,6 +1618,11 @@ function decorateRenderedHtml(container, outline, options = {}) {
     }
   }
 
+  sanitizePreviewContainer(container, {
+    ...sanitizeOptions,
+    allowFileUrls: typeof resolveAsset === "function" && resolveAsset === window.editorApi.resolveMarkdownAssetForExport
+  });
+
   return container.innerHTML;
 }
 
@@ -1633,7 +1650,13 @@ function renderMarkdownSnippetForEditor(markdown, currentFilePath) {
   };
 }
 
-function renderMarkdownForPreview(markdown, currentFilePath, outline, resolveAsset = window.editorApi.resolveMarkdownAsset) {
+function renderMarkdownForPreview(
+  markdown,
+  currentFilePath,
+  outline,
+  resolveAsset = window.editorApi.resolveMarkdownAsset,
+  sanitizeOptions = {}
+) {
   const { body: withoutFrontMatter } = extractYamlFrontMatter(markdown);
   const { body: withoutFootnotes, definitions } = extractFootnotes(withoutFrontMatter);
   const { body, order } = applyFootnoteReferences(
@@ -1649,7 +1672,8 @@ function renderMarkdownForPreview(markdown, currentFilePath, outline, resolveAss
     enableCallouts: true,
     footnotes: { definitions, order },
     currentFilePath,
-    resolveAsset
+    resolveAsset,
+    sanitizeOptions
   });
 }
 
@@ -1659,7 +1683,7 @@ function buildStandaloneHtml(title, bodyHtml, theme) {
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>${title}</title>
+    <title>${escapeHtml(title)}</title>
     <style>
       ${katexStyles}
       :root { color-scheme: ${theme === "midnight" ? "dark" : "light"}; }
@@ -2054,6 +2078,29 @@ function getCurrentLine(markdown, cursor) {
   };
 }
 
+function getSourceSelectionMeta(markdown, selectionStart, selectionEnd) {
+  const start = Math.max(0, selectionStart ?? 0);
+  const end = Math.max(start, selectionEnd ?? start);
+  const startLine = String(markdown.slice(0, start)).split(/\r?\n/).length;
+  const endLine = String(markdown.slice(0, end)).split(/\r?\n/).length;
+  const lineStart = markdown.lastIndexOf("\n", Math.max(0, start - 1)) + 1;
+  const column = start - lineStart + 1;
+  const selectedChars = end - start;
+
+  return {
+    line: startLine,
+    column,
+    selectedChars,
+    lineLabel: endLine > startLine ? `Ln ${startLine}-${endLine}` : `Ln ${startLine}`,
+    columnLabel: `Col ${column}`,
+    selectionLabel: selectedChars > 0 ? `Sel ${selectedChars}` : "",
+    statusLabel:
+      selectedChars > 0
+        ? `${endLine > startLine ? `Ln ${startLine}-${endLine}` : `Ln ${startLine}`}, Col ${column}, ${selectedChars} selected`
+        : `Ln ${startLine}, Col ${column}`
+  };
+}
+
 function placeCursorInTrailingParagraph(view) {
   const paragraphNode = view.state.schema.nodes.paragraph;
   if (!paragraphNode) {
@@ -2192,17 +2239,21 @@ export default function App() {
   const [outline, setOutline] = useState(extractOutlineFromMarkdown(initialMarkdown));
   const [activeOutlineId, setActiveOutlineId] = useState(null);
   const [workspaceTree, setWorkspaceTree] = useState(null);
+  const [workspaceRefreshKey, setWorkspaceRefreshKey] = useState(0);
   const [sidebarFilter, setSidebarFilter] = useState("");
   const [isDirty, setIsDirty] = useState(false);
   const [preferences, setPreferences] = useState(defaultPreferences);
   const [preferencesReady, setPreferencesReady] = useState(false);
   const [preferencesOpen, setPreferencesOpen] = useState(false);
   const [editingCheatsheetOpen, setEditingCheatsheetOpen] = useState(false);
+  const [linkDialogState, setLinkDialogState] = useState(null);
   const [findOpen, setFindOpen] = useState(false);
   const [findQuery, setFindQuery] = useState("");
   const [replaceValue, setReplaceValue] = useState("");
   const [matchIndex, setMatchIndex] = useState(0);
+  const [sourceSelectionState, setSourceSelectionState] = useState({ start: 0, end: 0 });
   const [statusState, setStatusState] = useState({ message: "Ready", kind: "default" });
+  const [activePane, setActivePane] = useState("editor");
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [commandPaletteQuery, setCommandPaletteQuery] = useState("");
   const [slashMenuState, setSlashMenuState] = useState({ open: false, query: "", top: 0, left: 0 });
@@ -2230,6 +2281,7 @@ export default function App() {
   const editorComposingRef = useRef(false);
   const pendingEditorCompositionSyncRef = useRef(false);
   const editorInstanceRef = useRef(null);
+  const lastActiveEditingSurfaceRef = useRef("editor");
 
   const deferredMarkdown = useDeferredValue(markdownText);
   const matches = useMemo(() => findMatches(markdownText, findQuery), [markdownText, findQuery]);
@@ -2529,13 +2581,40 @@ export default function App() {
     }
     return definitions.filter((item) => matchesPaletteQuery(item, normalizedQuery));
   }, [slashMenuState.query]);
+  const previewSanitizeOptions = useMemo(
+    () => ({ allowInsecureRemoteMedia: preferences.allowInsecureRemoteMedia }),
+    [preferences.allowInsecureRemoteMedia]
+  );
   const previewHtml = useMemo(
-    () => renderMarkdownForPreview(deferredMarkdown, filePath, outline),
-    [deferredMarkdown, filePath, outline]
+    () =>
+      renderMarkdownForPreview(deferredMarkdown, filePath, outline, window.editorApi.resolveMarkdownAsset, previewSanitizeOptions),
+    [deferredMarkdown, filePath, outline, previewSanitizeOptions]
   );
   const sourceHighlightContent = useMemo(
     () => renderSourceHighlights(markdownText, matches, matchIndex),
     [markdownText, matches, matchIndex]
+  );
+  const sourceObjectContext = useMemo(() => {
+    const link = findMarkdownLinkAtSelection(markdownText, sourceSelectionState.start, sourceSelectionState.end);
+    if (link) {
+      return { kind: "link", label: "Link selected" };
+    }
+
+    const image = findMarkdownImageAtSelection(markdownText, sourceSelectionState.start, sourceSelectionState.end);
+    if (image) {
+      return { kind: "image", label: "Image selected" };
+    }
+
+    const table = findMarkdownTableAtSelection(markdownText, sourceSelectionState.start);
+    if (table) {
+      return { kind: "table", label: `${table.columnCount} columns` };
+    }
+
+    return null;
+  }, [markdownText, sourceSelectionState.end, sourceSelectionState.start]);
+  const sourceSelectionMeta = useMemo(
+    () => getSourceSelectionMeta(markdownText, sourceSelectionState.start, sourceSelectionState.end),
+    [markdownText, sourceSelectionState.end, sourceSelectionState.start]
   );
 
   function syncSourceHighlightScroll() {
@@ -2544,6 +2623,41 @@ export default function App() {
     }
     sourceHighlightRef.current.scrollTop = sourceRef.current.scrollTop;
     sourceHighlightRef.current.scrollLeft = sourceRef.current.scrollLeft;
+  }
+
+  function markSourceAsActive() {
+    lastActiveEditingSurfaceRef.current = "source";
+    setActivePane("source");
+  }
+
+  function markEditorAsActive() {
+    lastActiveEditingSurfaceRef.current = "editor";
+    setActivePane("editor");
+  }
+
+  function markPreviewAsActive() {
+    setActivePane("preview");
+  }
+
+  function focusSourcePane() {
+    sourceRef.current?.focus();
+    markSourceAsActive();
+  }
+
+  function focusEditorPane() {
+    markEditorAsActive();
+    editor?.chain().focus().run();
+  }
+
+  function copyPreviewHtmlToClipboard() {
+    navigator.clipboard
+      .writeText(previewHtml)
+      .then(() => setStatus("Copied preview HTML"))
+      .catch((error) => setStatus(getActionErrorMessage(error, "Could not copy preview HTML.")));
+  }
+
+  function getActiveEditingSurface() {
+    return resolveEditingSurface(preferencesRef.current.viewMode, lastActiveEditingSurfaceRef.current);
   }
 
   function runEditorCommand(execute, { preserveScroll = true } = {}) {
@@ -3177,6 +3291,7 @@ export default function App() {
         },
         handleDOMEvents: {
           compositionstart() {
+            markEditorAsActive();
             editorComposingRef.current = true;
             pendingEditorCompositionSyncRef.current = false;
             return false;
@@ -3192,6 +3307,7 @@ export default function App() {
             return false;
           },
           keydown: (view, event) => {
+            markEditorAsActive();
             if (slashMenuStateRef.current.open) {
               if (event.key === "ArrowDown") {
                 event.preventDefault();
@@ -3224,6 +3340,7 @@ export default function App() {
             return handleEditorSmartMarkdown(view, event);
           },
           mousedown(view, event) {
+            markEditorAsActive();
             if (event.button !== 0) {
               return false;
             }
@@ -3312,6 +3429,136 @@ export default function App() {
     },
     [documentSessionKey]
   );
+  const editorObjectContext = useMemo(() => {
+    if (!editor) {
+      return null;
+    }
+
+    if (tableToolbarVisible) {
+      return { kind: "table", label: tableSelectionCount > 1 ? `${tableSelectionCount} cells selected` : "Table selected" };
+    }
+
+    const selection = editor.state.selection;
+    const parentType = selection.$from.parent.type.name;
+    if (parentType === "heading") {
+      return { kind: "heading", label: `Heading ${selection.$from.parent.attrs.level || ""}`.trim() };
+    }
+    if (parentType === "codeBlock") {
+      return { kind: "code", label: "Code block" };
+    }
+
+    const blockState = isEditorSelectionInsideList(selection);
+    if (blockState.inTaskItem) {
+      return { kind: "task", label: "Task item" };
+    }
+    if (blockState.inBulletList) {
+      return { kind: "list", label: "Bullet list" };
+    }
+    if (blockState.inOrderedList) {
+      return { kind: "list", label: "Ordered list" };
+    }
+    if (blockState.inBlockquote) {
+      return { kind: "quote", label: "Blockquote" };
+    }
+
+    return { kind: "paragraph", label: "Paragraph" };
+  }, [editor, tableSelectionCount, tableToolbarVisible]);
+  const editorObjectGuidance = useMemo(() => {
+    switch (editorObjectContext?.kind) {
+      case "heading":
+        return "Enter creates a sibling heading. Backspace at start returns to paragraph.";
+      case "code":
+        return "Tab indents code. Backspace on an empty block returns to paragraph.";
+      case "task":
+        return "Enter adds the next task. Backspace on an empty item exits the list.";
+      case "list":
+        return "Enter continues the list. Backspace on an empty item exits.";
+      case "quote":
+        return "Enter continues the quote. Backspace on an empty quote exits.";
+      case "table":
+        return "Use the table toolbar above to add rows, columns, and alignment.";
+      default:
+        return "Use slash commands or the format toolbar to structure the current block.";
+    }
+  }, [editorObjectContext]);
+  const toolbarContext = useMemo(() => {
+    if (activePane === "source" && sourceObjectContext) {
+      return {
+        pane: "Source",
+        kind: sourceObjectContext.kind,
+        label: sourceObjectContext.label
+      };
+    }
+
+    if (activePane === "preview") {
+      if (findOpen && findQuery) {
+        return {
+          pane: "Preview",
+          kind: "find",
+          label: `Find ${matches.length === 0 ? "0" : `${matchIndex + 1}/${matches.length}`}`
+        };
+      }
+      return {
+        pane: "Preview",
+        kind: preferences.allowInsecureRemoteMedia ? "preview" : "find",
+        label: preferences.allowInsecureRemoteMedia ? "Preview ready" : "HTTP media blocked"
+      };
+    }
+
+    return {
+      pane: "Editor",
+      kind: editorObjectContext?.kind || "paragraph",
+      label: editorObjectContext?.label || "Paragraph"
+    };
+  }, [activePane, editorObjectContext, findOpen, findQuery, matchIndex, matches.length, preferences.allowInsecureRemoteMedia, sourceObjectContext]);
+  const toolbarContextActions = useMemo(() => {
+    if (activePane === "source" && sourceObjectContext?.kind === "link") {
+      return [
+        { id: "edit-link", label: "Edit Link", onSelect: openLinkDialog },
+        { id: "remove-link", label: "Remove", onSelect: removeLinkAtSourceSelection, tone: "danger" }
+      ];
+    }
+
+    if (activePane === "source" && sourceObjectContext?.kind === "image") {
+      return [
+        { id: "replace-image", label: "Replace Image", onSelect: insertImage },
+        { id: "remove-image", label: "Remove", onSelect: removeImageAtSourceSelection, tone: "danger" }
+      ];
+    }
+
+    if (activePane === "source" && sourceObjectContext?.kind === "table") {
+      return [{ id: "add-table-row", label: "Add Row", onSelect: insertTable }];
+    }
+
+    if (activePane === "preview") {
+      return [
+        { id: "copy-html", label: "Copy HTML", onSelect: copyPreviewHtmlToClipboard },
+        {
+          id: "toggle-http-media",
+          label: preferences.allowInsecureRemoteMedia ? "Block HTTP Media" : "Allow HTTP Media",
+          onSelect: () => updatePreferences({ allowInsecureRemoteMedia: !preferences.allowInsecureRemoteMedia })
+        }
+      ];
+    }
+
+    if (activePane === "editor" && editorObjectContext?.kind === "table") {
+      return [
+        { id: "editor-add-row", label: "Add Row", onSelect: () => handleTableAction("add-row-after") },
+        { id: "editor-add-column", label: "Add Column", onSelect: () => handleTableAction("add-col-after") },
+        { id: "editor-delete-table", label: "Delete Table", onSelect: () => handleTableAction("delete-table"), tone: "danger" }
+      ];
+    }
+
+    if (activePane === "editor" && editorObjectContext?.kind === "heading") {
+      return [
+        { id: "heading-1", label: "H1", onSelect: () => applyFormatting("heading-1") },
+        { id: "heading-2", label: "H2", onSelect: () => applyFormatting("heading-2") },
+        { id: "heading-3", label: "H3", onSelect: () => applyFormatting("heading-3") }
+      ];
+    }
+
+    return [];
+  }, [activePane, editorObjectContext, preferences.allowInsecureRemoteMedia, sourceObjectContext]);
 
   useEffect(() => {
     window.editorApi.loadPreferences().then((loaded) => {
@@ -3371,7 +3618,7 @@ export default function App() {
       return;
     }
     window.editorApi.listWorkspaceTree(preferences.workspaceRoot).then(setWorkspaceTree);
-  }, [preferences.workspaceRoot, filePath, documentSessionKey]);
+  }, [preferences.workspaceRoot, workspaceRefreshKey]);
 
   useEffect(() => {
     if (!editor) {
@@ -3641,8 +3888,13 @@ export default function App() {
         return;
       }
       const unlock = lockScrollPosition(getEditorScrollContainer(editor));
-      await insertImageFromFile(imageFile.path);
-      unlock();
+      try {
+        await insertImageFromFile(imageFile.path);
+      } catch (error) {
+        setStatus(getActionErrorMessage(error, "Could not insert the dropped image."));
+      } finally {
+        unlock();
+      }
     };
 
     const handlePaste = async (event) => {
@@ -3716,26 +3968,34 @@ export default function App() {
       }
 
       const unlock = lockScrollPosition(getEditorScrollContainer(editor));
+      try {
+        const objectUrl = URL.createObjectURL(blob);
+        const dimensions = await new Promise((resolve) => {
+          const img = new window.Image();
+          img.onload = () => {
+            resolve({ width: img.naturalWidth, height: img.naturalHeight });
+            URL.revokeObjectURL(objectUrl);
+          };
+          img.onerror = () => {
+            resolve(null);
+            URL.revokeObjectURL(objectUrl);
+          };
+          img.src = objectUrl;
+        });
 
-      const objectUrl = URL.createObjectURL(blob);
-      const dimensions = await new Promise((resolve) => {
-        const img = new window.Image();
-        img.onload = () => {
-          resolve({ width: img.naturalWidth, height: img.naturalHeight });
-          URL.revokeObjectURL(objectUrl);
-        };
-        img.onerror = () => {
-          resolve(null);
-          URL.revokeObjectURL(objectUrl);
-        };
-        img.src = objectUrl;
-      });
-
-      const bytes = new Uint8Array(await blob.arrayBuffer());
-      const extension = blob.type.split("/")[1] || "png";
-      const persisted = await window.editorApi.persistImageBuffer({ bytes: Array.from(bytes), extension });
-      insertMarkdownImage(persisted.markdownPath, persisted.absolutePath, dimensions);
-      unlock();
+        const bytes = new Uint8Array(await blob.arrayBuffer());
+        const extension = blob.type.split("/")[1] || "png";
+        const persisted = await window.editorApi.persistImageBuffer({ bytes: Array.from(bytes), extension });
+        if (persisted?.error) {
+          throw new Error(persisted.error);
+        }
+        insertMarkdownImage(persisted.markdownPath, persisted.absolutePath, dimensions);
+        setStatus(`Inserted image ${basenamePath(persisted.absolutePath)}`);
+      } catch (error) {
+        setStatus(getActionErrorMessage(error, "Could not paste the image."));
+      } finally {
+        unlock();
+      }
     };
 
     const handleDragOver = (event) => event.preventDefault();
@@ -3800,6 +4060,16 @@ export default function App() {
       window.clearTimeout(statusTimerRef.current);
     }
     statusTimerRef.current = window.setTimeout(() => setStatusState({ message: "Ready", kind: "default" }), 3200);
+  }
+
+  function getActionErrorMessage(error, fallbackMessage) {
+    if (typeof error === "string" && error.trim()) {
+      return error;
+    }
+    if (typeof error?.message === "string" && error.message.trim()) {
+      return error.message;
+    }
+    return fallbackMessage;
   }
 
   function setHint(message) {
@@ -3903,49 +4173,79 @@ export default function App() {
   }
 
   async function saveDocument(forceSaveAs) {
-    const result = await window.editorApi.saveMarkdown({
-      markdown: markdownText,
-      filePath: forceSaveAs ? null : filePath
-    });
-    if (!result.canceled) {
-      setFilePath(result.filePath);
-      if (typeof result.markdown === "string" && result.markdown !== markdownText) {
-        setMarkdownText(result.markdown);
+    try {
+      const result = await window.editorApi.saveMarkdown({
+        markdown: markdownText,
+        filePath: forceSaveAs ? null : filePath
+      });
+      if (result?.error) {
+        setStatus(result.error);
+        return;
       }
-      setIsDirty(false);
-      syncWorkspaceWithFile(result.filePath);
-      rememberRecentFile(result.filePath);
-      setStatus(`Saved to ${basenamePath(result.filePath)}`);
+      if (!result.canceled) {
+        const shouldRefreshWorkspace = !filePath || result.filePath !== filePath;
+        setFilePath(result.filePath);
+        if (typeof result.markdown === "string" && result.markdown !== markdownText) {
+          setMarkdownText(result.markdown);
+        }
+        setIsDirty(false);
+        if (shouldRefreshWorkspace) {
+          setWorkspaceRefreshKey((current) => current + 1);
+        }
+        syncWorkspaceWithFile(result.filePath);
+        rememberRecentFile(result.filePath);
+        setStatus(`Saved to ${basenamePath(result.filePath)}`);
+      }
+    } catch (error) {
+      setStatus(getActionErrorMessage(error, "Could not save the document."));
     }
   }
 
   async function exportHtml() {
-    const standalonePreviewHtml = renderMarkdownForPreview(
-      markdownText,
-      filePath,
-      outline,
-      window.editorApi.resolveMarkdownAssetForExport
-    );
-    const preparedPreviewHtml = await renderPreviewHtml(standalonePreviewHtml, preferences.theme);
-    const html = buildStandaloneHtml(documentTitle, preparedPreviewHtml, preferences.theme);
-    const result = await window.editorApi.saveHtml({ html });
-    if (!result.canceled) {
-      setStatus(`Exported HTML: ${basenamePath(result.filePath)}`);
+    try {
+      const standalonePreviewHtml = renderMarkdownForPreview(
+        markdownText,
+        filePath,
+        outline,
+        window.editorApi.resolveMarkdownAssetForExport,
+        previewSanitizeOptions
+      );
+      const preparedPreviewHtml = await renderPreviewHtml(standalonePreviewHtml, preferences.theme, previewSanitizeOptions);
+      const html = buildStandaloneHtml(documentTitle, preparedPreviewHtml, preferences.theme);
+      const result = await window.editorApi.saveHtml({ html });
+      if (result?.error) {
+        setStatus(result.error);
+        return;
+      }
+      if (!result.canceled) {
+        setStatus(`Exported HTML: ${basenamePath(result.filePath)}`);
+      }
+    } catch (error) {
+      setStatus(getActionErrorMessage(error, "Could not export HTML."));
     }
   }
 
   async function exportPdf() {
-    const printablePreviewHtml = renderMarkdownForPreview(
-      markdownText,
-      filePath,
-      outline,
-      window.editorApi.resolveMarkdownAssetForExport
-    );
-    const preparedPreviewHtml = await renderPreviewHtml(printablePreviewHtml, preferences.theme);
-    const html = buildStandaloneHtml(documentTitle, preparedPreviewHtml, preferences.theme);
-    const result = await window.editorApi.savePdf({ html });
-    if (!result.canceled) {
-      setStatus(`Exported PDF: ${basenamePath(result.filePath)}`);
+    try {
+      const printablePreviewHtml = renderMarkdownForPreview(
+        markdownText,
+        filePath,
+        outline,
+        window.editorApi.resolveMarkdownAssetForExport,
+        previewSanitizeOptions
+      );
+      const preparedPreviewHtml = await renderPreviewHtml(printablePreviewHtml, preferences.theme, previewSanitizeOptions);
+      const html = buildStandaloneHtml(documentTitle, preparedPreviewHtml, preferences.theme);
+      const result = await window.editorApi.savePdf({ html });
+      if (result?.error) {
+        setStatus(result.error);
+        return;
+      }
+      if (!result.canceled) {
+        setStatus(`Exported PDF: ${basenamePath(result.filePath)}`);
+      }
+    } catch (error) {
+      setStatus(getActionErrorMessage(error, "Could not export PDF."));
     }
   }
 
@@ -3965,21 +4265,46 @@ export default function App() {
   }
 
   async function insertImage() {
-    const result = await window.editorApi.pickImage();
-    if (result.canceled) {
-      return;
+    try {
+      const result = await window.editorApi.pickImage();
+      if (result.canceled || !result.filePath) {
+        return;
+      }
+      await insertImageFromFile(result.filePath);
+    } catch (error) {
+      setStatus(getActionErrorMessage(error, "Could not insert the image."));
     }
-    await insertImageFromFile(result.filePath);
   }
 
   async function insertImageFromFile(imagePath) {
     const persisted = await window.editorApi.persistImageFile(imagePath);
+    if (persisted?.error) {
+      throw new Error(persisted.error);
+    }
     const dimensions = await new Promise((resolve) => {
       const img = new window.Image();
       img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
       img.onerror = () => resolve(null);
-      img.src = window.editorApi.toAssetUrl(imagePath);
+      img.src = window.editorApi.toAssetUrl(persisted.absolutePath);
     });
+    if (getActiveEditingSurface() === "source" && sourceRef.current) {
+      const textarea = sourceRef.current;
+      const selectionStart = textarea.selectionStart ?? 0;
+      const selectionEnd = textarea.selectionEnd ?? selectionStart;
+      const existingImage = findMarkdownImageAtSelection(markdownText, selectionStart, selectionEnd);
+      if (existingImage) {
+        const update = buildUpdatedMarkdownImageSelection(markdownText, selectionStart, selectionEnd, {
+          alt: existingImage.alt || basenamePath(persisted.absolutePath) || "image",
+          url: persisted.markdownPath,
+          title: existingImage.title
+        });
+        if (update) {
+          applySourceTextUpdate(update.text, update.selectionStart, update.selectionEnd);
+          setStatus(`Updated image ${basenamePath(persisted.absolutePath)}`);
+          return;
+        }
+      }
+    }
     insertMarkdownImage(persisted.markdownPath, persisted.absolutePath, dimensions);
     setStatus(`Inserted image ${basenamePath(persisted.absolutePath)}`);
   }
@@ -3987,7 +4312,7 @@ export default function App() {
   function insertMarkdownImage(markdownPath, absolutePath, dimensions = null) {
     const alt = basenamePath(absolutePath) || "image";
     const markdownImage = `![${alt}](${markdownPath})`;
-    if (["source", "split"].includes(preferences.viewMode) && sourceRef.current) {
+    if (getActiveEditingSurface() === "source" && sourceRef.current) {
       insertIntoSource(markdownImage, { block: true });
       return;
     }
@@ -4011,7 +4336,14 @@ export default function App() {
   }
 
   function insertTable() {
-    if (["source", "split"].includes(preferences.viewMode) && sourceRef.current) {
+    if (getActiveEditingSurface() === "source" && sourceRef.current) {
+      const textarea = sourceRef.current;
+      const expanded = buildExpandedMarkdownTableSelection(markdownText, textarea.selectionStart ?? 0);
+      if (expanded) {
+        applySourceTextUpdate(expanded.text, expanded.selectionStart, expanded.selectionEnd);
+        setStatus("Added a row to the current table");
+        return;
+      }
       insertIntoSource("| Column 1 | Column 2 |\n| --- | --- |\n| Value | Value |", { block: true });
       setStatus("Inserted table template");
       return;
@@ -4407,6 +4739,10 @@ export default function App() {
 
   function handleSourceSelection(event) {
     const cursor = event.target.selectionStart;
+    setSourceSelectionState({
+      start: event.target.selectionStart ?? 0,
+      end: event.target.selectionEnd ?? event.target.selectionStart ?? 0
+    });
     const beforeCursor = markdownText.slice(0, cursor);
     const currentLine = beforeCursor.split(/\r?\n/).length - 1;
     const currentHeading = [...outline].reverse().find((item) => item.line <= currentLine);
@@ -4658,7 +4994,12 @@ export default function App() {
     const selectionStart = textarea.selectionStart ?? 0;
     const selectionEnd = textarea.selectionEnd ?? selectionStart;
     if (selectionStart === selectionEnd) {
-      return false;
+      const update = buildUpdatedMarkdownLinkSelection(markdownText, selectionStart, selectionEnd, { url });
+      if (!update) {
+        return false;
+      }
+      applySourceTextUpdate(update.text, update.selectionStart, update.selectionEnd);
+      return true;
     }
     const before = markdownText.slice(0, selectionStart);
     const selection = markdownText.slice(selectionStart, selectionEnd);
@@ -4698,6 +5039,159 @@ export default function App() {
     applySourceTextUpdate(update.text, update.selectionStart, update.selectionEnd);
   }
 
+  function openLinkDialog() {
+    if (getActiveEditingSurface() === "source" && sourceRef.current) {
+      const textarea = sourceRef.current;
+      const selectionStart = textarea.selectionStart ?? 0;
+      const selectionEnd = textarea.selectionEnd ?? selectionStart;
+      const existingLink = findMarkdownLinkAtSelection(markdownText, selectionStart, selectionEnd);
+      const selectedText = existingLink ? existingLink.text : markdownText.slice(selectionStart, selectionEnd);
+      setLinkDialogState({
+        mode: "source",
+        initialText: selectedText,
+        initialUrl: existingLink?.url || "",
+        selectionStart: existingLink?.start ?? selectionStart,
+        selectionEnd: existingLink?.end ?? selectionEnd,
+        canRemove: Boolean(existingLink)
+      });
+      return;
+    }
+
+    if (!editor) {
+      return;
+    }
+
+    const { from, to, empty, $from } = editor.state.selection;
+    const linkMark = $from.marks().find((mark) => mark.type.name === "link");
+    const linkRange = linkMark ? getMarkRange($from, linkMark.type) : null;
+    const selectedText = linkRange
+      ? editor.state.doc.textBetween(linkRange.from, linkRange.to, "\n")
+      : empty
+        ? ""
+        : editor.state.doc.textBetween(from, to, "\n");
+    const initialUrl = linkMark?.attrs?.href || "";
+    setLinkDialogState({
+      mode: "editor",
+      initialText: selectedText,
+      initialUrl,
+      canRemove: Boolean(linkRange),
+      linkRange
+    });
+  }
+
+  function applyLinkFromDialog({ text, url }) {
+    const href = String(url || "").trim();
+    const label = String(text || "").trim();
+    if (!href) {
+      return;
+    }
+
+    if (linkDialogState?.mode === "source" && sourceRef.current) {
+      const update = buildLinkedSourceSelection(
+        markdownText,
+        linkDialogState.selectionStart,
+        linkDialogState.selectionEnd,
+        label,
+        href
+      );
+      applySourceTextUpdate(update.text, update.selectionStart, update.selectionEnd);
+      setLinkDialogState(null);
+      setStatus(`Inserted link to ${href}`);
+      return;
+    }
+
+    if (!editor) {
+      setLinkDialogState(null);
+      return;
+    }
+
+    const selectedText = linkDialogState?.initialText || "";
+    if (linkDialogState?.linkRange) {
+      const nextText = label || selectedText || href;
+      runEditorCommand((chain) =>
+        chain
+          .insertContentAt(linkDialogState.linkRange, `<a href="${escapeHtml(href)}">${escapeHtml(nextText)}</a>`)
+          .run()
+      );
+    } else if (selectedText && (!label || label === selectedText)) {
+      runEditorCommand((chain) => chain.extendMarkRange("link").setLink({ href }).run());
+    } else {
+      const linkText = label || selectedText || href;
+      runEditorCommand((chain) =>
+        chain.insertContent(`<a href="${escapeHtml(href)}">${escapeHtml(linkText)}</a>`).run()
+      );
+    }
+    setLinkDialogState(null);
+    setStatus(`Inserted link to ${href}`);
+  }
+
+  function removeLinkFromDialog() {
+    if (!linkDialogState) {
+      return;
+    }
+
+    if (linkDialogState.mode === "source") {
+      const replacement = linkDialogState.initialText || "";
+      applySourceTextUpdate(
+        `${markdownText.slice(0, linkDialogState.selectionStart)}${replacement}${markdownText.slice(linkDialogState.selectionEnd)}`,
+        linkDialogState.selectionStart,
+        linkDialogState.selectionStart + replacement.length
+      );
+      setLinkDialogState(null);
+      setStatus("Removed link");
+      return;
+    }
+
+    if (editor && linkDialogState.linkRange) {
+      const replacement = linkDialogState.initialText || "";
+      runEditorCommand((chain) =>
+        chain.insertContentAt(linkDialogState.linkRange, escapeHtml(replacement)).run()
+      );
+    }
+    setLinkDialogState(null);
+    setStatus("Removed link");
+  }
+
+  function removeLinkAtSourceSelection() {
+    if (!sourceRef.current) {
+      return false;
+    }
+
+    const textarea = sourceRef.current;
+    const update = buildRemovedMarkdownLinkSelection(
+      markdownText,
+      textarea.selectionStart ?? 0,
+      textarea.selectionEnd ?? textarea.selectionStart ?? 0
+    );
+    if (!update) {
+      return false;
+    }
+
+    applySourceTextUpdate(update.text, update.selectionStart, update.selectionEnd);
+    setStatus("Removed link");
+    return true;
+  }
+
+  function removeImageAtSourceSelection() {
+    if (!sourceRef.current) {
+      return false;
+    }
+
+    const textarea = sourceRef.current;
+    const update = buildRemovedMarkdownImageSelection(
+      markdownText,
+      textarea.selectionStart ?? 0,
+      textarea.selectionEnd ?? textarea.selectionStart ?? 0
+    );
+    if (!update) {
+      return false;
+    }
+
+    applySourceTextUpdate(update.text, update.selectionStart, update.selectionEnd);
+    setStatus("Removed image");
+    return true;
+  }
+
   function toggleWrappedSourceSelection(prefix, suffix = prefix, placeholder = "") {
     const textarea = sourceRef.current;
     if (!textarea) {
@@ -4730,7 +5224,7 @@ export default function App() {
   }
 
   function applyFormatting(format) {
-    if (["source", "split"].includes(preferences.viewMode) && sourceRef.current) {
+    if (getActiveEditingSurface() === "source" && sourceRef.current) {
       switch (format) {
         case "paragraph":
           setStatus("In source view, edit paragraph styles directly in Markdown.");
@@ -4816,9 +5310,12 @@ export default function App() {
           toggleWrappedSourceSelection("`", "`", "code");
           break;
         case "link": {
-          const href = window.prompt("Enter a link URL");
-          if (href) {
-            wrapSourceSelection("[", `](${href})`, "link text");
+          openLinkDialog();
+          break;
+        }
+        case "image": {
+          if (!removeImageAtSourceSelection()) {
+            insertImage();
           }
           break;
         }
@@ -4888,10 +5385,7 @@ export default function App() {
         runEditorCommand((chain) => chain.toggleCode().run());
         break;
       case "link": {
-        const href = window.prompt("Enter a link URL");
-        if (href) {
-          runEditorCommand((chain) => chain.extendMarkRange("link").setLink({ href }).run());
-        }
+        openLinkDialog();
         break;
       }
       default:
@@ -4904,10 +5398,15 @@ export default function App() {
   const showPreview = ["preview", "split"].includes(preferences.viewMode);
   const findSummary = findOpen && findQuery ? `${matches.length === 0 ? "0" : `${matchIndex + 1}/${matches.length}`} matches` : null;
   const documentPathLabel = filePath || preferences.workspaceRoot || "";
+  const paneFindLabel = findOpen && findQuery ? `${matches.length === 0 ? "0" : `${matchIndex + 1}/${matches.length}`}` : null;
 
   return (
     <div className={`app-shell theme-${preferences.theme}`}>
       <Toolbar
+        activePane={toolbarContext.pane}
+        contextLabel={toolbarContext.label}
+        contextActions={toolbarContextActions}
+        currentContext={toolbarContext}
         focusMode={preferences.focusMode}
         documentPath={documentPathLabel}
         documentTitle={documentTitle}
@@ -4933,14 +5432,13 @@ export default function App() {
         onOpenPreferences={() => setPreferencesOpen(true)}
         onSetViewMode={(mode) => updatePreferences({ viewMode: mode })}
         onToggleFocusMode={() => updatePreferences({ focusMode: !preferences.focusMode })}
-        onToggleSidebar={() => updatePreferences({ sidebarVisible: !preferences.sidebarVisible })}
         onToggleTypewriterMode={() => updatePreferences({ typewriterMode: !preferences.typewriterMode })}
-        sidebarVisible={preferences.sidebarVisible}
         typewriterMode={preferences.typewriterMode}
         viewMode={preferences.viewMode}
       />
 
       <FindReplaceBar
+        activePane={activePane}
         open={findOpen}
         query={findQuery}
         replaceValue={replaceValue}
@@ -4964,6 +5462,9 @@ export default function App() {
             workspaceRoot={preferences.workspaceRoot}
             workspaceTree={workspaceTree}
             activeFilePath={filePath}
+            recentFiles={recentFiles}
+            onCreateDocument={createNewDocument}
+            onOpenDocument={openDocument}
             onOpenFile={openDocumentFromPath}
             onPickWorkspace={pickWorkspaceFolder}
             onRevealCurrentFile={revealCurrentFile}
@@ -4979,9 +5480,23 @@ export default function App() {
         <main className={`workspace-main mode-${preferences.viewMode}${findOpen ? " find-open" : ""}`}>
           {showEditor ? (
             <section
-              className={`editor-pane${preferences.viewMode === "editor" ? "" : " editor-pane-hidden"}`}
+              className={`editor-pane${preferences.viewMode === "editor" ? "" : " editor-pane-hidden"}${activePane === "editor" ? " pane-active" : ""}`}
               aria-hidden={preferences.viewMode === "editor" ? undefined : true}
+              onMouseDown={markEditorAsActive}
             >
+              <div className="side-pane-header-row editor-pane-header-row">
+                <div className="side-pane-header">Editor</div>
+                <div className="side-pane-header-meta">
+                  <span className={`side-pane-chip${activePane === "editor" ? " active" : ""}`}>Rich Text</span>
+                  {editorObjectContext ? <span className="side-pane-chip">{editorObjectContext.label}</span> : null}
+                </div>
+              </div>
+              <div className="side-pane-guidance editor-pane-guidance">{editorObjectGuidance}</div>
+              <div className="side-pane-actions editor-pane-actions">
+                <button type="button" className="side-pane-action-button" onClick={focusEditorPane}>
+                  Focus Editor
+                </button>
+              </div>
               <div ref={paperRef} className="paper">
                 <TableToolbar visible={tableToolbarVisible} selectionCount={tableSelectionCount} onAction={handleTableAction} />
                 <TableSelectionHandles
@@ -4998,8 +5513,48 @@ export default function App() {
           ) : null}
 
           {showSource ? (
-            <section className="side-pane source-pane">
-              <div className="side-pane-header">Source</div>
+            <section className={`side-pane source-pane${activePane === "source" ? " pane-active" : ""}`}>
+              <div className="side-pane-header-row">
+                <div className="side-pane-header">Source</div>
+                <div className="side-pane-header-meta">
+                  <span className={`side-pane-chip${activePane === "source" ? " active" : ""}`}>Markdown</span>
+                  {paneFindLabel ? <span className="side-pane-chip">Find {paneFindLabel}</span> : null}
+                  <span className="side-pane-chip position-chip">{sourceSelectionMeta.lineLabel}</span>
+                  <span className="side-pane-chip position-chip">{sourceSelectionMeta.columnLabel}</span>
+                  {sourceSelectionMeta.selectionLabel ? <span className="side-pane-chip position-chip">{sourceSelectionMeta.selectionLabel}</span> : null}
+                  {sourceObjectContext ? <span className="side-pane-chip">{sourceObjectContext.label}</span> : null}
+                </div>
+              </div>
+              <div className="side-pane-actions">
+                <button type="button" className="side-pane-action-button" onClick={focusSourcePane}>
+                  Focus Source
+                </button>
+                {sourceObjectContext?.kind === "link" ? (
+                  <>
+                    <button type="button" className="side-pane-action-button" onClick={openLinkDialog}>
+                      Edit Link
+                    </button>
+                    <button type="button" className="side-pane-action-button" onClick={removeLinkAtSourceSelection}>
+                      Remove Link
+                    </button>
+                  </>
+                ) : null}
+                {sourceObjectContext?.kind === "image" ? (
+                  <>
+                    <button type="button" className="side-pane-action-button" onClick={insertImage}>
+                      Replace Image
+                    </button>
+                    <button type="button" className="side-pane-action-button" onClick={removeImageAtSourceSelection}>
+                      Remove Image
+                    </button>
+                  </>
+                ) : null}
+                {sourceObjectContext?.kind === "table" ? (
+                  <button type="button" className="side-pane-action-button" onClick={insertTable}>
+                    Add Table Row
+                  </button>
+                ) : null}
+              </div>
               <div className={`source-editor-shell${findOpen && findQuery ? " searching" : ""}`}>
                 {findOpen && findQuery ? (
                   <div ref={sourceHighlightRef} className="source-highlight-layer" aria-hidden="true">
@@ -5011,8 +5566,13 @@ export default function App() {
                   className={`source-textarea${findOpen && findQuery ? " searching" : ""}`}
                   value={markdownText}
                   onChange={handleSourceChange}
-                  onClick={handleSourceSelection}
+                  onClick={(event) => {
+                    markSourceAsActive();
+                    handleSourceSelection(event);
+                  }}
+                  onFocus={markSourceAsActive}
                   onCompositionStart={() => {
+                    markSourceAsActive();
                     sourceComposingRef.current = true;
                   }}
                   onCompositionEnd={() => {
@@ -5020,7 +5580,10 @@ export default function App() {
                       sourceComposingRef.current = false;
                     });
                   }}
-                  onKeyDown={handleSourceKeyDown}
+                  onKeyDown={(event) => {
+                    markSourceAsActive();
+                    handleSourceKeyDown(event);
+                  }}
                   onKeyUp={handleSourceSelection}
                   onScroll={handleSourceScroll}
                 />
@@ -5029,23 +5592,53 @@ export default function App() {
           ) : null}
 
           {showPreview ? (
-            <section className="side-pane preview-pane">
-              <div className="side-pane-header">Preview</div>
-              <MarkdownPreview html={previewHtml} theme={preferences.theme} />
+            <section className={`side-pane preview-pane${activePane === "preview" ? " pane-active" : ""}`} onMouseDown={markPreviewAsActive}>
+              <div className="side-pane-header-row">
+                <div className="side-pane-header">Preview</div>
+                <div className="side-pane-header-meta">
+                  <span className={`side-pane-chip${activePane === "preview" ? " active" : ""}`}>Live</span>
+                  {paneFindLabel ? <span className="side-pane-chip">Find {paneFindLabel}</span> : null}
+                  {!preferences.allowInsecureRemoteMedia ? <span className="side-pane-chip">HTTP Media Blocked</span> : null}
+                </div>
+              </div>
+              <div className="side-pane-actions">
+                <button type="button" className="side-pane-action-button" onClick={copyPreviewHtmlToClipboard}>
+                  Copy HTML
+                </button>
+                <button
+                  type="button"
+                  className={`side-pane-action-button${preferences.allowInsecureRemoteMedia ? " active" : ""}`}
+                  onClick={() => updatePreferences({ allowInsecureRemoteMedia: !preferences.allowInsecureRemoteMedia })}
+                >
+                  {preferences.allowInsecureRemoteMedia ? "HTTP Media On" : "HTTP Media Off"}
+                </button>
+              </div>
+              <MarkdownPreview
+                html={previewHtml}
+                theme={preferences.theme}
+                sanitizeOptions={previewSanitizeOptions}
+                findQuery={findOpen ? findQuery : ""}
+                currentFindIndex={matchIndex}
+                onActivate={markPreviewAsActive}
+              />
             </section>
           ) : null}
         </main>
       </div>
 
       <StatusBar
+        activePane={activePane}
         lineCount={stats.lineCount}
         wordCount={stats.wordCount}
         charCount={stats.charCount}
         readingMinutes={stats.readingMinutes}
+        sidebarVisible={preferences.sidebarVisible}
         viewMode={preferences.viewMode}
         statusMessage={statusState.message}
         statusKind={statusState.kind}
         findSummary={findSummary}
+        positionSummary={activePane === "source" ? sourceSelectionMeta.statusLabel : null}
+        onToggleSidebar={() => updatePreferences({ sidebarVisible: !preferences.sidebarVisible })}
         onDisableHints={() => updatePreferences({ smartTransformHints: false })}
       />
 
@@ -5114,6 +5707,15 @@ export default function App() {
       />
 
       <EditingCheatsheetDialog open={editingCheatsheetOpen} onClose={() => setEditingCheatsheetOpen(false)} />
+      <LinkDialog
+        open={Boolean(linkDialogState)}
+        initialText={linkDialogState?.initialText || ""}
+        initialUrl={linkDialogState?.initialUrl || ""}
+        allowRemove={Boolean(linkDialogState?.canRemove)}
+        onCancel={() => setLinkDialogState(null)}
+        onRemove={removeLinkFromDialog}
+        onSubmit={applyLinkFromDialog}
+      />
     </div>
   );
 }

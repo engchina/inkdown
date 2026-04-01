@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useMemo, useRef } from "react";
 import hljs from "highlight.js/lib/core";
 import javascript from "highlight.js/lib/languages/javascript";
 import typescript from "highlight.js/lib/languages/typescript";
@@ -10,6 +10,9 @@ import yaml from "highlight.js/lib/languages/yaml";
 import sql from "highlight.js/lib/languages/sql";
 import python from "highlight.js/lib/languages/python";
 import markdownLanguage from "highlight.js/lib/languages/markdown";
+import { escapeHtml, sanitizePreviewContainer, sanitizePreviewHtml } from "../utils/previewSanitizer.mjs";
+import { activatePreviewLink } from "../utils/previewLinks.mjs";
+import { applyPreviewSearchHighlights } from "../utils/previewSearch.mjs";
 
 hljs.registerLanguage("js", javascript);
 hljs.registerLanguage("javascript", javascript);
@@ -36,15 +39,6 @@ function normalizeHighlightLanguage(value) {
     .trim()
     .toLowerCase();
   return normalized && hljs.getLanguage(normalized) ? normalized : "";
-}
-
-function escapeHtml(value) {
-  return String(value || "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
 }
 
 function buildHighlightedCodeHtml(node) {
@@ -80,7 +74,7 @@ async function renderMermaidNodes(nodes, theme = "paper") {
   mermaid.initialize({
     startOnLoad: false,
     theme: theme === "midnight" ? "dark" : theme === "forest" ? "forest" : "default",
-    securityLevel: "loose"
+    securityLevel: "strict"
   });
   await Promise.all(
     nodes.map(async (node, index) => {
@@ -106,9 +100,10 @@ function highlightCodeNodes(nodes) {
   });
 }
 
-export async function renderPreviewHtml(html, theme = "paper") {
+export async function renderPreviewHtml(html, theme = "paper", sanitizeOptions = {}) {
   const container = document.createElement("div");
   container.innerHTML = html;
+  sanitizePreviewContainer(container, sanitizeOptions);
   const nodes = Array.from(container.querySelectorAll(".mermaid"));
   const codeNodes = Array.from(container.querySelectorAll("pre code"));
 
@@ -123,11 +118,12 @@ export async function renderPreviewHtml(html, theme = "paper") {
   return container.innerHTML;
 }
 
-export default function MarkdownPreview({ html, theme }) {
+export default function MarkdownPreview({ html, theme, sanitizeOptions = {}, findQuery = "", currentFindIndex = 0, onActivate = null }) {
   const containerRef = useRef(null);
+  const safeHtml = useMemo(() => sanitizePreviewHtml(html, sanitizeOptions), [html, sanitizeOptions]);
 
   useEffect(() => {
-    async function renderMermaid() {
+    async function renderDecorations() {
       if (!containerRef.current) {
         return;
       }
@@ -140,16 +136,50 @@ export default function MarkdownPreview({ html, theme }) {
       if (nodes.length > 0) {
         await renderMermaidNodes(nodes, theme);
       }
+
+      const { currentElement } = applyPreviewSearchHighlights(containerRef.current, findQuery, currentFindIndex);
+      if (currentElement) {
+        currentElement.scrollIntoView({ block: "center", inline: "nearest", behavior: "smooth" });
+      }
     }
 
-    renderMermaid();
-  }, [html, theme]);
+    renderDecorations();
+  }, [safeHtml, theme, findQuery, currentFindIndex]);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) {
+      return undefined;
+    }
+
+    function handleClick(event) {
+      onActivate?.();
+      const anchor = event.target instanceof Element ? event.target.closest("a[href]") : null;
+      if (!anchor || !container.contains(anchor)) {
+        return;
+      }
+
+      const href = anchor.getAttribute("href") || "";
+      if (!href.startsWith("#") && !/^(https?:|mailto:|tel:)/i.test(href)) {
+        return;
+      }
+
+      event.preventDefault();
+      void activatePreviewLink(anchor, container, {
+        openExternal: (targetUrl) => window.editorApi.openExternal(targetUrl),
+        windowObject: window
+      });
+    }
+
+    container.addEventListener("click", handleClick);
+    return () => container.removeEventListener("click", handleClick);
+  }, [safeHtml]);
 
   return (
     <div
       ref={containerRef}
       className="preview-surface"
-      dangerouslySetInnerHTML={{ __html: html }}
+      dangerouslySetInnerHTML={{ __html: safeHtml }}
     />
   );
 }
