@@ -1664,17 +1664,37 @@ function buildStandaloneHtml(title, bodyHtml, theme) {
       :root { color-scheme: ${theme === "midnight" ? "dark" : "light"}; }
       html { margin: 0; padding: 0; background: ${theme === "midnight" ? "#0f1724" : theme === "forest" ? "#eef5ee" : "#faf7f1"}; }
       body {
-        max-width: 900px;
+        max-width: 820px;
         margin: 0 auto;
-        padding: 24px 24px 96px;
-        font: 18px/1.8 "Segoe UI", "Microsoft YaHei", sans-serif;
+        padding: 14px 26px 56px;
+        font: 17px/1.68 "Segoe UI", "Microsoft YaHei", sans-serif;
         color: ${theme === "midnight" ? "#e8eef8" : "#1d232e"};
         background: ${theme === "midnight" ? "#0f1724" : theme === "forest" ? "#eef5ee" : "#faf7f1"};
       }
+      .export-document {
+        width: 100%;
+        overflow-wrap: anywhere;
+      }
       .export-document > :first-child { margin-top: 0; }
       .export-document > :last-child { margin-bottom: 0; }
-      img { max-width: 100%; border-radius: 12px; }
-      pre { overflow-x: auto; padding: 16px; border-radius: 14px; background: ${theme === "midnight" ? "#1c2434" : "#22252b"}; color: #f5f7fa; }
+      h1, h2, h3, h4, h5, h6 {
+        margin: 1.35em 0 0.42em;
+        line-height: 1.24;
+        color: ${theme === "midnight" ? "#e8eef8" : "#1d232e"};
+        font-weight: 700;
+      }
+      h1 { font-size: 1.86em; line-height: 1.14; }
+      h2 { font-size: 1.55em; }
+      h3 { font-size: 1.34em; }
+      h4 { font-size: 1.17em; }
+      h5 { font-size: 1.03em; }
+      h6 { font-size: 0.94em; }
+      p { margin: 0.52em 0; }
+      ul, ol { margin: 0.52em 0; padding-left: 1.35em; }
+      li { margin: 0.14em 0; }
+      li > p { margin: 0.2em 0; }
+      img { display: block; max-width: 100%; margin: 0.95em 0; border-radius: 12px; }
+      pre { overflow-x: auto; margin: 0.95em 0; padding: 16px; border-radius: 14px; background: ${theme === "midnight" ? "#1c2434" : "#22252b"}; color: #f5f7fa; }
       code { font-family: "Cascadia Code", "JetBrains Mono", monospace; }
       .hljs { color: inherit; background: transparent; }
       .hljs-comment, .hljs-quote { color: #94a3b8; font-style: italic; }
@@ -1687,8 +1707,8 @@ function buildStandaloneHtml(title, bodyHtml, theme) {
       sub, sup { font-size: 0.78em; }
       blockquote:not(.callout) {
         min-height: 1.6em;
-        margin: 1.15em 0;
-        padding: 0.35em 0 0.35em 1em;
+        margin: 0.95em 0;
+        padding: 0.22em 0 0.22em 0.95em;
         border-left: 3px solid ${
           theme === "midnight"
             ? "rgba(148, 163, 184, 0.5)"
@@ -1712,28 +1732,28 @@ function buildStandaloneHtml(title, bodyHtml, theme) {
       }
       blockquote:not(.callout) > :first-child { margin-top: 0; }
       blockquote:not(.callout) > :last-child { margin-bottom: 0; }
-      blockquote:not(.callout) p { margin: 0.45em 0; }
+      blockquote:not(.callout) p { margin: 0.32em 0; }
       blockquote:not(.callout) blockquote:not(.callout) {
         min-height: 0;
-        margin: 0.7em 0 0.35em;
+        margin: 0.55em 0 0.28em;
         padding-left: 0.9em;
         border-left-width: 2px;
         border-radius: 0 8px 8px 0;
         background: none;
       }
-      table { width: 100%; border-collapse: collapse; }
+      table { width: 100%; margin: 0.95em 0; border-collapse: collapse; }
       th, td { border: 1px solid rgba(160, 160, 160, 0.3); padding: 10px 12px; }
       td[data-align="left"], th[data-align="left"] { text-align: left; }
       td[data-align="center"], th[data-align="center"] { text-align: center; }
       td[data-align="right"], th[data-align="right"] { text-align: right; }
-      .table-of-contents { display: grid; gap: 8px; padding: 16px 18px; border: 1px solid rgba(160, 160, 160, 0.24); border-radius: 14px; background: rgba(255, 255, 255, 0.6); }
+      .table-of-contents { display: grid; gap: 4px; margin: 0.72em 0 0.92em; padding: 12px 14px; border: 1px solid rgba(160, 160, 160, 0.24); border-radius: 14px; background: rgba(255, 255, 255, 0.6); }
       .toc-title { font-size: 12px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; }
-      .toc-item { color: inherit; text-decoration: none; }
+      .toc-item { color: inherit; text-decoration: none; padding: 0.1em 0; }
       .toc-item.level-2 { padding-left: 12px; }
       .toc-item.level-3 { padding-left: 24px; }
       .toc-item.level-4, .toc-item.level-5, .toc-item.level-6 { padding-left: 36px; }
       .footnotes-title { margin-bottom: 10px; font-size: 12px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: ${theme === "midnight" ? "#b8c7d9" : "#69553f"}; }
-      .callout { position: relative; padding: 14px 16px 14px 18px; border: 1px solid rgba(160, 160, 160, 0.24); border-radius: 16px; background: rgba(255, 255, 255, 0.6); }
+      .callout { position: relative; margin: 0.9em 0; padding: 12px 15px 12px 18px; border: 1px solid rgba(160, 160, 160, 0.24); border-radius: 16px; background: rgba(255, 255, 255, 0.6); }
       .callout::before { content: ""; position: absolute; inset: 10px auto 10px 0; width: 4px; border-radius: 999px; background: #9a5a26; }
       .callout-title { margin-bottom: 6px; font-size: 13px; font-weight: 700; color: inherit; }
       .callout-note::before { background: #3b82f6; }
@@ -1741,9 +1761,9 @@ function buildStandaloneHtml(title, bodyHtml, theme) {
       .callout-important::before { background: #7c3aed; }
       .callout-warning::before { background: #d97706; }
       .callout-caution::before { background: #dc2626; }
-      .footnotes { margin-top: 32px; padding-top: 20px; border-top: 1px solid rgba(160, 160, 160, 0.24); }
+      .footnotes { margin-top: 20px; padding-top: 16px; border-top: 1px solid rgba(160, 160, 160, 0.24); }
       .footnote-backref { margin-left: 6px; text-decoration: none; }
-      .mermaid { margin: 1.5rem 0; }
+      .mermaid { margin: 0.95rem 0; }
     </style>
   </head>
   <body><main class="export-document">${bodyHtml}</main></body>
