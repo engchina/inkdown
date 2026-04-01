@@ -47,8 +47,9 @@ import TableSelectionHandles from "./components/TableSelectionHandles";
 import EditingCheatsheetDialog from "./components/EditingCheatsheetDialog";
 import { summarizeFrontMatter } from "./utils/frontMatter.mjs";
 import {
-  buildPrefixedSourceLines,
   buildSourceInsertion,
+  buildToggledPrefixedSourceLines,
+  buildToggledWrappedSourceSelection,
   buildWrappedSourceSelection,
   findLiteralMatches,
   replaceAllLiteralMatches,
@@ -2341,7 +2342,7 @@ export default function App() {
         badge: "View",
         section: "Views",
         label: "Switch to split view",
-        description: "Edit and preview side by side",
+        description: "Source and preview side by side",
         keywords: "split preview live dual pane"
       },
       {
@@ -3558,7 +3559,7 @@ export default function App() {
   }, [findOpen, matchIndex, matches.length]);
 
   useEffect(() => {
-    const sourceVisible = preferences.viewMode === "source" || findOpen;
+    const sourceVisible = ["source", "split"].includes(preferences.viewMode) || findOpen;
     if (!findOpen || !sourceVisible || !sourceRef.current || matches.length === 0) {
       return;
     }
@@ -3986,7 +3987,7 @@ export default function App() {
   function insertMarkdownImage(markdownPath, absolutePath, dimensions = null) {
     const alt = basenamePath(absolutePath) || "image";
     const markdownImage = `![${alt}](${markdownPath})`;
-    if (preferences.viewMode === "source" && sourceRef.current) {
+    if (["source", "split"].includes(preferences.viewMode) && sourceRef.current) {
       insertIntoSource(markdownImage, { block: true });
       return;
     }
@@ -4010,7 +4011,7 @@ export default function App() {
   }
 
   function insertTable() {
-    if (preferences.viewMode === "source" && sourceRef.current) {
+    if (["source", "split"].includes(preferences.viewMode) && sourceRef.current) {
       insertIntoSource("| Column 1 | Column 2 |\n| --- | --- |\n| Value | Value |", { block: true });
       setStatus("Inserted table template");
       return;
@@ -4697,77 +4698,122 @@ export default function App() {
     applySourceTextUpdate(update.text, update.selectionStart, update.selectionEnd);
   }
 
-  function prefixSelectedLines(prefix, numbered = false) {
+  function toggleWrappedSourceSelection(prefix, suffix = prefix, placeholder = "") {
     const textarea = sourceRef.current;
     if (!textarea) {
       return;
     }
-    const update = buildPrefixedSourceLines(
+    const update = buildToggledWrappedSourceSelection(
       markdownText,
       textarea.selectionStart ?? 0,
       textarea.selectionEnd ?? textarea.selectionStart ?? 0,
       prefix,
-      numbered
+      suffix,
+      placeholder
+    );
+    applySourceTextUpdate(update.text, update.selectionStart, update.selectionEnd);
+  }
+
+  function togglePrefixedSourceLines(prefix, options = {}) {
+    const textarea = sourceRef.current;
+    if (!textarea) {
+      return;
+    }
+    const update = buildToggledPrefixedSourceLines(
+      markdownText,
+      textarea.selectionStart ?? 0,
+      textarea.selectionEnd ?? textarea.selectionStart ?? 0,
+      prefix,
+      options
     );
     applySourceTextUpdate(update.text, update.selectionStart, update.selectionEnd);
   }
 
   function applyFormatting(format) {
-    if (preferences.viewMode === "source" && sourceRef.current) {
+    if (["source", "split"].includes(preferences.viewMode) && sourceRef.current) {
       switch (format) {
         case "paragraph":
-          setStatus("In source mode, edit paragraph styles directly in Markdown.");
+          setStatus("In source view, edit paragraph styles directly in Markdown.");
           break;
         case "heading-1":
-          prefixSelectedLines("# ");
+          togglePrefixedSourceLines("# ", {
+            isApplied: (line) => /^#{1,6}\s+/.test(line),
+            strip: (line) => line.replace(/^#{1,6}\s+/, ""),
+            normalize: (line) => line.replace(/^#{1,6}\s+/, "")
+          });
           break;
         case "heading-2":
-          prefixSelectedLines("## ");
+          togglePrefixedSourceLines("## ", {
+            isApplied: (line) => /^##\s+/.test(line),
+            strip: (line) => line.replace(/^##\s+/, ""),
+            normalize: (line) => line.replace(/^#{1,6}\s+/, "")
+          });
           break;
         case "heading-3":
-          prefixSelectedLines("### ");
+          togglePrefixedSourceLines("### ", {
+            isApplied: (line) => /^###\s+/.test(line),
+            strip: (line) => line.replace(/^###\s+/, ""),
+            normalize: (line) => line.replace(/^#{1,6}\s+/, "")
+          });
           break;
         case "bullet-list":
-          prefixSelectedLines("- ");
+          togglePrefixedSourceLines("- ", {
+            isApplied: (line) => /^[-*+]\s+/.test(line),
+            strip: (line) => line.replace(/^[-*+]\s+/, ""),
+            normalize: (line) => line.replace(/^[-*+]\s+/, "")
+          });
           break;
         case "ordered-list":
-          prefixSelectedLines("1. ", true);
+          togglePrefixedSourceLines("1. ", {
+            numbered: true,
+            isApplied: (line) => /^\d+\.\s+/.test(line),
+            strip: (line) => line.replace(/^\d+\.\s+/, ""),
+            normalize: (line) => line.replace(/^\d+\.\s+/, "")
+          });
           break;
         case "task-list":
-          prefixSelectedLines("- [ ] ");
+          togglePrefixedSourceLines("- [ ] ", {
+            isApplied: (line) => /^[-*+]\s\[(?: |x|X)\]\s*/.test(line),
+            strip: (line) => line.replace(/^[-*+]\s\[(?: |x|X)\]\s*/, ""),
+            normalize: (line) => line.replace(/^[-*+]\s\[(?: |x|X)\]\s*/, "")
+          });
           break;
         case "blockquote":
-          prefixSelectedLines("> ");
+          togglePrefixedSourceLines("> ", {
+            isApplied: (line) => /^(?:>\s?)+/.test(line),
+            strip: (line) => line.replace(/^(?:>\s?)+/, ""),
+            normalize: (line) => line.replace(/^(?:>\s?)+/, "")
+          });
           break;
         case "code-block":
-          wrapSourceSelection("```\n", "\n```", "code");
+          toggleWrappedSourceSelection("```\n", "\n```", "code");
           break;
         case "horizontal-rule":
           insertIntoSource("---", { block: true });
           break;
         case "bold":
-          wrapSourceSelection("**", "**", "bold");
+          toggleWrappedSourceSelection("**", "**", "bold");
           break;
         case "italic":
-          wrapSourceSelection("*", "*", "italic");
+          toggleWrappedSourceSelection("*", "*", "italic");
           break;
         case "underline":
-          wrapSourceSelection("<u>", "</u>", "underline");
+          toggleWrappedSourceSelection("<u>", "</u>", "underline");
           break;
         case "strike":
-          wrapSourceSelection("~~", "~~", "strike");
+          toggleWrappedSourceSelection("~~", "~~", "strike");
           break;
         case "highlight":
-          wrapSourceSelection("==", "==", "highlight");
+          toggleWrappedSourceSelection("==", "==", "highlight");
           break;
         case "subscript":
-          wrapSourceSelection("~", "~", "sub");
+          toggleWrappedSourceSelection("~", "~", "sub");
           break;
         case "superscript":
-          wrapSourceSelection("^", "^", "sup");
+          toggleWrappedSourceSelection("^", "^", "sup");
           break;
         case "inline-code":
-          wrapSourceSelection("`", "`", "code");
+          toggleWrappedSourceSelection("`", "`", "code");
           break;
         case "link": {
           const href = window.prompt("Enter a link URL");
@@ -4853,8 +4899,8 @@ export default function App() {
     }
   }
 
-  const showEditor = ["editor", "split"].includes(preferences.viewMode);
-  const showSource = preferences.viewMode === "source" || findOpen;
+  const showEditor = true;
+  const showSource = ["source", "split"].includes(preferences.viewMode) || findOpen;
   const showPreview = ["preview", "split"].includes(preferences.viewMode);
   const findSummary = findOpen && findQuery ? `${matches.length === 0 ? "0" : `${matchIndex + 1}/${matches.length}`} matches` : null;
   const documentPathLabel = filePath || preferences.workspaceRoot || "";
@@ -4932,7 +4978,10 @@ export default function App() {
 
         <main className={`workspace-main mode-${preferences.viewMode}${findOpen ? " find-open" : ""}`}>
           {showEditor ? (
-            <section className="editor-pane">
+            <section
+              className={`editor-pane${preferences.viewMode === "editor" ? "" : " editor-pane-hidden"}`}
+              aria-hidden={preferences.viewMode === "editor" ? undefined : true}
+            >
               <div ref={paperRef} className="paper">
                 <TableToolbar visible={tableToolbarVisible} selectionCount={tableSelectionCount} onAction={handleTableAction} />
                 <TableSelectionHandles

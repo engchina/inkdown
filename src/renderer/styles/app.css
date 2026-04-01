@@ -465,7 +465,7 @@ select {
 }
 
 .workspace-main.mode-split.find-open {
-  grid-template-columns: minmax(0, 1fr) minmax(320px, 0.7fr) minmax(320px, 0.8fr);
+  grid-template-columns: minmax(0, 1.08fr) minmax(360px, 0.92fr);
 }
 
 .workspace-main.mode-source {
@@ -485,7 +485,7 @@ select {
 }
 
 .workspace-main.mode-split .source-pane {
-  order: 3;
+  order: 1;
 }
 
 .sidebar-panel {
@@ -798,6 +798,10 @@ select {
   overflow: auto;
   padding: 22px 24px;
   min-width: 0;
+}
+
+.editor-pane-hidden {
+  display: none;
 }
 
 .paper,

@@ -36,6 +36,38 @@ export function buildWrappedSourceSelection(markdown, selectionStart, selectionE
   };
 }
 
+export function buildToggledWrappedSourceSelection(markdown, selectionStart, selectionEnd, prefix, suffix = prefix, placeholder = "") {
+  const text = String(markdown ?? "");
+  const start = Math.max(0, Math.min(selectionStart ?? 0, text.length));
+  const end = Math.max(start, Math.min(selectionEnd ?? start, text.length));
+  const selected = text.slice(start, end);
+  const selectedWrapped = selected.startsWith(prefix) && selected.endsWith(suffix) && selected.length >= prefix.length + suffix.length;
+  const surroundingWrapped =
+    start >= prefix.length &&
+    text.slice(start - prefix.length, start) === prefix &&
+    text.slice(end, end + suffix.length) === suffix;
+
+  if (selectedWrapped) {
+    const innerStart = start + prefix.length;
+    const innerEnd = end - suffix.length;
+    return {
+      text: `${text.slice(0, start)}${text.slice(innerStart, innerEnd)}${text.slice(end)}`,
+      selectionStart: start,
+      selectionEnd: innerEnd - prefix.length
+    };
+  }
+
+  if (surroundingWrapped) {
+    return {
+      text: `${text.slice(0, start - prefix.length)}${selected}${text.slice(end + suffix.length)}`,
+      selectionStart: start - prefix.length,
+      selectionEnd: end - prefix.length
+    };
+  }
+
+  return buildWrappedSourceSelection(text, start, end, prefix, suffix, placeholder);
+}
+
 export function buildPrefixedSourceLines(markdown, selectionStart, selectionEnd, prefix, numbered = false) {
   const text = String(markdown ?? "");
   const start = Math.max(0, Math.min(selectionStart ?? 0, text.length));
@@ -48,6 +80,36 @@ export function buildPrefixedSourceLines(markdown, selectionStart, selectionEnd,
   const after = text.slice(lineEnd);
   const lines = target ? target.split(/\r?\n/) : [""];
   const nextLines = lines.map((line, index) => (numbered ? `${index + 1}. ${line}` : `${prefix}${line}`));
+  const nextTarget = nextLines.join("\n");
+
+  return {
+    text: `${before}${nextTarget}${after}`,
+    selectionStart: lineStart,
+    selectionEnd: lineStart + nextTarget.length
+  };
+}
+
+export function buildToggledPrefixedSourceLines(markdown, selectionStart, selectionEnd, prefix, options = {}) {
+  const text = String(markdown ?? "");
+  const start = Math.max(0, Math.min(selectionStart ?? 0, text.length));
+  const end = Math.max(start, Math.min(selectionEnd ?? start, text.length));
+  const lineStart = text.lastIndexOf("\n", Math.max(0, start - 1)) + 1;
+  const nextNewline = text.indexOf("\n", end);
+  const lineEnd = nextNewline === -1 ? text.length : nextNewline;
+  const before = text.slice(0, lineStart);
+  const target = text.slice(lineStart, lineEnd);
+  const after = text.slice(lineEnd);
+  const lines = target ? target.split(/\r?\n/) : [""];
+  const isApplied = options.isApplied ?? ((line) => line.startsWith(prefix));
+  const strip = options.strip ?? ((line) => (line.startsWith(prefix) ? line.slice(prefix.length) : line));
+  const normalize = options.normalize ?? ((line) => line);
+  const allApplied = lines.length > 0 && lines.every((line) => isApplied(line));
+  const nextLines = allApplied
+    ? lines.map((line) => strip(line))
+    : lines.map((line, index) => {
+        const normalized = normalize(line);
+        return options.numbered ? `${index + 1}. ${normalized}` : `${prefix}${normalized}`;
+      });
   const nextTarget = nextLines.join("\n");
 
   return {

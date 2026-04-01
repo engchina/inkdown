@@ -27,7 +27,7 @@ export default function StatusBar({
   const viewModeLabel =
     {
       editor: "Editor",
-      split: "Split",
+      split: "Source + Preview",
       preview: "Preview",
       source: "Source"
     }[viewMode] || viewMode;
