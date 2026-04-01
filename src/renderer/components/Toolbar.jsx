@@ -58,22 +58,6 @@ export function resolveToolbarSectionEmphasis(context = {}) {
   }
 }
 
-const themeOptions = [
-  { value: "paper", label: "Paper" },
-  { value: "forest", label: "Forest" },
-  { value: "midnight", label: "Midnight" }
-];
-
-function formatActivePaneLabel(activePane) {
-  if (activePane === "source") {
-    return "Source";
-  }
-  if (activePane === "preview") {
-    return "Preview";
-  }
-  return "Editor";
-}
-
 function ContextActionButton({ action }) {
   return (
     <button
@@ -89,72 +73,34 @@ function ContextActionButton({ action }) {
 }
 
 export default function Toolbar({
-  activePane,
-  contextLabel,
   contextActions = [],
   currentContext,
   editor,
-  onSetTheme,
   onOpenPalette,
   onOpenFind,
   onInsertImage,
   onInsertTable,
   onApplyFormat,
-  onSave,
-  theme
+  onSave
 }) {
   const emphasizedSection = resolveToolbarSectionEmphasis(currentContext);
-  const activePaneLabel = formatActivePaneLabel(activePane);
-  const contextPillLabel = contextLabel ? `${activePaneLabel} • ${contextLabel}` : "";
 
   return (
     <header className="toolbar-shell">
-      <div className="toolbar document-toolbar">
-        <div className="toolbar-group document-toolbar-actions document-toolbar-actions-single">
-          <div className="document-toolbar-utility">
+      <div className="toolbar format-toolbar">
+        <div className="toolbar-section toolbar-section-utility">
+          <div className="toolbar-group toolbar-section-controls">
             <ToolButton title="Save" variant="primary" onClick={onSave}>
               <Save size={14} strokeWidth={2} />
               <span>Save</span>
             </ToolButton>
-
-            <div className="toolbar-theme-switch" aria-label="Theme switcher">
-              {themeOptions.map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  className={`toolbar-theme-chip${theme === option.value ? " active" : ""}`}
-                  title={`Switch to ${option.label}`}
-                  aria-pressed={theme === option.value}
-                  onClick={() => onSetTheme(option.value)}
-                >
-                  <span className={`toolbar-theme-swatch theme-${option.value}`} aria-hidden="true" />
-                  <span>{option.label}</span>
-                </button>
-              ))}
-            </div>
-
             <ToolButton title="Command Palette" variant="ghost" onClick={() => onOpenPalette()}>
               <Command size={14} strokeWidth={2} />
               <span>Command</span>
             </ToolButton>
           </div>
-
-          <div className="document-toolbar-modes">
-            <div className="toolbar-mode-stack">
-              {contextLabel ? <div className="toolbar-context-pill">{contextPillLabel}</div> : null}
-              {contextActions.length ? (
-                <div className="toolbar-context-actions" aria-label="Context actions">
-                  {contextActions.map((action) => (
-                    <ContextActionButton key={action.id} action={action} />
-                  ))}
-                </div>
-              ) : null}
-            </div>
-          </div>
         </div>
-      </div>
 
-      <div className="toolbar format-toolbar">
         <ToolbarSection title="Text" className={emphasizedSection === "Text" ? " active" : ""}>
           <ToolButton disabled={!editor} title="Bold" active={editor?.isActive("bold")} onClick={() => onApplyFormat("bold")}>
             B
@@ -305,6 +251,14 @@ export default function Toolbar({
             Find
           </ToolButton>
         </ToolbarSection>
+
+        {contextActions.length ? (
+          <div className="toolbar-context-actions" aria-label="Context actions">
+            {contextActions.map((action) => (
+              <ContextActionButton key={action.id} action={action} />
+            ))}
+          </div>
+        ) : null}
       </div>
     </header>
   );

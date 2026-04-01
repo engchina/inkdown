@@ -2640,16 +2640,6 @@ export default function App() {
     setActivePane("preview");
   }
 
-  function focusSourcePane() {
-    sourceRef.current?.focus();
-    markSourceAsActive();
-  }
-
-  function focusEditorPane() {
-    markEditorAsActive();
-    editor?.chain().focus().run();
-  }
-
   function copyPreviewHtmlToClipboard() {
     navigator.clipboard
       .writeText(previewHtml)
@@ -3464,24 +3454,6 @@ export default function App() {
 
     return { kind: "paragraph", label: "Paragraph" };
   }, [editor, tableSelectionCount, tableToolbarVisible]);
-  const editorObjectGuidance = useMemo(() => {
-    switch (editorObjectContext?.kind) {
-      case "heading":
-        return "Enter creates a sibling heading. Backspace at start returns to paragraph.";
-      case "code":
-        return "Tab indents code. Backspace on an empty block returns to paragraph.";
-      case "task":
-        return "Enter adds the next task. Backspace on an empty item exits the list.";
-      case "list":
-        return "Enter continues the list. Backspace on an empty item exits.";
-      case "quote":
-        return "Enter continues the quote. Backspace on an empty quote exits.";
-      case "table":
-        return "Use the table toolbar above to add rows, columns, and alignment.";
-      default:
-        return "Use slash commands or the format toolbar to structure the current block.";
-    }
-  }, [editorObjectContext]);
   const toolbarContext = useMemo(() => {
     if (activePane === "source" && sourceObjectContext) {
       return {
@@ -5404,19 +5376,15 @@ export default function App() {
   return (
     <div className={`app-shell theme-${preferences.theme}`}>
       <Toolbar
-        activePane={toolbarContext.pane}
-        contextLabel={toolbarContext.label}
         contextActions={toolbarContextActions}
         currentContext={toolbarContext}
         editor={editor}
-        onSetTheme={(theme) => updatePreferences({ theme })}
         onOpenPalette={openCommandPalette}
         onInsertImage={insertImage}
         onInsertTable={insertTable}
         onApplyFormat={applyFormatting}
         onSave={() => saveDocument(false)}
         onOpenFind={openFindReplace}
-        theme={preferences.theme}
       />
 
       <FindReplaceBar
@@ -5466,19 +5434,6 @@ export default function App() {
               aria-hidden={preferences.viewMode === "editor" ? undefined : true}
               onMouseDown={markEditorAsActive}
             >
-              <div className="side-pane-header-row editor-pane-header-row">
-                <div className="side-pane-header">Editor</div>
-                <div className="side-pane-header-meta">
-                  <span className={`side-pane-chip${activePane === "editor" ? " active" : ""}`}>Rich Text</span>
-                  {editorObjectContext ? <span className="side-pane-chip">{editorObjectContext.label}</span> : null}
-                </div>
-              </div>
-              <div className="side-pane-guidance editor-pane-guidance">{editorObjectGuidance}</div>
-              <div className="side-pane-actions editor-pane-actions">
-                <button type="button" className="side-pane-action-button" onClick={focusEditorPane}>
-                  Focus Editor
-                </button>
-              </div>
               <div ref={paperRef} className="paper">
                 <TableToolbar visible={tableToolbarVisible} selectionCount={tableSelectionCount} onAction={handleTableAction} />
                 <TableSelectionHandles
@@ -5496,47 +5451,6 @@ export default function App() {
 
           {showSource ? (
             <section className={`side-pane source-pane${activePane === "source" ? " pane-active" : ""}`}>
-              <div className="side-pane-header-row">
-                <div className="side-pane-header">Source</div>
-                <div className="side-pane-header-meta">
-                  <span className={`side-pane-chip${activePane === "source" ? " active" : ""}`}>Markdown</span>
-                  {paneFindLabel ? <span className="side-pane-chip">Find {paneFindLabel}</span> : null}
-                  <span className="side-pane-chip position-chip">{sourceSelectionMeta.lineLabel}</span>
-                  <span className="side-pane-chip position-chip">{sourceSelectionMeta.columnLabel}</span>
-                  {sourceSelectionMeta.selectionLabel ? <span className="side-pane-chip position-chip">{sourceSelectionMeta.selectionLabel}</span> : null}
-                  {sourceObjectContext ? <span className="side-pane-chip">{sourceObjectContext.label}</span> : null}
-                </div>
-              </div>
-              <div className="side-pane-actions">
-                <button type="button" className="side-pane-action-button" onClick={focusSourcePane}>
-                  Focus Source
-                </button>
-                {sourceObjectContext?.kind === "link" ? (
-                  <>
-                    <button type="button" className="side-pane-action-button" onClick={openLinkDialog}>
-                      Edit Link
-                    </button>
-                    <button type="button" className="side-pane-action-button" onClick={removeLinkAtSourceSelection}>
-                      Remove Link
-                    </button>
-                  </>
-                ) : null}
-                {sourceObjectContext?.kind === "image" ? (
-                  <>
-                    <button type="button" className="side-pane-action-button" onClick={insertImage}>
-                      Replace Image
-                    </button>
-                    <button type="button" className="side-pane-action-button" onClick={removeImageAtSourceSelection}>
-                      Remove Image
-                    </button>
-                  </>
-                ) : null}
-                {sourceObjectContext?.kind === "table" ? (
-                  <button type="button" className="side-pane-action-button" onClick={insertTable}>
-                    Add Table Row
-                  </button>
-                ) : null}
-              </div>
               <div className={`source-editor-shell${findOpen && findQuery ? " searching" : ""}`}>
                 {findOpen && findQuery ? (
                   <div ref={sourceHighlightRef} className="source-highlight-layer" aria-hidden="true">
@@ -5575,26 +5489,6 @@ export default function App() {
 
           {showPreview ? (
             <section className={`side-pane preview-pane${activePane === "preview" ? " pane-active" : ""}`} onMouseDown={markPreviewAsActive}>
-              <div className="side-pane-header-row">
-                <div className="side-pane-header">Preview</div>
-                <div className="side-pane-header-meta">
-                  <span className={`side-pane-chip${activePane === "preview" ? " active" : ""}`}>Live</span>
-                  {paneFindLabel ? <span className="side-pane-chip">Find {paneFindLabel}</span> : null}
-                  {!preferences.allowInsecureRemoteMedia ? <span className="side-pane-chip">HTTP Media Blocked</span> : null}
-                </div>
-              </div>
-              <div className="side-pane-actions">
-                <button type="button" className="side-pane-action-button" onClick={copyPreviewHtmlToClipboard}>
-                  Copy HTML
-                </button>
-                <button
-                  type="button"
-                  className={`side-pane-action-button${preferences.allowInsecureRemoteMedia ? " active" : ""}`}
-                  onClick={() => updatePreferences({ allowInsecureRemoteMedia: !preferences.allowInsecureRemoteMedia })}
-                >
-                  {preferences.allowInsecureRemoteMedia ? "HTTP Media On" : "HTTP Media Off"}
-                </button>
-              </div>
               <MarkdownPreview
                 html={previewHtml}
                 theme={preferences.theme}
