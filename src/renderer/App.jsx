@@ -46,6 +46,15 @@ import FrontMatterMergeDialog from "./components/FrontMatterMergeDialog";
 import TableSelectionHandles from "./components/TableSelectionHandles";
 import EditingCheatsheetDialog from "./components/EditingCheatsheetDialog";
 import { summarizeFrontMatter } from "./utils/frontMatter.mjs";
+import {
+  buildPrefixedSourceLines,
+  buildSourceInsertion,
+  buildWrappedSourceSelection,
+  findLiteralMatches,
+  replaceAllLiteralMatches,
+  replaceCurrentLiteralMatch
+} from "./utils/sourceEditing.mjs";
+import { getEmptyListEnterStrategy } from "./utils/editorStructuredEditing.mjs";
 
 const editorMarked = new Marked({ gfm: true, breaks: true });
 const previewMarked = new Marked({ gfm: true, breaks: true });
@@ -1850,20 +1859,7 @@ function buildFrontMatterMergeState(existingRaw, incomingRaw, html) {
 }
 
 function findMatches(markdown, query) {
-  if (!query) {
-    return [];
-  }
-  const matches = [];
-  let startIndex = 0;
-  while (startIndex <= markdown.length) {
-    const foundAt = markdown.indexOf(query, startIndex);
-    if (foundAt === -1) {
-      break;
-    }
-    matches.push({ start: foundAt, end: foundAt + query.length });
-    startIndex = foundAt + query.length;
-  }
-  return matches;
+  return findLiteralMatches(markdown, query);
 }
 
 function renderSourceHighlights(markdown, matches, currentIndex) {
@@ -2886,10 +2882,19 @@ export default function App() {
       return true;
     }
 
-    if (event.key === "Enter" && emptyTextblock && (state.inTaskItem || state.inListItem)) {
-      event.preventDefault();
-      exitCurrentListItem(selection);
-      return true;
+    if (event.key === "Enter" && emptyTextblock) {
+      const strategy = getEmptyListEnterStrategy(state);
+      if (strategy === "exit") {
+        const exited = exitCurrentListItem(selection);
+        if (!exited) {
+          return false;
+        }
+        event.preventDefault();
+        return true;
+      }
+      if (strategy === "default") {
+        return false;
+      }
     }
 
     if (event.key === "Enter" && state.inHeading) {
@@ -2915,8 +2920,11 @@ export default function App() {
     }
 
     if (event.key === "Backspace" && cursorAtStart && emptyTextblock && (state.inTaskItem || state.inListItem)) {
+      const exited = exitCurrentListItem(selection);
+      if (!exited) {
+        return false;
+      }
       event.preventDefault();
-      exitCurrentListItem(selection);
       return true;
     }
 
@@ -3812,6 +3820,10 @@ export default function App() {
       return;
     }
     const result = await window.editorApi.openMarkdown();
+    if (result?.error) {
+      setStatus(result.error);
+      return;
+    }
     if (result.canceled || result.content === undefined) {
       return;
     }
@@ -3829,6 +3841,10 @@ export default function App() {
       return;
     }
     const result = await window.editorApi.openMarkdownPath(targetPath);
+    if (result?.error) {
+      setStatus(result.error);
+      return;
+    }
     if (result.canceled || result.content === undefined) {
       return;
     }
@@ -4327,8 +4343,12 @@ export default function App() {
     if (matches.length === 0) {
       return;
     }
-    const current = matches[matchIndex];
-    setMarkdownText(markdownText.slice(0, current.start) + replaceValue + markdownText.slice(current.end));
+    const result = replaceCurrentLiteralMatch(markdownText, findQuery, matches, matchIndex, replaceValue);
+    if (!result) {
+      return;
+    }
+    setMarkdownText(result.text);
+    setMatchIndex(result.nextIndex);
     setIsDirty(true);
     setStatus("Replaced current match");
   }
@@ -4337,9 +4357,11 @@ export default function App() {
     if (!findQuery) {
       return;
     }
-    setMarkdownText(markdownText.split(findQuery).join(replaceValue));
+    const result = replaceAllLiteralMatches(markdownText, findQuery, replaceValue);
+    setMarkdownText(result.text);
+    setMatchIndex(0);
     setIsDirty(true);
-    setStatus(`Replaced all ${matches.length} matches`);
+    setStatus(`Replaced all ${result.replacedCount} matches`);
   }
 
   function syncMarkdownFromEditor(instance) {
@@ -4626,54 +4648,45 @@ export default function App() {
     if (!textarea) {
       return;
     }
-    const selectionStart = textarea.selectionStart ?? markdownText.length;
-    const selectionEnd = textarea.selectionEnd ?? selectionStart;
-    const prefix = markdownText.slice(0, selectionStart);
-    const suffix = markdownText.slice(selectionEnd);
-    const needsLeadingBreak = options.block && prefix.length > 0 && !/\n{2}$/.test(prefix);
-    const needsTrailingBreak = options.block && suffix.length > 0 && !/^\n/.test(suffix);
-    const insertion = `${needsLeadingBreak ? "\n\n" : ""}${content}${needsTrailingBreak ? "\n" : ""}`;
-    setMarkdownText(`${prefix}${insertion}${suffix}`);
-    setIsDirty(true);
+    const update = buildSourceInsertion(
+      markdownText,
+      textarea.selectionStart ?? markdownText.length,
+      textarea.selectionEnd ?? textarea.selectionStart ?? markdownText.length,
+      content,
+      options
+    );
+    applySourceTextUpdate(update.text, update.selectionStart, update.selectionEnd);
   }
 
-  function withSourceSelection(transform) {
+  function wrapSourceSelection(prefix, suffix = prefix, placeholder = "") {
     const textarea = sourceRef.current;
     if (!textarea) {
       return;
     }
-    const selectionStart = textarea.selectionStart ?? 0;
-    const selectionEnd = textarea.selectionEnd ?? selectionStart;
-    const result = transform({
-      before: markdownText.slice(0, selectionStart),
-      selection: markdownText.slice(selectionStart, selectionEnd),
-      after: markdownText.slice(selectionEnd),
-      selectionStart,
-      selectionEnd
-    });
-    if (result?.text) {
-      setMarkdownText(result.text);
-      setIsDirty(true);
-    }
-  }
-
-  function wrapSourceSelection(prefix, suffix = prefix, placeholder = "") {
-    withSourceSelection(({ before, selection, after }) => {
-      const selectedText = selection || placeholder;
-      return { text: `${before}${prefix}${selectedText}${suffix}${after}` };
-    });
+    const update = buildWrappedSourceSelection(
+      markdownText,
+      textarea.selectionStart ?? 0,
+      textarea.selectionEnd ?? textarea.selectionStart ?? 0,
+      prefix,
+      suffix,
+      placeholder
+    );
+    applySourceTextUpdate(update.text, update.selectionStart, update.selectionEnd);
   }
 
   function prefixSelectedLines(prefix, numbered = false) {
-    withSourceSelection(({ selectionStart, selectionEnd }) => {
-      const { lineStart, lineEnd } = getLineBoundaries(markdownText, selectionStart, selectionEnd);
-      const before = markdownText.slice(0, lineStart);
-      const target = markdownText.slice(lineStart, lineEnd);
-      const after = markdownText.slice(lineEnd);
-      const lines = target ? target.split(/\r?\n/) : [""];
-      const nextLines = lines.map((line, index) => (numbered ? `${index + 1}. ${line}` : `${prefix}${line}`));
-      return { text: `${before}${nextLines.join("\n")}${after}` };
-    });
+    const textarea = sourceRef.current;
+    if (!textarea) {
+      return;
+    }
+    const update = buildPrefixedSourceLines(
+      markdownText,
+      textarea.selectionStart ?? 0,
+      textarea.selectionEnd ?? textarea.selectionStart ?? 0,
+      prefix,
+      numbered
+    );
+    applySourceTextUpdate(update.text, update.selectionStart, update.selectionEnd);
   }
 
   function applyFormatting(format) {
