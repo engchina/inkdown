@@ -175,6 +175,39 @@ export default function PreferencesDialog({ open, preferences, onChange, onClose
           </PreferencesSection>
         </div>
 
+        <PreferencesSection
+          title="Current Session"
+          caption="A quick snapshot of the editor defaults you are working with right now."
+          className="preferences-session-card"
+        >
+          <div className="preferences-session-grid">
+            <div className="preferences-session-item">
+              <span className="preferences-session-label">Theme</span>
+              <strong>{themes.find((theme) => theme.value === preferences.theme)?.label || preferences.theme}</strong>
+            </div>
+            <div className="preferences-session-item">
+              <span className="preferences-session-label">View</span>
+              <strong>{preferences.viewMode}</strong>
+            </div>
+            <div className="preferences-session-item">
+              <span className="preferences-session-label">Font</span>
+              <strong>{preferences.fontSize}px</strong>
+            </div>
+            <div className="preferences-session-item">
+              <span className="preferences-session-label">Width</span>
+              <strong>{preferences.lineWidth}px</strong>
+            </div>
+            <div className="preferences-session-item">
+              <span className="preferences-session-label">Focus</span>
+              <strong>{preferences.focusMode ? "On" : "Off"}</strong>
+            </div>
+            <div className="preferences-session-item">
+              <span className="preferences-session-label">Typewriter</span>
+              <strong>{preferences.typewriterMode ? "On" : "Off"}</strong>
+            </div>
+          </div>
+        </PreferencesSection>
+
         <section className="preferences-group">
           <div className="preferences-group-header">
             <h3>Editor Transforms</h3>

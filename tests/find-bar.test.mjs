@@ -6,6 +6,7 @@ const findBarSource = await fs.readFile(new URL("../src/renderer/components/Find
 const stylesSource = await fs.readFile(new URL("../src/renderer/styles/app.css", import.meta.url), "utf8");
 
 test("find bar groups query, replace, and action controls", () => {
+  assert.match(findBarSource, /find-bar-summary/);
   assert.match(findBarSource, /find-bar-query-group/);
   assert.match(findBarSource, /find-bar-replace-group/);
   assert.match(findBarSource, /find-bar-actions/);
@@ -19,6 +20,7 @@ test("find bar exposes explicit field labels and replace-all wording", () => {
 });
 
 test("styles define structured find bar layout and responsive stacking", () => {
+  assert.match(stylesSource, /\.find-bar-summary \{/);
   assert.match(stylesSource, /\.find-bar-group \{/);
   assert.match(stylesSource, /\.find-bar-field \{/);
   assert.match(stylesSource, /\.find-bar-actions \{/);

@@ -379,6 +379,7 @@ function TreeEditor({ editable = false, onChange, path = [], showAdvancedControl
 export default function PropertiesPanel({ onRawChange, rawFrontMatter }) {
   const [showAdvancedFieldControls, setShowAdvancedFieldControls] = useState(false);
   const [tagDraft, setTagDraft] = useState("");
+  const [yamlCopied, setYamlCopied] = useState(false);
   const rawTextareaRef = useRef(null);
   let parsed = {};
   let parseFailed = false;
@@ -416,6 +417,12 @@ export default function PropertiesPanel({ onRawChange, rawFrontMatter }) {
   );
   const tags = canEditCommonField("tags", parsed.tags) ? normalizeTagList(parsed.tags) : [];
   const { line: parseErrorLine, column: parseErrorColumn, reason: parseErrorReason } = getYamlErrorDetails(parseError);
+  const quickAddFieldOptions = [
+    { key: "slug", value: "", label: "Slug" },
+    { key: "summary", value: "", label: "Summary" },
+    { key: "category", value: "", label: "Category" },
+    { key: "authors", value: [], label: "Authors" }
+  ];
 
   function commitObject(nextObject) {
     onRawChange(Object.keys(nextObject).length === 0 ? "" : dumpYaml(nextObject));
@@ -482,6 +489,28 @@ export default function PropertiesPanel({ onRawChange, rawFrontMatter }) {
 
   function addStarterFrontMatter() {
     commitObject({ title: "", tags: [], draft: false });
+  }
+
+  function addQuickField(fieldKey, fieldValue) {
+    if (Object.prototype.hasOwnProperty.call(parsed, fieldKey)) {
+      return;
+    }
+    commitObject({ ...parsed, [fieldKey]: cloneValue(fieldValue) });
+  }
+
+  async function copyRawYaml() {
+    try {
+      await navigator.clipboard.writeText(rawFrontMatter || "");
+      setYamlCopied(true);
+      window.setTimeout(() => setYamlCopied(false), 1200);
+    } catch {}
+  }
+
+  function normalizeRawYaml() {
+    if (parseFailed) {
+      return;
+    }
+    commitObject(parsed);
   }
 
   return (
@@ -623,6 +652,20 @@ export default function PropertiesPanel({ onRawChange, rawFrontMatter }) {
                 >
                   {showAdvancedFieldControls ? "Hide advanced controls" : "Show advanced controls"}
                 </button>
+                <div className="properties-quick-add">
+                  {quickAddFieldOptions
+                    .filter((field) => !Object.prototype.hasOwnProperty.call(parsed, field.key))
+                    .map((field) => (
+                      <button
+                        key={field.key}
+                        className="tool-button tool-button-ghost properties-inline-button"
+                        type="button"
+                        onClick={() => addQuickField(field.key, field.value)}
+                      >
+                        Add {field.label}
+                      </button>
+                    ))}
+                </div>
               </div>
               {hasAdditionalFields ? (
                 <div className="front-matter-tree properties-tree">
@@ -672,6 +715,19 @@ export default function PropertiesPanel({ onRawChange, rawFrontMatter }) {
             <span className="panel-heading">Raw YAML</span>
             <span className="properties-disclosure-meta">{hasFrontMatter ? "Advanced" : "Start here"}</span>
           </summary>
+          <div className="properties-section-actions">
+            <button className="tool-button tool-button-ghost properties-inline-button" type="button" onClick={copyRawYaml}>
+              {yamlCopied ? "Copied" : "Copy YAML"}
+            </button>
+            <button
+              className="tool-button tool-button-ghost properties-inline-button"
+              type="button"
+              onClick={normalizeRawYaml}
+              disabled={parseFailed || !hasFrontMatter}
+            >
+              Format YAML
+            </button>
+          </div>
           {parseFailed && parseErrorReason ? (
             <div className="properties-yaml-error">
               <div className="properties-yaml-error-copy">

@@ -33,9 +33,20 @@ export default function FindReplaceBar({
     activePane === "source" ? "Source" : activePane === "preview" ? "Preview" : "Editor";
   const hasQuery = Boolean(query);
   const hasMatches = count > 0;
+  const resultSummary = hasQuery ? `${count} match${count === 1 ? "" : "es"}` : "Type to search";
 
   return (
     <div className="find-bar">
+      <div className="find-bar-summary">
+        <span className="find-bar-summary-chip active">{activePaneLabel}</span>
+        <span className="find-bar-summary-chip">{resultSummary}</span>
+        <span className="find-bar-summary-chip">Enter next</span>
+        {hasQuery ? (
+          <button className="find-bar-inline-action" type="button" onClick={() => onQueryChange("")}>
+            Clear
+          </button>
+        ) : null}
+      </div>
       <div className="find-bar-group find-bar-query-group">
         <label className="find-bar-field">
           <span className="find-bar-label">Find</span>
@@ -93,7 +104,6 @@ export default function FindReplaceBar({
       </div>
 
       <div className="find-bar-group find-bar-actions">
-        <span className="find-count find-scope-chip active">{activePaneLabel}</span>
         <span className="find-count find-shortcut-chip">Enter / Shift+Enter</span>
         <div className="find-bar-action-set">
           <button className="tool-button" type="button" onClick={onPrev} disabled={!hasQuery}>

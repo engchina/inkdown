@@ -15,8 +15,9 @@ export default function TableSelectionHandles({ cols = [], onSelectColumn, onSel
           style={{ left: `${col.left}px`, width: `${col.width}px`, top: `${col.top}px` }}
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => onSelectColumn(col.index)}
+          title={`Select column ${col.index + 1}`}
         >
-          Col {col.index + 1}
+          C{col.index + 1}
         </button>
       ))}
       {rows.map((row) => (
@@ -27,8 +28,9 @@ export default function TableSelectionHandles({ cols = [], onSelectColumn, onSel
           style={{ top: `${row.top}px`, height: `${row.height}px`, left: `${row.left}px` }}
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => onSelectRow(row.index)}
+          title={`Select row ${row.index + 1}`}
         >
-          Row {row.index + 1}
+          R{row.index + 1}
         </button>
       ))}
     </div>

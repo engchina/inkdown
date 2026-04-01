@@ -56,6 +56,9 @@ export default function CommandPalette({ items, onClose, onQueryChange, onSelect
   const activeItem = visibleItems[clampedIndex] || null;
   const activeDescription = activeItem?.description || (scope === "file" ? "Browse recent and workspace documents." : "Run commands without leaving the keyboard.");
   const visibleSuggestions = scope === "file" ? suggestions.filter((item) => item.kind !== "command") : suggestions;
+  const hasQuery = Boolean(query.trim());
+  const scopeLabel = scope === "all" ? "Everything" : scope === "file" ? "Files" : "Commands";
+  const selectionSummary = visibleItems.length > 0 ? `${clampedIndex + 1} of ${visibleItems.length}` : "No selection";
 
   function moveSelection(offset) {
     if (visibleItems.length === 0) {
@@ -145,9 +148,26 @@ export default function CommandPalette({ items, onClose, onQueryChange, onSelect
               Files {scopeCounts.file}
             </button>
           </div>
-          <div className="command-palette-results-meta">
-            {query ? `${visibleItems.length} result${visibleItems.length === 1 ? "" : "s"} for "${query}"` : `Browsing ${scope === "all" ? "everything" : scope === "file" ? "files" : "commands"}`}
+          <div className="command-palette-toolbar-actions">
+            {hasQuery ? (
+              <button type="button" className="command-palette-inline-action" onClick={() => onQueryChange("")}>
+                Clear Query
+              </button>
+            ) : null}
+            {scope !== "all" ? (
+              <button type="button" className="command-palette-inline-action" onClick={() => setScope("all")}>
+                Reset Scope
+              </button>
+            ) : null}
+            <div className="command-palette-results-meta">
+              {query ? `${visibleItems.length} result${visibleItems.length === 1 ? "" : "s"} for "${query}"` : `Browsing ${scope === "all" ? "everything" : scope === "file" ? "files" : "commands"}`}
+            </div>
           </div>
+        </div>
+        <div className="command-palette-insights">
+          <span className="command-palette-insight-chip">{scopeLabel}</span>
+          <span className="command-palette-insight-chip">{selectionSummary}</span>
+          <span className="command-palette-insight-chip">{activeItem ? activeItem.section : "Suggestions"}</span>
         </div>
 
         <div className="command-palette-results">
