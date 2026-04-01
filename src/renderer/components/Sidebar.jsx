@@ -89,6 +89,10 @@ export default function Sidebar({
 }) {
   const normalizedFilter = filterText.trim().toLowerCase();
   const filteredTree = useMemo(() => filterTree(workspaceTree, normalizedFilter), [workspaceTree, normalizedFilter]);
+  const filteredOutline = useMemo(
+    () => outline.filter((item) => !normalizedFilter || item.text.toLowerCase().includes(normalizedFilter)),
+    [outline, normalizedFilter]
+  );
   const fileRootLabel = workspaceRoot ? workspaceRoot.split(/[\\/]/).filter(Boolean).pop() : "No folder opened";
   const hasFrontMatter = Boolean(String(frontMatterRaw || "").trim());
   const tabMeta = {
@@ -133,8 +137,15 @@ export default function Sidebar({
           >
             Files
           </button>
+          <button
+            type="button"
+            className={`sidebar-tab${sidebarTab === "properties" ? " active" : ""}`}
+            onClick={() => onSidebarTabChange("properties")}
+            aria-selected={sidebarTab === "properties"}
+          >
+            Front Matter
+          </button>
         </div>
-        {sidebarTab === "properties" ? <div className="sidebar-context-label">Front Matter</div> : null}
       </div>
 
       <div className="sidebar-body">
@@ -181,16 +192,14 @@ export default function Sidebar({
             <div className="sidebar-section-label">{sidebarTab === "properties" ? activeTabMeta.sectionLabel : "Results"}</div>
             {sidebarTab === "outline" ? (
               <span className="sidebar-content-count">
-                {outline.length} item{outline.length === 1 ? "" : "s"}
+                {filteredOutline.length} item{filteredOutline.length === 1 ? "" : "s"}
               </span>
             ) : null}
           </div>
 
           {sidebarTab === "outline" ? (
             <div className="sidebar-content">
-              {outline
-                .filter((item) => !normalizedFilter || item.text.toLowerCase().includes(normalizedFilter))
-                .map((item, index) => (
+              {filteredOutline.map((item, index) => (
                   <button
                     key={item.id}
                     className={`outline-item level-${item.level}${activeOutlineId === item.id ? " active" : ""}`}
@@ -200,7 +209,7 @@ export default function Sidebar({
                     {item.text}
                   </button>
                 ))}
-              {outline.length === 0 ? <div className="outline-empty">No headings yet</div> : null}
+              {filteredOutline.length === 0 ? <div className="outline-empty">{outline.length === 0 ? "No headings yet" : "No headings match the current filter"}</div> : null}
             </div>
           ) : sidebarTab === "files" ? (
             <div className="sidebar-content">

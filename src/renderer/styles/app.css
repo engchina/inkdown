@@ -507,6 +507,7 @@ select {
 
 .sidebar-tabs {
   display: flex;
+  flex-wrap: wrap;
   gap: 2px;
   padding: 2px;
   border-bottom: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
@@ -514,7 +515,7 @@ select {
 
 .sidebar-tab {
   min-height: 32px;
-  padding: 0 12px 0 8px;
+  padding: 0 10px;
   border: 0;
   border-radius: 8px 8px 0 0;
   background: transparent;
@@ -522,6 +523,7 @@ select {
   cursor: pointer;
   font-size: 13px;
   font-weight: 500;
+  text-wrap: nowrap;
   transition: color 0.16s ease, background 0.16s ease;
 }
 
@@ -538,14 +540,6 @@ select {
   min-width: 0;
 }
 
-.sidebar-context-label {
-  margin-top: 8px;
-  color: var(--text-soft);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-}
 
 .sidebar-meta {
   display: grid;
