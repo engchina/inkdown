@@ -1,4 +1,5 @@
 import React, { useMemo } from "react";
+import { Braces, Files, ListTree } from "lucide-react";
 import PropertiesPanel from "./PropertiesPanel";
 
 function getPathLabel(filePath) {
@@ -89,6 +90,25 @@ function FileTreeNode({ node, activeFilePath, onOpenFile, depth = 0 }) {
   );
 }
 
+function EmptyStateCard({ eyebrow, title, copy, actions = [], tone = "default" }) {
+  return (
+    <div className={`sidebar-empty-state sidebar-empty-state-${tone}`}>
+      {eyebrow ? <div className="sidebar-empty-eyebrow">{eyebrow}</div> : null}
+      <div className="sidebar-empty-title">{title}</div>
+      <div className="sidebar-empty-copy">{copy}</div>
+      {actions.length ? (
+        <div className="sidebar-empty-actions">
+          {actions.map((action) => (
+            <button key={action.label} type="button" className="sidebar-utility-button" onClick={action.onClick}>
+              {action.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export default function Sidebar({
   activeFilePath,
   activeOutlineId,
@@ -117,7 +137,17 @@ export default function Sidebar({
   );
   const filteredFileCount = useMemo(() => countTreeFiles(filteredTree), [filteredTree]);
   const fileRootLabel = workspaceRoot ? workspaceRoot.split(/[\\/]/).filter(Boolean).pop() : "No folder opened";
+  const activeFileLabel = activeFilePath ? getPathLabel(activeFilePath) : "No document selected";
   const hasFrontMatter = Boolean(String(frontMatterRaw || "").trim());
+  const frontMatterLineCount = useMemo(
+    () =>
+      hasFrontMatter
+        ? String(frontMatterRaw)
+            .split(/\r?\n/)
+            .filter((line) => line.trim()).length
+        : 0,
+    [frontMatterRaw, hasFrontMatter]
+  );
   const tabMeta = {
     outline: {
       title: "Document map",
@@ -140,6 +170,50 @@ export default function Sidebar({
   };
   const activeTabMeta = tabMeta[sidebarTab];
   const showRecentFiles = sidebarTab === "files" && recentFiles.length > 0;
+  const tabSpotlight = {
+    outline: {
+      eyebrow: "Current draft",
+      title: activeFileLabel,
+      copy: normalizedFilter
+        ? `Filtering headings for "${filterText.trim()}".`
+        : "Use headings to move through long documents without leaving the writing flow."
+    },
+    files: {
+      eyebrow: workspaceRoot ? "Workspace root" : "Workspace",
+      title: workspaceRoot || "Open a folder to browse Markdown files",
+      copy: workspaceRoot
+        ? activeFilePath
+          ? `Current file: ${activeFileLabel}`
+          : "Choose a Markdown file from the workspace tree or open a recent draft."
+        : "Inkdown works best with a focused folder of notes, drafts, and reference material."
+    },
+    properties: {
+      eyebrow: "Metadata health",
+      title: hasFrontMatter ? "Structured front matter is available" : "No front matter in this draft",
+      copy: hasFrontMatter
+        ? `${frontMatterLineCount} populated YAML line${frontMatterLineCount === 1 ? "" : "s"} ready for previews, exports, and publishing flows.`
+        : "Add YAML front matter to keep publishing metadata, summaries, and custom fields close to the draft."
+    }
+  };
+  const tabStats = {
+    outline: [
+      { value: filteredOutline.length, label: "Visible" },
+      { value: outline.length, label: "Headings" }
+    ],
+    files: workspaceRoot
+      ? [
+          { value: filteredFileCount, label: "Files" },
+          { value: recentFiles.length, label: "Recent" }
+        ]
+      : [
+          { value: recentFiles.length, label: "Recent" },
+          { value: 3, label: "Quick starts" }
+        ],
+    properties: [
+      { value: hasFrontMatter ? "YAML" : "None", label: "Status" },
+      { value: frontMatterLineCount, label: "Lines" }
+    ]
+  };
   const resultBadge =
     sidebarTab === "outline"
       ? `${filteredOutline.length} item${filteredOutline.length === 1 ? "" : "s"}`
@@ -159,7 +233,8 @@ export default function Sidebar({
             onClick={() => onSidebarTabChange("outline")}
             aria-selected={sidebarTab === "outline"}
           >
-            Outline
+            <ListTree size={14} strokeWidth={2} />
+            <span>Outline</span>
           </button>
           <button
             type="button"
@@ -167,7 +242,8 @@ export default function Sidebar({
             onClick={() => onSidebarTabChange("files")}
             aria-selected={sidebarTab === "files"}
           >
-            Files
+            <Files size={14} strokeWidth={2} />
+            <span>Files</span>
           </button>
           <button
             type="button"
@@ -175,7 +251,8 @@ export default function Sidebar({
             onClick={() => onSidebarTabChange("properties")}
             aria-selected={sidebarTab === "properties"}
           >
-            Front Matter
+            <Braces size={14} strokeWidth={2} />
+            <span>Front Matter</span>
           </button>
         </div>
       </div>
@@ -189,6 +266,23 @@ export default function Sidebar({
               <span className="sidebar-badge">{activeTabMeta.badge}</span>
             </div>
             <div className="sidebar-caption">{activeTabMeta.caption}</div>
+          </div>
+
+          <div className="sidebar-stat-row">
+            {tabStats[sidebarTab].map((item) => (
+              <div key={`${sidebarTab}-${item.label}`} className="sidebar-stat-card">
+                <span className="sidebar-stat-value">{item.value}</span>
+                <span className="sidebar-stat-label">{item.label}</span>
+              </div>
+            ))}
+          </div>
+
+          <div className="sidebar-spotlight-card">
+            <div className="sidebar-spotlight-eyebrow">{tabSpotlight[sidebarTab].eyebrow}</div>
+            <div className="sidebar-spotlight-title" title={tabSpotlight[sidebarTab].title}>
+              {tabSpotlight[sidebarTab].title}
+            </div>
+            <div className="sidebar-spotlight-copy">{tabSpotlight[sidebarTab].copy}</div>
           </div>
 
           <div className="sidebar-utility-actions">
@@ -238,44 +332,42 @@ export default function Sidebar({
                   </button>
                 ))}
               {filteredOutline.length === 0 ? (
-                <div className="sidebar-empty-state">
-                  <div className="sidebar-empty-title">{outline.length === 0 ? "No headings yet" : "No headings match this filter"}</div>
-                  <div className="sidebar-empty-copy">
-                    {outline.length === 0
-                      ? "Add a heading in the editor to build a navigable document map."
-                      : "Try a broader heading filter or clear the search to see the full structure."}
-                  </div>
-                  {filterText ? (
-                    <div className="sidebar-empty-actions">
-                      <button type="button" className="sidebar-utility-button" onClick={() => onFilterChange("")}>
-                        Clear filter
-                      </button>
-                    </div>
-                  ) : null}
-                </div>
+                <EmptyStateCard
+                  eyebrow={outline.length === 0 ? "Structure" : "Filter"}
+                  title={outline.length === 0 ? "No headings yet" : "No headings match this filter"}
+                  copy={
+                    outline.length === 0
+                      ? "Start with a title and a few section headings. Inkdown will turn them into a live outline for faster navigation."
+                      : "Try a broader heading filter or clear the search to bring the full document map back."
+                  }
+                  actions={
+                    filterText
+                      ? [
+                          {
+                            label: "Clear filter",
+                            onClick: () => onFilterChange("")
+                          }
+                        ]
+                      : []
+                  }
+                />
               ) : null}
             </div>
           ) : sidebarTab === "files" ? (
             <div className="sidebar-content">
               {!workspaceRoot ? (
                 <div className="sidebar-launchpad">
-                  <div className="sidebar-empty-state">
-                    <div className="sidebar-empty-title">Open a writing workspace</div>
-                    <div className="sidebar-empty-copy">
-                      Browse a folder for project notes, open a single Markdown file, or start a blank draft.
-                    </div>
-                    <div className="sidebar-empty-actions">
-                      <button type="button" className="sidebar-utility-button" onClick={onPickWorkspace}>
-                        Open folder
-                      </button>
-                      <button type="button" className="sidebar-utility-button" onClick={onOpenDocument}>
-                        Open document
-                      </button>
-                      <button type="button" className="sidebar-utility-button" onClick={onCreateDocument}>
-                        New document
-                      </button>
-                    </div>
-                  </div>
+                  <EmptyStateCard
+                    eyebrow="Workspace"
+                    tone="hero"
+                    title="Open a writing workspace"
+                    copy="Bring in a folder of notes, open a single Markdown document, or start a clean draft and build from there."
+                    actions={[
+                      { label: "Open folder", onClick: onPickWorkspace },
+                      { label: "Open document", onClick: onOpenDocument },
+                      { label: "New document", onClick: onCreateDocument }
+                    ]}
+                  />
                   {showRecentFiles ? (
                     <div className="sidebar-recent-block">
                       <div className="sidebar-section-label">Recent documents</div>
@@ -295,26 +387,28 @@ export default function Sidebar({
               ) : filteredTree ? (
                 <FileTreeNode node={filteredTree} activeFilePath={activeFilePath} onOpenFile={onOpenFile} />
               ) : (
-                <div className="sidebar-empty-state">
-                  <div className="sidebar-empty-title">No Markdown files to display</div>
-                  <div className="sidebar-empty-copy">
-                    {filterText
-                      ? "No files match the current filter in this workspace."
-                      : "This workspace does not contain visible Markdown files yet."}
-                  </div>
-                  <div className="sidebar-empty-actions">
-                    {filterText ? (
-                      <button type="button" className="sidebar-utility-button" onClick={() => onFilterChange("")}>
-                        Clear filter
-                      </button>
-                    ) : null}
-                    <button type="button" className="sidebar-utility-button" onClick={onPickWorkspace}>
-                      Change folder
-                    </button>
-                    <button type="button" className="sidebar-utility-button" onClick={onOpenDocument}>
-                      Open document
-                    </button>
-                  </div>
+                <>
+                  <EmptyStateCard
+                    eyebrow={filterText ? "Filter" : "Workspace"}
+                    title="No Markdown files to display"
+                    copy={
+                      filterText
+                        ? "No files match the current filter in this workspace."
+                        : "This workspace does not contain visible Markdown files yet. Open a draft or switch folders to keep moving."
+                    }
+                    actions={[
+                      ...(filterText
+                        ? [
+                            {
+                              label: "Clear filter",
+                              onClick: () => onFilterChange("")
+                            }
+                          ]
+                        : []),
+                      { label: "Change folder", onClick: onPickWorkspace },
+                      { label: "Open document", onClick: onOpenDocument }
+                    ]}
+                  />
                   {showRecentFiles ? (
                     <div className="sidebar-recent-block compact">
                       <div className="sidebar-section-label">Recent documents</div>
@@ -330,7 +424,7 @@ export default function Sidebar({
                       </div>
                     </div>
                   ) : null}
-                </div>
+                </>
               )}
             </div>
           ) : (

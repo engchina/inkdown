@@ -22,9 +22,11 @@ test("sidebar turns empty file states into a launchpad with recent documents", (
   assert.match(sidebarSource, /New document/);
 });
 
-test("status bar renders emphasized state and hosts a stateful sidebar toggle icon", () => {
+test("status bar renders emphasized state and hosts sidebar and view controls", () => {
   assert.match(statusSource, /status-state/);
   assert.match(statusSource, /status-pill/);
+  assert.match(statusSource, /status-view-switch/);
+  assert.match(statusSource, /status-view-button/);
   assert.match(statusSource, /status-sidebar-toggle/);
   assert.match(statusSource, /status-sidebar-icon/);
   assert.match(statusSource, /is-split/);
@@ -36,12 +38,14 @@ test("status bar renders emphasized state and hosts a stateful sidebar toggle ic
 test("styles define denser sidebar and status presentation", () => {
   assert.match(stylesSource, /\.sidebar-content-header \{/);
   assert.match(stylesSource, /position: sticky;/);
+  assert.match(stylesSource, /\.sidebar-spotlight-card \{/);
   assert.match(stylesSource, /\.sidebar-empty-state \{/);
   assert.match(stylesSource, /\.sidebar-recent-list \{/);
   assert.match(stylesSource, /\.status-pill \{/);
   assert.match(stylesSource, /\.status-sidebar-toggle \{/);
   assert.match(stylesSource, /\.status-sidebar-icon \{/);
+  assert.match(stylesSource, /\.status-view-switch \{/);
   assert.match(stylesSource, /\.status-sidebar-icon\.is-collapsed \{/);
   assert.match(stylesSource, /\.status-sidebar-icon\.is-split \.status-sidebar-icon-main \{/);
-  assert.match(stylesSource, /\.document-status-dot \{/);
+  assert.match(stylesSource, /\.toolbar-theme-switch \{/);
 });
