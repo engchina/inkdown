@@ -20,101 +20,99 @@
   --heading-scale-5: 1;
   --heading-scale-6: 0.9;
   
-  --bg-0: #f6efe2;
-  --bg-1: #e5d9c5;
-  --panel: rgba(255, 250, 244, 0.7);
-  --panel-strong: rgba(255, 252, 247, 0.92);
-  --panel-soft: rgba(234, 224, 210, 0.54);
-  --border: rgba(74, 55, 38, 0.11);
-  --border-strong: rgba(74, 55, 38, 0.2);
-  --text: #2f2419;
-  --text-soft: #6e5b49;
-  --accent: #9a3412;
-  --accent-soft: rgba(154, 52, 18, 0.14);
-  --code-bg: #1f2b36;
-  --code-fg: #f8f5ef;
-  --quote: #71563c;
-  --quote-border: rgba(154, 52, 18, 0.3);
-  --quote-bg: rgba(255, 248, 240, 0.62);
-  --search-hit-bg: color-mix(in srgb, #f3c46d 42%, var(--panel-strong));
-  --search-hit-current-bg: color-mix(in srgb, var(--accent) 78%, #2d1409);
+  --bg-0: #fcf9f2;
+  --bg-1: #f4ece1;
+  --panel: rgba(255, 252, 248, 0.75);
+  --panel-strong: rgba(255, 255, 255, 0.95);
+  --panel-soft: rgba(245, 238, 228, 0.6);
+  --border: rgba(60, 40, 25, 0.08);
+  --border-strong: rgba(60, 40, 25, 0.15);
+  --text: #2c241b;
+  --text-soft: #786a5a;
+  --accent: #b45309;
+  --accent-soft: rgba(180, 83, 9, 0.12);
+  --code-bg: #1e293b;
+  --code-fg: #f8fafc;
+  --quote: #78350f;
+  --quote-border: rgba(180, 83, 9, 0.3);
+  --quote-bg: rgba(254, 243, 199, 0.4);
+  --search-hit-bg: color-mix(in srgb, #fcd34d 50%, var(--panel-strong));
+  --search-hit-current-bg: color-mix(in srgb, var(--accent) 80%, #451a03);
   --search-hit-current-fg: #f8fafc;
   
-  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
-  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.08), 0 2px 4px -1px rgba(0, 0, 0, 0.04);
-  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.08), 0 4px 6px -2px rgba(0, 0, 0, 0.04);
-  --shadow-xl: 0 24px 48px -12px rgba(0, 0, 0, 0.12), 0 12px 24px -12px rgba(0, 0, 0, 0.04);
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.02);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.04), 0 2px 4px -1px rgba(0, 0, 0, 0.02);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.04), 0 4px 6px -2px rgba(0, 0, 0, 0.02);
+  --shadow-xl: 0 24px 48px -12px rgba(0, 0, 0, 0.06), 0 12px 24px -12px rgba(0, 0, 0, 0.02);
   
   font-family: var(--ui-font);
   color: var(--text);
   background:
-    radial-gradient(circle at 12% 12%, rgba(244, 196, 118, 0.34) 0%, transparent 42%),
-    radial-gradient(circle at 88% 8%, rgba(146, 98, 69, 0.16) 0%, transparent 36%),
-    radial-gradient(circle at 50% 96%, rgba(194, 167, 126, 0.24) 0%, transparent 44%),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.28) 0, rgba(255, 255, 255, 0.28) 1px, transparent 1px, transparent 24px),
+    radial-gradient(circle at 10% 10%, rgba(217, 119, 6, 0.04) 0%, transparent 40%),
+    radial-gradient(circle at 90% 90%, rgba(120, 113, 108, 0.05) 0%, transparent 40%),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.25) 0, rgba(255, 255, 255, 0.25) 1px, transparent 1px, transparent 24px),
     linear-gradient(180deg, var(--bg-0) 0%, var(--bg-1) 100%);
   background-attachment: fixed;
   color-scheme: light;
 }
 
 :root[data-theme="forest"] {
-  --bg-0: #edf7ef;
-  --bg-1: #d7eadc;
-  --panel: rgba(248, 255, 249, 0.6);
-  --panel-strong: rgba(250, 255, 251, 0.84);
-  --panel-soft: rgba(222, 241, 227, 0.52);
-  --border: rgba(11, 83, 63, 0.09);
-  --border-strong: rgba(11, 83, 63, 0.18);
-  --text: #163629;
-  --text-soft: #3d6b56;
-  --accent: #1d7a57;
-  --accent-soft: rgba(29, 122, 87, 0.15);
-  --quote: #285642;
-  --quote-border: rgba(29, 122, 87, 0.28);
-  --quote-bg: rgba(248, 255, 250, 0.56);
-  --search-hit-bg: color-mix(in srgb, #dfc26c 28%, var(--panel-strong));
-  --search-hit-current-bg: color-mix(in srgb, var(--accent) 76%, #052e16);
-  --search-hit-current-fg: #ecfdf5;
+  --bg-0: #f1f5f2;
+  --bg-1: #e1ede5;
+  --panel: rgba(246, 252, 248, 0.7);
+  --panel-strong: rgba(255, 255, 255, 0.95);
+  --panel-soft: rgba(230, 242, 235, 0.55);
+  --border: rgba(20, 83, 45, 0.08);
+  --border-strong: rgba(20, 83, 45, 0.16);
+  --text: #143524;
+  --text-soft: #4a755d;
+  --accent: #0f766e;
+  --accent-soft: rgba(15, 118, 110, 0.12);
+  --quote: #064e3b;
+  --quote-border: rgba(15, 118, 110, 0.3);
+  --quote-bg: rgba(209, 250, 229, 0.4);
+  --search-hit-bg: color-mix(in srgb, #fbe083 40%, var(--panel-strong));
+  --search-hit-current-bg: color-mix(in srgb, var(--accent) 80%, #022c22);
+  --search-hit-current-fg: #f0fdf4;
   background:
-    radial-gradient(circle at 12% 18%, rgba(130, 198, 164, 0.34) 0%, transparent 46%),
-    radial-gradient(circle at 88% 10%, rgba(215, 189, 113, 0.18) 0%, transparent 42%),
-    radial-gradient(circle at 82% 90%, rgba(111, 179, 141, 0.26) 0%, transparent 52%),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.24) 0, rgba(255, 255, 255, 0.24) 1px, transparent 1px, transparent 24px),
+    radial-gradient(circle at 15% 15%, rgba(16, 185, 129, 0.04) 0%, transparent 40%),
+    radial-gradient(circle at 85% 85%, rgba(6, 95, 70, 0.05) 0%, transparent 45%),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.2) 0, rgba(255, 255, 255, 0.2) 1px, transparent 1px, transparent 24px),
     linear-gradient(180deg, var(--bg-0) 0%, var(--bg-1) 100%);
   background-attachment: fixed;
 }
 
 :root[data-theme="midnight"] {
-  --bg-0: #11161d;
-  --bg-1: #090d12;
-  --panel: rgba(18, 22, 29, 0.72);
-  --panel-strong: rgba(28, 34, 44, 0.86);
-  --panel-soft: rgba(20, 25, 33, 0.54);
-  --border: rgba(255, 255, 255, 0.08);
-  --border-strong: rgba(255, 255, 255, 0.16);
-  --text: #f6f1e7;
-  --text-soft: #a9a094;
-  --accent: #f59e0b;
-  --accent-soft: rgba(245, 158, 11, 0.18);
+  --bg-0: #0f172a;
+  --bg-1: #020617;
+  --panel: rgba(15, 23, 42, 0.65);
+  --panel-strong: rgba(30, 41, 59, 0.88);
+  --panel-soft: rgba(2, 6, 23, 0.45);
+  --border: rgba(248, 250, 252, 0.06);
+  --border-strong: rgba(248, 250, 252, 0.12);
+  --text: #f8fafc;
+  --text-soft: #94a3b8;
+  --accent: #3b82f6;
+  --accent-soft: rgba(59, 130, 246, 0.15);
   --code-bg: #000000;
   --code-fg: #f1f5f9;
-  --quote: #d6cab9;
-  --quote-border: rgba(245, 158, 11, 0.4);
-  --quote-bg: rgba(39, 28, 17, 0.42);
-  --search-hit-bg: color-mix(in srgb, #f6c36c 28%, rgba(15, 20, 28, 0.94));
-  --search-hit-current-bg: color-mix(in srgb, var(--accent) 68%, #1b1205);
+  --quote: #cbd5e1;
+  --quote-border: rgba(59, 130, 246, 0.35);
+  --quote-bg: rgba(30, 41, 59, 0.4);
+  --search-hit-bg: color-mix(in srgb, #facc15 30%, rgba(15, 23, 42, 0.9));
+  --search-hit-current-bg: color-mix(in srgb, var(--accent) 65%, #020617);
   --search-hit-current-fg: #f8fafc;
   
-  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
-  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.4), 0 2px 4px -1px rgba(0, 0, 0, 0.2);
-  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.6), 0 4px 6px -2px rgba(0, 0, 0, 0.3);
-  --shadow-xl: 0 32px 64px -12px rgba(0, 0, 0, 0.8), 0 16px 32px -12px rgba(0, 0, 0, 0.4);
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.5), 0 2px 4px -1px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.7), 0 4px 6px -2px rgba(0, 0, 0, 0.4);
+  --shadow-xl: 0 32px 64px -12px rgba(0, 0, 0, 0.9), 0 16px 32px -12px rgba(0, 0, 0, 0.5);
   
   background:
-    radial-gradient(circle at 0% 0%, rgba(245, 158, 11, 0.12) 0%, transparent 45%),
-    radial-gradient(circle at 100% 100%, rgba(59, 130, 246, 0.1) 0%, transparent 50%),
-    radial-gradient(circle at 50% 50%, rgba(120, 119, 198, 0.06) 0%, transparent 60%),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.04) 0, rgba(255, 255, 255, 0.04) 1px, transparent 1px, transparent 24px),
+    radial-gradient(circle at 15% 50%, rgba(56, 189, 248, 0.05) 0%, transparent 45%),
+    radial-gradient(circle at 85% 30%, rgba(139, 92, 246, 0.06) 0%, transparent 50%),
+    radial-gradient(circle at 50% 100%, rgba(59, 130, 246, 0.04) 0%, transparent 40%),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.02) 0, rgba(255, 255, 255, 0.02) 1px, transparent 1px, transparent 24px),
     linear-gradient(180deg, var(--bg-0) 0%, var(--bg-1) 100%);
   background-attachment: fixed;
   color-scheme: dark;
@@ -409,15 +407,15 @@ select {
 }
 
 .toolbar-theme-swatch.theme-paper {
-  background: linear-gradient(135deg, #d97706 0%, #f6d7a4 100%);
+  background: linear-gradient(135deg, #fbbf24 0%, #fef3c7 100%);
 }
 
 .toolbar-theme-swatch.theme-forest {
-  background: linear-gradient(135deg, #1d7a57 0%, #8bc0a4 100%);
+  background: linear-gradient(135deg, #10b981 0%, #ecfdf5 100%);
 }
 
 .toolbar-theme-swatch.theme-midnight {
-  background: linear-gradient(135deg, #f59e0b 0%, #25324a 100%);
+  background: linear-gradient(135deg, #3b82f6 0%, #0f172a 100%);
 }
 
 .document-toolbar-modes {
