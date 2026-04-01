@@ -15,6 +15,6 @@ test("app marks active panes in split editing layouts", () => {
 test("styles define focused pane treatments for editor, source, and preview", () => {
   assert.match(stylesSource, /\.editor-pane\.pane-active \.paper \{/);
   assert.match(stylesSource, /\.side-pane\.pane-active \{/);
-  assert.match(stylesSource, /\.side-pane\.pane-active \.side-pane-header \{/);
   assert.match(stylesSource, /\.source-pane\.pane-active \.source-editor-shell,/);
+  assert.match(stylesSource, /\.preview-pane\.pane-active \.preview-surface \{/);
 });

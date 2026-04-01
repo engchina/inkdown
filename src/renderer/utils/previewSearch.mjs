@@ -1,6 +1,6 @@
 function isExcludedSearchContainer(node) {
   return Boolean(
-    node?.closest?.("pre, code, .mermaid, .remote-media-placeholder, .katex, .katex-display, .yaml-front-matter")
+    node?.closest?.("pre, code, .mermaid, .remote-media-placeholder, .katex, .katex-display")
   );
 }
 

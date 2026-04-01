@@ -1,6 +1,5 @@
 import React, { useMemo } from "react";
-import { Braces, Files, ListTree } from "lucide-react";
-import PropertiesPanel from "./PropertiesPanel";
+import { Files, ListTree } from "lucide-react";
 
 function getPathLabel(filePath) {
   return String(filePath || "")
@@ -113,10 +112,8 @@ export default function Sidebar({
   activeFilePath,
   activeOutlineId,
   filterText,
-  frontMatterRaw,
   onCreateDocument,
   onFilterChange,
-  onFrontMatterRawChange,
   onJumpOutline,
   onOpenDocument,
   onOpenFile,
@@ -138,16 +135,8 @@ export default function Sidebar({
   const filteredFileCount = useMemo(() => countTreeFiles(filteredTree), [filteredTree]);
   const fileRootLabel = workspaceRoot ? workspaceRoot.split(/[\\/]/).filter(Boolean).pop() : "No folder opened";
   const activeFileLabel = activeFilePath ? getPathLabel(activeFilePath) : "No document selected";
-  const hasFrontMatter = Boolean(String(frontMatterRaw || "").trim());
-  const frontMatterLineCount = useMemo(
-    () =>
-      hasFrontMatter
-        ? String(frontMatterRaw)
-            .split(/\r?\n/)
-            .filter((line) => line.trim()).length
-        : 0,
-    [frontMatterRaw, hasFrontMatter]
-  );
+  const activeTab = sidebarTab === "files" ? "files" : "outline";
+  const showRecentFiles = activeTab === "files" && recentFiles.length > 0;
   const tabMeta = {
     outline: {
       title: "Document map",
@@ -160,16 +149,8 @@ export default function Sidebar({
       caption: workspaceRoot ? workspaceRoot : "Open a folder to browse Markdown files",
       badge: workspaceRoot ? "Workspace" : "Folder",
       sectionLabel: "Filter files"
-    },
-    properties: {
-      title: "Front Matter",
-      caption: hasFrontMatter ? "Document metadata kept in standard YAML front matter" : "Optional metadata for publishing and note workflows",
-      badge: hasFrontMatter ? "Ready" : "Optional",
-      sectionLabel: "Document metadata"
     }
   };
-  const activeTabMeta = tabMeta[sidebarTab];
-  const showRecentFiles = sidebarTab === "files" && recentFiles.length > 0;
   const tabSpotlight = {
     outline: {
       eyebrow: "Current draft",
@@ -186,13 +167,6 @@ export default function Sidebar({
           ? `Current file: ${activeFileLabel}`
           : "Choose a Markdown file from the workspace tree or open a recent draft."
         : "Inkdown works best with a focused folder of notes, drafts, and reference material."
-    },
-    properties: {
-      eyebrow: "Metadata health",
-      title: hasFrontMatter ? "Structured front matter is available" : "No front matter in this draft",
-      copy: hasFrontMatter
-        ? `${frontMatterLineCount} populated YAML line${frontMatterLineCount === 1 ? "" : "s"} ready for previews, exports, and publishing flows.`
-        : "Add YAML front matter to keep publishing metadata, summaries, and custom fields close to the draft."
     }
   };
   const tabStats = {
@@ -208,20 +182,12 @@ export default function Sidebar({
       : [
           { value: recentFiles.length, label: "Recent" },
           { value: 3, label: "Quick starts" }
-        ],
-    properties: [
-      { value: hasFrontMatter ? "YAML" : "None", label: "Status" },
-      { value: frontMatterLineCount, label: "Lines" }
-    ]
+        ]
   };
   const resultBadge =
-    sidebarTab === "outline"
+    activeTab === "outline"
       ? `${filteredOutline.length} item${filteredOutline.length === 1 ? "" : "s"}`
-      : sidebarTab === "files"
-        ? `${filteredFileCount} file${filteredFileCount === 1 ? "" : "s"}`
-        : hasFrontMatter
-          ? "Metadata ready"
-          : "No metadata";
+      : `${filteredFileCount} file${filteredFileCount === 1 ? "" : "s"}`;
 
   return (
     <aside className="sidebar-panel">
@@ -229,30 +195,21 @@ export default function Sidebar({
         <div className="sidebar-tabs" role="tablist" aria-label="Sidebar views">
           <button
             type="button"
-            className={`sidebar-tab${sidebarTab === "outline" ? " active" : ""}`}
+            className={`sidebar-tab${activeTab === "outline" ? " active" : ""}`}
             onClick={() => onSidebarTabChange("outline")}
-            aria-selected={sidebarTab === "outline"}
+            aria-selected={activeTab === "outline"}
           >
             <ListTree size={14} strokeWidth={2} />
             <span>Outline</span>
           </button>
           <button
             type="button"
-            className={`sidebar-tab${sidebarTab === "files" ? " active" : ""}`}
+            className={`sidebar-tab${activeTab === "files" ? " active" : ""}`}
             onClick={() => onSidebarTabChange("files")}
-            aria-selected={sidebarTab === "files"}
+            aria-selected={activeTab === "files"}
           >
             <Files size={14} strokeWidth={2} />
             <span>Files</span>
-          </button>
-          <button
-            type="button"
-            className={`sidebar-tab${sidebarTab === "properties" ? " active" : ""}`}
-            onClick={() => onSidebarTabChange("properties")}
-            aria-selected={sidebarTab === "properties"}
-          >
-            <Braces size={14} strokeWidth={2} />
-            <span>Front Matter</span>
           </button>
         </div>
       </div>
@@ -260,17 +217,17 @@ export default function Sidebar({
       <div className="sidebar-body">
         <div className="sidebar-meta">
           <div className="sidebar-meta-copy">
-            <div className="sidebar-kicker">{sidebarTab === "outline" ? "Outline" : sidebarTab === "files" ? "Files" : "Front matter"}</div>
+            <div className="sidebar-kicker">{activeTab === "outline" ? "Outline" : "Files"}</div>
             <div className="sidebar-title-row">
-              <div className="sidebar-title">{activeTabMeta.title}</div>
-              <span className="sidebar-badge">{activeTabMeta.badge}</span>
+              <div className="sidebar-title">{tabMeta[activeTab].title}</div>
+              <span className="sidebar-badge">{tabMeta[activeTab].badge}</span>
             </div>
-            <div className="sidebar-caption">{activeTabMeta.caption}</div>
+            <div className="sidebar-caption">{tabMeta[activeTab].caption}</div>
           </div>
 
           <div className="sidebar-stat-row">
-            {tabStats[sidebarTab].map((item) => (
-              <div key={`${sidebarTab}-${item.label}`} className="sidebar-stat-card">
+            {tabStats[activeTab].map((item) => (
+              <div key={`${activeTab}-${item.label}`} className="sidebar-stat-card">
                 <span className="sidebar-stat-value">{item.value}</span>
                 <span className="sidebar-stat-label">{item.label}</span>
               </div>
@@ -278,15 +235,15 @@ export default function Sidebar({
           </div>
 
           <div className="sidebar-spotlight-card">
-            <div className="sidebar-spotlight-eyebrow">{tabSpotlight[sidebarTab].eyebrow}</div>
-            <div className="sidebar-spotlight-title" title={tabSpotlight[sidebarTab].title}>
-              {tabSpotlight[sidebarTab].title}
+            <div className="sidebar-spotlight-eyebrow">{tabSpotlight[activeTab].eyebrow}</div>
+            <div className="sidebar-spotlight-title" title={tabSpotlight[activeTab].title}>
+              {tabSpotlight[activeTab].title}
             </div>
-            <div className="sidebar-spotlight-copy">{tabSpotlight[sidebarTab].copy}</div>
+            <div className="sidebar-spotlight-copy">{tabSpotlight[activeTab].copy}</div>
           </div>
 
           <div className="sidebar-utility-actions">
-            {sidebarTab === "files" ? (
+            {activeTab === "files" ? (
               <button type="button" className="sidebar-utility-button" onClick={onPickWorkspace}>
                 {workspaceRoot ? "Change folder" : "Open folder"}
               </button>
@@ -299,38 +256,36 @@ export default function Sidebar({
           </div>
         </div>
 
-        {sidebarTab !== "properties" ? (
-          <label className="sidebar-search" htmlFor={`sidebar-filter-${sidebarTab}`}>
-            <span className="sidebar-section-label">{activeTabMeta.sectionLabel}</span>
-            <input
-              id={`sidebar-filter-${sidebarTab}`}
-              className="find-input sidebar-input"
-              type="text"
-              placeholder={sidebarTab === "files" ? "Search by file name" : "Search by heading text"}
-              value={filterText}
-              onChange={(event) => onFilterChange(event.target.value)}
-            />
-          </label>
-        ) : null}
+        <label className="sidebar-search" htmlFor={`sidebar-filter-${activeTab}`}>
+          <span className="sidebar-section-label">{tabMeta[activeTab].sectionLabel}</span>
+          <input
+            id={`sidebar-filter-${activeTab}`}
+            className="find-input sidebar-input"
+            type="text"
+            placeholder={activeTab === "files" ? "Search by file name" : "Search by heading text"}
+            value={filterText}
+            onChange={(event) => onFilterChange(event.target.value)}
+          />
+        </label>
 
         <div className="sidebar-content-shell">
           <div className="sidebar-content-header">
-            <div className="sidebar-section-label">{sidebarTab === "properties" ? activeTabMeta.sectionLabel : "Results"}</div>
+            <div className="sidebar-section-label">Results</div>
             <span className="sidebar-content-count">{resultBadge}</span>
           </div>
 
-          {sidebarTab === "outline" ? (
+          {activeTab === "outline" ? (
             <div className="sidebar-content">
               {filteredOutline.map((item, index) => (
-                  <button
-                    key={item.id}
-                    className={`outline-item level-${item.level}${activeOutlineId === item.id ? " active" : ""}`}
-                    type="button"
-                    onClick={() => onJumpOutline(item, index)}
-                  >
-                    {item.text}
-                  </button>
-                ))}
+                <button
+                  key={item.id}
+                  className={`outline-item level-${item.level}${activeOutlineId === item.id ? " active" : ""}`}
+                  type="button"
+                  onClick={() => onJumpOutline(item, index)}
+                >
+                  {item.text}
+                </button>
+              ))}
               {filteredOutline.length === 0 ? (
                 <EmptyStateCard
                   eyebrow={outline.length === 0 ? "Structure" : "Filter"}
@@ -353,7 +308,7 @@ export default function Sidebar({
                 />
               ) : null}
             </div>
-          ) : sidebarTab === "files" ? (
+          ) : (
             <div className="sidebar-content">
               {!workspaceRoot ? (
                 <div className="sidebar-launchpad">
@@ -426,13 +381,6 @@ export default function Sidebar({
                   ) : null}
                 </>
               )}
-            </div>
-          ) : (
-            <div className="sidebar-content">
-              <PropertiesPanel
-                rawFrontMatter={frontMatterRaw}
-                onRawChange={onFrontMatterRawChange}
-              />
             </div>
           )}
         </div>

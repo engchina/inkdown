@@ -12,7 +12,7 @@ The repository-wide mission and engineering standard live in [AGENTS.md](./AGENT
 - Highlight, superscript, and subscript
 - Bulleted lists, numbered lists, and task lists
 - Link, image, and table insertion
-- YAML front matter, footnotes, and GitHub-style callouts
+- Footnotes and GitHub-style callouts
 - Drag-and-drop and paste image support, with saved documents automatically storing assets in a relative resources directory
 - Open, save, and save-as for Markdown files
 - HTML export

@@ -45,17 +45,6 @@ const sections = [
       "Use the table toolbar for merge, split, clear, and alignment"
     ]
   },
-  {
-    title: "Front Matter",
-    items: [
-      "Use Front Matter to edit title, tags, date, and draft state",
-      "Open Additional fields when a note needs less common metadata",
-      "Turn on advanced controls only when you need type changes or field ordering",
-      "Use each field's row menu for remove and move actions",
-      "Paste comma- or newline-separated tags to add several at once, and jump straight to YAML error lines when parsing fails",
-      "Use merge dialog when pasted front matter conflicts with the current document"
-    ]
-  }
 ];
 
 export default function EditingCheatsheetDialog({ open, onClose }) {

@@ -49,5 +49,5 @@ test("styles define denser sidebar and status presentation", () => {
   assert.match(stylesSource, /\.status-sidebar-icon svg \{/);
   assert.match(stylesSource, /\.status-view-switch \{/);
   assert.match(stylesSource, /\.status-sidebar-icon\.is-collapsed svg \{/);
-  assert.match(stylesSource, /\.toolbar-theme-switch \{/);
+  assert.match(stylesSource, /\.toolbar-section \{/);
 });

@@ -5,14 +5,15 @@ import fs from "node:fs/promises";
 const appSource = await fs.readFile(new URL("../src/renderer/App.jsx", import.meta.url), "utf8");
 const stylesSource = await fs.readFile(new URL("../src/renderer/styles/app.css", import.meta.url), "utf8");
 
-test("editor pane shows next-step guidance for current block context", () => {
-  assert.match(appSource, /const editorObjectGuidance = useMemo/);
-  assert.match(appSource, /Enter creates a sibling heading/);
-  assert.match(appSource, /Use the table toolbar above/);
-  assert.match(appSource, /side-pane-guidance editor-pane-guidance/);
+test("editor context still describes current block and routes through toolbar state", () => {
+  assert.match(appSource, /const editorObjectContext = useMemo/);
+  assert.match(appSource, /const toolbarContext = useMemo/);
+  assert.match(appSource, /pane: "Editor"/);
+  assert.match(appSource, /kind: editorObjectContext\?\.kind \|\| "paragraph"/);
+  assert.match(appSource, /label: editorObjectContext\?\.label \|\| "Paragraph"/);
 });
 
-test("styles define a shared pane guidance line", () => {
-  assert.match(stylesSource, /\.side-pane-guidance \{/);
-  assert.match(stylesSource, /\.editor-pane-guidance \{/);
+test("styles keep shared toolbar emphasis states", () => {
+  assert.match(stylesSource, /\.toolbar-section\.active \{/);
+  assert.match(stylesSource, /\.toolbar-section\.active \.toolbar-section-label \{/);
 });

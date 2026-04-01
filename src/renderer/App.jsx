@@ -42,11 +42,9 @@ import PreferencesDialog from "./components/PreferencesDialog";
 import CommandPalette from "./components/CommandPalette";
 import SlashCommandMenu from "./components/SlashCommandMenu";
 import TableToolbar from "./components/TableToolbar";
-import FrontMatterMergeDialog from "./components/FrontMatterMergeDialog";
 import TableSelectionHandles from "./components/TableSelectionHandles";
 import EditingCheatsheetDialog from "./components/EditingCheatsheetDialog";
 import LinkDialog from "./components/LinkDialog";
-import { summarizeFrontMatter } from "./utils/frontMatter.mjs";
 import { resolveEditingSurface } from "./utils/editingSurface.mjs";
 import { escapeHtml, sanitizePreviewContainer } from "./utils/previewSanitizer.mjs";
 import {
@@ -118,6 +116,10 @@ const defaultPreferences = {
   tableLayouts: {}
 };
 
+function normalizeSidebarTab(value) {
+  return value === "files" ? "files" : "outline";
+}
+
 function isComposingInputEvent(event) {
   return Boolean(event?.isComposing || event?.nativeEvent?.isComposing || event?.keyCode === 229 || event?.nativeEvent?.keyCode === 229);
 }
@@ -155,14 +157,7 @@ const codeLanguageTemplates = {
   mermaid: "graph TD\n  A[Start] --> B[Finish]"
 };
 
-const initialMarkdown = `---
-title: Inkdown
-tags:
-  - typora
-  - markdown
----
-
-# Inkdown
+const initialMarkdown = `# Inkdown
 
 [TOC]
 
@@ -885,243 +880,6 @@ function prependFrontMatter(rawFrontMatter, markdownBody) {
   return `${rawFrontMatter}${body}`;
 }
 
-function buildRawFrontMatter(content) {
-  const normalized = String(content || "").replace(/^\r?\n+|\r?\n+$/g, "");
-  if (!normalized.trim()) {
-    return "";
-  }
-  return `---\n${normalized}\n---\n\n`;
-}
-
-function parseYamlObject(raw) {
-  const normalized = String(raw || "").trim();
-  if (!normalized) {
-    return {};
-  }
-  try {
-    const parsed = yaml.load(normalized);
-    return parsed && typeof parsed === "object" ? parsed : {};
-  } catch {
-    return null;
-  }
-}
-
-function dumpYamlObject(value) {
-  try {
-    return buildRawFrontMatter(yaml.dump(value || {}, { lineWidth: 100, noRefs: true }).trim());
-  } catch {
-    return "";
-  }
-}
-
-function replaceFrontMatterRaw(markdown, rawFrontMatter) {
-  const { body } = extractYamlFrontMatter(markdown);
-  return prependFrontMatter(rawFrontMatter, body);
-}
-
-function mergeYamlValues(currentValue, incomingValue) {
-  if (Array.isArray(currentValue) && Array.isArray(incomingValue)) {
-    return [...new Set([...currentValue, ...incomingValue].map((item) => JSON.stringify(item)))].map((item) => JSON.parse(item));
-  }
-
-  if (
-    currentValue &&
-    incomingValue &&
-    typeof currentValue === "object" &&
-    typeof incomingValue === "object" &&
-    !Array.isArray(currentValue) &&
-    !Array.isArray(incomingValue)
-  ) {
-    const result = { ...currentValue };
-    Object.keys(incomingValue).forEach((key) => {
-      result[key] = key in result ? mergeYamlValues(result[key], incomingValue[key]) : incomingValue[key];
-    });
-    return result;
-  }
-
-  return incomingValue;
-}
-
-function stripWrappingQuotes(value) {
-  const normalized = String(value || "").trim();
-  if (
-    (normalized.startsWith('"') && normalized.endsWith('"')) ||
-    (normalized.startsWith("'") && normalized.endsWith("'"))
-  ) {
-    return normalized.slice(1, -1);
-  }
-  return normalized;
-}
-
-function parseInlineFrontMatterList(value) {
-  return String(value || "")
-    .replace(/^\[/, "")
-    .replace(/\]$/, "")
-    .split(",")
-    .map((item) => stripWrappingQuotes(item))
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
-
-function parseFrontMatterFields(content) {
-  const lines = String(content || "").split(/\r?\n/);
-  const fields = [];
-  let isSimple = true;
-
-  for (let index = 0; index < lines.length; index += 1) {
-    const line = lines[index];
-    if (!line.trim() || /^\s*#/.test(line)) {
-      continue;
-    }
-
-    const match = /^([A-Za-z0-9_-]+):(?:\s*(.*))?$/.exec(line);
-    if (!match) {
-      isSimple = false;
-      continue;
-    }
-
-    const key = match[1];
-    const inlineValue = match[2] ?? "";
-    if (!inlineValue) {
-      const list = [];
-      let nextIndex = index + 1;
-      while (nextIndex < lines.length && /^\s*-\s+/.test(lines[nextIndex])) {
-        list.push(stripWrappingQuotes(lines[nextIndex].replace(/^\s*-\s+/, "")));
-        nextIndex += 1;
-      }
-
-      if (list.length > 0) {
-        fields.push({ id: `${key}-${index}`, key, type: "list", value: list });
-        index = nextIndex - 1;
-        continue;
-      }
-
-      fields.push({ id: `${key}-${index}`, key, type: "text", value: "" });
-      continue;
-    }
-
-    if (inlineValue === "|" || inlineValue === ">" || /[{}]/.test(inlineValue)) {
-      isSimple = false;
-      fields.push({ id: `${key}-${index}`, key, type: "text", value: stripWrappingQuotes(inlineValue) });
-      continue;
-    }
-
-    if (/^\[.*\]$/.test(inlineValue.trim())) {
-      fields.push({ id: `${key}-${index}`, key, type: "list", value: parseInlineFrontMatterList(inlineValue) });
-      continue;
-    }
-
-    fields.push({ id: `${key}-${index}`, key, type: "text", value: stripWrappingQuotes(inlineValue) });
-  }
-
-  return { fields, isSimple };
-}
-
-function formatFrontMatterScalar(value) {
-  const normalized = String(value ?? "").trim();
-  if (!normalized) {
-    return '""';
-  }
-  if (/^[A-Za-z0-9._/-]+$/.test(normalized)) {
-    return normalized;
-  }
-  return JSON.stringify(normalized);
-}
-
-function buildFrontMatterFromFields(fields) {
-  const normalizedFields = fields
-    .map((field) => {
-      const key = String(field.key || "").trim();
-      if (!key) {
-        return null;
-      }
-      if (field.type === "list") {
-        const values = Array.isArray(field.value)
-          ? field.value.map((item) => String(item).trim()).filter(Boolean)
-          : String(field.value || "")
-              .split(",")
-              .map((item) => item.trim())
-              .filter(Boolean);
-        return {
-          key,
-          type: "list",
-          value: values
-        };
-      }
-      return {
-        key,
-        type: "text",
-        value: String(field.value ?? "")
-      };
-    })
-    .filter(Boolean);
-
-  if (normalizedFields.length === 0) {
-    return "";
-  }
-
-  return buildRawFrontMatter(
-    normalizedFields
-      .map((field) => {
-        if (field.type === "list") {
-          if (field.value.length === 0) {
-            return `${field.key}:\n  - ""`;
-          }
-          return `${field.key}:\n${field.value.map((item) => `  - ${formatFrontMatterScalar(item)}`).join("\n")}`;
-        }
-        return `${field.key}: ${formatFrontMatterScalar(field.value)}`;
-      })
-      .join("\n")
-  );
-}
-
-function updateMarkdownFrontMatter(markdown, fields) {
-  const { body } = extractYamlFrontMatter(markdown);
-  return prependFrontMatter(buildFrontMatterFromFields(fields), body);
-}
-
-function mergeFrontMatterRaw(existingRaw, incomingRaw) {
-  const existingObject = parseYamlObject(extractYamlFrontMatter(existingRaw).content || existingRaw);
-  const incomingObject = parseYamlObject(extractYamlFrontMatter(incomingRaw).content || incomingRaw);
-
-  if (existingObject && incomingObject) {
-    return dumpYamlObject(mergeYamlValues(existingObject, incomingObject));
-  }
-
-  const existing = parseFrontMatterFields(extractYamlFrontMatter(existingRaw).content || existingRaw);
-  const incoming = parseFrontMatterFields(extractYamlFrontMatter(incomingRaw).content || incomingRaw);
-
-  if (!existing.isSimple || !incoming.isSimple) {
-    return incomingRaw || existingRaw || "";
-  }
-
-  const merged = [...existing.fields];
-  incoming.fields.forEach((incomingField) => {
-    const matchIndex = merged.findIndex((field) => field.key === incomingField.key);
-    if (matchIndex === -1) {
-      merged.push(incomingField);
-      return;
-    }
-    if (incomingField.type === "list") {
-      const currentValues = Array.isArray(merged[matchIndex].value) ? merged[matchIndex].value : [];
-      const nextValues = Array.isArray(incomingField.value) ? incomingField.value : [];
-      merged[matchIndex] = {
-        ...merged[matchIndex],
-        type: "list",
-        value: [...new Set([...currentValues, ...nextValues].filter(Boolean))]
-      };
-      return;
-    }
-    merged[matchIndex] = {
-      ...merged[matchIndex],
-      type: incomingField.type,
-      value: incomingField.value
-    };
-  });
-
-  return buildFrontMatterFromFields(merged);
-}
-
 function flattenWorkspaceFiles(node, rootPath, files = []) {
   if (!node) {
     return files;
@@ -1250,12 +1008,7 @@ function getEditorSlashContext(instance) {
 function serializeEditorHtmlToMarkdown(html, existingRawFrontMatter = "") {
   const container = document.createElement("div");
   container.innerHTML = String(html || "");
-  const frontMatterNode = container.querySelector(":scope > .yaml-front-matter");
-  const rawFrontMatter = frontMatterNode ? buildRawFrontMatter(frontMatterNode.textContent || "") : existingRawFrontMatter;
-  if (frontMatterNode) {
-    frontMatterNode.remove();
-  }
-  return prependFrontMatter(rawFrontMatter, turndown.turndown(container.innerHTML));
+  return prependFrontMatter(existingRawFrontMatter, turndown.turndown(container.innerHTML));
 }
 
 function extractFootnotes(markdown) {
@@ -1504,19 +1257,6 @@ function resolveImageSources(html, currentFilePath, resolveAsset) {
   return temp;
 }
 
-function buildYamlFrontMatterElement(content) {
-  const wrapper = document.createElement("section");
-  wrapper.className = "yaml-front-matter";
-
-  const pre = document.createElement("pre");
-  const code = document.createElement("code");
-  code.textContent = String(content || "");
-  pre.appendChild(code);
-  wrapper.appendChild(pre);
-
-  return wrapper;
-}
-
 function decorateCalloutBlockquotes(container) {
   Array.from(container.querySelectorAll("blockquote")).forEach((blockquote) => {
     const firstParagraph = blockquote.querySelector(":scope > p:first-child");
@@ -1574,17 +1314,12 @@ function buildFootnotesElement(definitions, order, currentFilePath, resolveAsset
 
 function decorateRenderedHtml(container, outline, options = {}) {
   const {
-    frontMatterContent = "",
     enableCallouts = false,
     footnotes = null,
     currentFilePath = null,
     resolveAsset,
     sanitizeOptions = {}
   } = options;
-
-  if (frontMatterContent) {
-    container.prepend(buildYamlFrontMatterElement(frontMatterContent));
-  }
 
   Array.from(container.querySelectorAll("h1, h2, h3, h4, h5, h6")).forEach((heading, index) => {
     const item = outline[index];
@@ -1638,17 +1373,14 @@ function renderMarkdownForEditor(markdown, currentFilePath, outline) {
 }
 
 function renderMarkdownSnippetForEditor(markdown, currentFilePath) {
-  const { raw: frontMatterRaw, body } = extractYamlFrontMatter(markdown);
+  const { body } = extractYamlFrontMatter(markdown);
   const snippetOutline = extractOutlineFromMarkdown(body);
   const container = resolveImageSources(
     editorMarked.parse(preprocessMarkdownSyntax(body, { enableExtendedInlineSyntax: true })),
     currentFilePath,
     window.editorApi.resolveMarkdownAsset
   );
-  return {
-    frontMatterRaw,
-    html: decorateRenderedHtml(container, snippetOutline, { enableCallouts: true })
-  };
+  return decorateRenderedHtml(container, snippetOutline, { enableCallouts: true });
 }
 
 function renderMarkdownForPreview(
@@ -1835,13 +1567,6 @@ function looksLikeMarkdownSnippet(value) {
   return /^(#{1,6}\s|>\s|[-*+]\s|\d+\.\s|[-*+]\s\[(?: |x|X)\]\s|```|~~~|\|.+\|)/m.test(text) || /\n/.test(text);
 }
 
-function canPasteFrontMatterAtCursor(editor) {
-  if (!editor?.state?.selection?.empty) {
-    return false;
-  }
-  return editor.state.selection.from <= 2;
-}
-
 function formatJsonLikeText(value) {
   const parsed = JSON.parse(value);
   return JSON.stringify(parsed, null, 2);
@@ -1885,26 +1610,6 @@ function getTableLayoutDocumentKey(filePath) {
 
 function buildParagraphNode(schema, text) {
   return schema.nodes.paragraph.create(null, text ? schema.text(text) : null);
-}
-
-function buildInitialVisualMerge(existingRaw, incomingRaw) {
-  const simpleExisting = parseFrontMatterFields(extractYamlFrontMatter(existingRaw).content || existingRaw);
-  const simpleIncoming = parseFrontMatterFields(extractYamlFrontMatter(incomingRaw).content || incomingRaw);
-  if (simpleExisting.isSimple && simpleIncoming.isSimple) {
-    return mergeFrontMatterRaw(existingRaw, incomingRaw);
-  }
-  return incomingRaw || existingRaw || "";
-}
-
-function buildFrontMatterMergeState(existingRaw, incomingRaw, html) {
-  const mergedRaw = buildInitialVisualMerge(existingRaw, incomingRaw);
-  return {
-    currentRaw: existingRaw,
-    incomingRaw,
-    mergedRaw,
-    mergedValue: parseYamlObject(extractYamlFrontMatter(mergedRaw).content || mergedRaw) || {},
-    html
-  };
 }
 
 function findMatches(markdown, query) {
@@ -2188,15 +1893,6 @@ turndown.addRule("headings", {
   }
 });
 
-turndown.addRule("yamlFrontMatter", {
-  filter(node) {
-    return node.nodeType === Node.ELEMENT_NODE && node.classList?.contains("yaml-front-matter");
-  },
-  replacement() {
-    return "\n";
-  }
-});
-
 turndown.addRule("tableOfContents", {
   filter(node) {
     return node.nodeType === Node.ELEMENT_NODE && node.classList?.contains("table-of-contents");
@@ -2262,8 +1958,6 @@ export default function App() {
   const [tableToolbarVisible, setTableToolbarVisible] = useState(false);
   const [tableSelectionCount, setTableSelectionCount] = useState(0);
   const [tableHandleState, setTableHandleState] = useState({ visible: false, rows: [], cols: [] });
-  const [frontMatterMergeState, setFrontMatterMergeState] = useState(null);
-
   const sourceRef = useRef(null);
   const sourcePaneRef = useRef(null);
   const sourceEditorShellRef = useRef(null);
@@ -2289,16 +1983,6 @@ export default function App() {
   const deferredMarkdown = useDeferredValue(markdownText);
   const matches = useMemo(() => findMatches(markdownText, findQuery), [markdownText, findQuery]);
   const stats = useMemo(() => countStats(markdownText), [markdownText]);
-  const frontMatterState = useMemo(() => {
-    const { content, raw } = extractYamlFrontMatter(markdownText);
-    return {
-      ...parseFrontMatterFields(content),
-      raw
-    };
-  }, [markdownText]);
-  const frontMatterSummary = useMemo(() => {
-    return summarizeFrontMatter(frontMatterState.raw);
-  }, [frontMatterState.raw]);
   const recentFiles = useMemo(() => normalizeRecentFiles(preferences.recentFiles), [preferences.recentFiles]);
   const paletteUsage = useMemo(() => normalizePaletteUsage(preferences.paletteUsage), [preferences.paletteUsage]);
   const workspaceFiles = useMemo(
@@ -2458,16 +2142,6 @@ export default function App() {
         shortcut: "Ctrl+Shift+2",
         keywords: "sidebar files workspace"
       },
-        {
-          id: "open-properties",
-          kind: "command",
-          badge: "Side",
-          section: "Sidebar",
-          label: "Show front matter",
-          description: "Edit title, tags, and document metadata",
-          shortcut: "Ctrl+Shift+3",
-          keywords: "sidebar front matter metadata tags yaml"
-        },
       {
         id: "theme-paper",
         kind: "command",
@@ -3534,7 +3208,11 @@ export default function App() {
 
   useEffect(() => {
     window.editorApi.loadPreferences().then((loaded) => {
-      setPreferences((current) => ({ ...current, ...loaded }));
+      setPreferences((current) => ({
+        ...current,
+        ...loaded,
+        sidebarTab: normalizeSidebarTab(loaded?.sidebarTab ?? current.sidebarTab)
+      }));
       setPreferencesReady(true);
     });
   }, []);
@@ -3734,12 +3412,6 @@ export default function App() {
         return;
       }
 
-      if (isModifier && event.shiftKey && key === "3") {
-        event.preventDefault();
-        updatePreferences({ sidebarVisible: true, sidebarTab: "properties" });
-        return;
-      }
-
       if (event.key === "Escape" && commandPaletteOpen) {
         event.preventDefault();
         closeCommandPalette();
@@ -3902,34 +3574,11 @@ export default function App() {
 
       if (pastedText && editorFocused && looksLikeMarkdownSnippet(pastedText)) {
         event.preventDefault();
-        const renderedSnippet = renderMarkdownSnippetForEditor(pastedText, filePath);
-        const shouldApplyFrontMatter = renderedSnippet.frontMatterRaw && canPasteFrontMatterAtCursor(editor);
-        if (renderedSnippet.frontMatterRaw && shouldApplyFrontMatter) {
-          const existing = extractYamlFrontMatter(markdownText);
-          const existingParsed = parseFrontMatterFields(existing.content);
-          const incomingParsed = parseFrontMatterFields(extractYamlFrontMatter(renderedSnippet.frontMatterRaw).content);
-
-          if (!existingParsed.isSimple || !incomingParsed.isSimple) {
-            setFrontMatterMergeState(buildFrontMatterMergeState(existing.raw, renderedSnippet.frontMatterRaw, renderedSnippet.html));
-            setStatus("Review front matter merge before inserting");
-            return;
-          }
-
-          setMarkdownText((current) => {
-            const currentFrontMatter = extractYamlFrontMatter(current);
-            const mergedRaw = mergeFrontMatterRaw(currentFrontMatter.raw, renderedSnippet.frontMatterRaw);
-            return prependFrontMatter(mergedRaw, currentFrontMatter.body);
-          });
-          setIsDirty(true);
-        } else if (renderedSnippet.frontMatterRaw) {
-          setStatus("Pasted Markdown snippet and skipped front matter outside document start");
-        }
-        runEditorCommand((chain) => chain.insertContent(renderedSnippet.html).run(), {
+        const renderedSnippetHtml = renderMarkdownSnippetForEditor(pastedText, filePath);
+        runEditorCommand((chain) => chain.insertContent(renderedSnippetHtml).run(), {
           preserveScroll: true
         });
-        if (!renderedSnippet.frontMatterRaw || shouldApplyFrontMatter) {
-          setStatus("Inserted Markdown snippet");
-        }
+        setStatus("Inserted Markdown snippet");
         return;
       }
 
@@ -3990,7 +3639,14 @@ export default function App() {
   const documentTitle = useMemo(() => basenamePath(filePath), [filePath]);
 
   function updatePreferences(patch) {
-    setPreferences((current) => ({ ...current, ...(typeof patch === "function" ? patch(current) : patch) }));
+    setPreferences((current) => {
+      const nextPatch = typeof patch === "function" ? patch(current) : patch;
+      return {
+        ...current,
+        ...nextPatch,
+        sidebarTab: normalizeSidebarTab(nextPatch?.sidebarTab ?? current.sidebarTab)
+      };
+    });
   }
 
   function rememberRecentFile(nextFilePath) {
@@ -4492,77 +4148,6 @@ export default function App() {
     setCommandPaletteQuery("");
   }
 
-  function commitFrontMatterFields(nextFields) {
-    setMarkdownText((current) => updateMarkdownFrontMatter(current, nextFields));
-    setIsDirty(true);
-  }
-
-  function updateFrontMatterRaw(raw) {
-    setMarkdownText((current) => replaceFrontMatterRaw(current, raw));
-    setIsDirty(true);
-  }
-
-  function addFrontMatterField() {
-    commitFrontMatterFields([...frontMatterState.fields, { key: "", type: "text", value: "" }]);
-    updatePreferences({ sidebarVisible: true, sidebarTab: "properties" });
-    setStatus("Added a front matter field");
-  }
-
-  function removeFrontMatterField(index) {
-    commitFrontMatterFields(frontMatterState.fields.filter((_, fieldIndex) => fieldIndex !== index));
-    setStatus("Removed property");
-  }
-
-  function updateFrontMatterField(index, patch) {
-    const nextFields = frontMatterState.fields.map((field, fieldIndex) => {
-      if (fieldIndex !== index) {
-        return field;
-      }
-      const nextType = patch.type || field.type;
-      let nextValue = patch.value ?? field.value;
-      if (typeof nextValue === "string" && nextType === "list") {
-        nextValue = nextValue
-          .split(",")
-          .map((item) => item.trim())
-          .filter(Boolean);
-      }
-      if (Array.isArray(nextValue) && nextType === "text") {
-        nextValue = nextValue.join(", ");
-      }
-      return {
-        ...field,
-        ...patch,
-        type: nextType,
-        value: nextValue
-      };
-    });
-    commitFrontMatterFields(nextFields);
-  }
-
-  function closeFrontMatterMergeDialog() {
-    setFrontMatterMergeState(null);
-  }
-
-  function applyFrontMatterMergeAndInsert({ mergedRaw, keepCurrent = false, replace = false, bodyOnly = false }) {
-    if (!frontMatterMergeState) {
-      return;
-    }
-
-    const snippetHtml = frontMatterMergeState.html;
-    if (!bodyOnly) {
-      setMarkdownText((current) => {
-        const existing = extractYamlFrontMatter(current);
-        const nextRaw = replace ? frontMatterMergeState.incomingRaw : keepCurrent ? existing.raw : mergedRaw;
-        return prependFrontMatter(nextRaw, existing.body);
-      });
-      setIsDirty(true);
-    }
-
-    runEditorCommand((chain) => chain.insertContent(snippetHtml).run(), { preserveScroll: true });
-    setStatus(bodyOnly ? "Inserted body and kept current front matter" : "Merged front matter and inserted content");
-    closeFrontMatterMergeDialog();
-  }
-
   async function executeCommandPaletteItem(item) {
     if (!item) {
       return;
@@ -4618,9 +4203,6 @@ export default function App() {
         break;
       case "open-files":
         updatePreferences({ sidebarVisible: true, sidebarTab: "files" });
-        break;
-      case "open-properties":
-        updatePreferences({ sidebarVisible: true, sidebarTab: "properties" });
         break;
       case "theme-paper":
         updatePreferences({ theme: "paper" });
@@ -4700,7 +4282,7 @@ export default function App() {
 
   function syncMarkdownFromEditor(instance) {
     programmaticMarkdownSyncRef.current = true;
-    const nextMarkdown = serializeEditorHtmlToMarkdown(instance.getHTML(), frontMatterState.raw);
+    const nextMarkdown = serializeEditorHtmlToMarkdown(instance.getHTML(), extractYamlFrontMatter(markdownText).raw);
     lastEditorMarkdownRef.current = nextMarkdown;
     startTransition(() => {
       const nextOutline = extractOutlineFromMarkdown(nextMarkdown);
@@ -5424,9 +5006,7 @@ export default function App() {
             sidebarTab={preferences.sidebarTab}
             onSidebarTabChange={(tab) => updatePreferences({ sidebarTab: tab })}
             filterText={sidebarFilter}
-            frontMatterRaw={frontMatterState.raw}
             onFilterChange={setSidebarFilter}
-            onFrontMatterRawChange={updateFrontMatterRaw}
           />
         ) : null}
 
@@ -5550,43 +5130,6 @@ export default function App() {
         onSelect={executeSlashCommand}
       />
 
-      <FrontMatterMergeDialog
-        open={Boolean(frontMatterMergeState)}
-        currentRaw={frontMatterMergeState?.currentRaw}
-        incomingRaw={frontMatterMergeState?.incomingRaw}
-        mergedRaw={frontMatterMergeState?.mergedRaw || ""}
-        mergedValue={frontMatterMergeState?.mergedValue}
-        onChangeMerged={(value) =>
-          setFrontMatterMergeState((current) => {
-            if (!current) {
-              return current;
-            }
-            const parsed = parseYamlObject(extractYamlFrontMatter(value).content || value);
-            return {
-              ...current,
-              mergedRaw: value,
-              mergedValue: parsed ?? current.mergedValue
-            };
-          })
-        }
-        onChangeMergedValue={(value) =>
-          setFrontMatterMergeState((current) =>
-            current
-              ? {
-                  ...current,
-                  mergedValue: value,
-                  mergedRaw: dumpYamlObject(value)
-                }
-              : current
-          )
-        }
-        onApplyMerged={() => applyFrontMatterMergeAndInsert({ mergedRaw: frontMatterMergeState?.mergedRaw || "" })}
-        onKeepCurrent={() => applyFrontMatterMergeAndInsert({ keepCurrent: true })}
-        onReplace={() => applyFrontMatterMergeAndInsert({ replace: true })}
-        onBodyOnly={() => applyFrontMatterMergeAndInsert({ bodyOnly: true })}
-        onCancel={closeFrontMatterMergeDialog}
-      />
-
       <EditingCheatsheetDialog open={editingCheatsheetOpen} onClose={() => setEditingCheatsheetOpen(false)} />
       <LinkDialog
         open={Boolean(linkDialogState)}
@@ -5600,4 +5143,3 @@ export default function App() {
     </div>
   );
 }
-

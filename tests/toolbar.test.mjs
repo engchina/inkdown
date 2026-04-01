@@ -5,20 +5,12 @@ import fs from "node:fs/promises";
 const toolbarSource = await fs.readFile(new URL("../src/renderer/components/Toolbar.jsx", import.meta.url), "utf8");
 const stylesSource = await fs.readFile(new URL("../src/renderer/styles/app.css", import.meta.url), "utf8");
 
-test("toolbar exposes theme switching and direct save action in the app shell", () => {
-  assert.match(toolbarSource, /toolbar-theme-switch/);
+test("toolbar exposes utility actions in the app shell", () => {
+  assert.match(toolbarSource, /toolbar-section-utility/);
   assert.match(toolbarSource, /title="Save"/);
+  assert.match(toolbarSource, /title="Command Palette"/);
   assert.doesNotMatch(toolbarSource, /<ToolbarMenu label="Insert"/);
   assert.doesNotMatch(toolbarSource, /buildInsertMenuItems/);
-});
-
-test("toolbar keeps theme chips available for quick switching", () => {
-  assert.match(toolbarSource, /const themeOptions = \[/);
-  assert.match(toolbarSource, /\{ value: "paper", label: "Paper" \}/);
-  assert.match(toolbarSource, /\{ value: "forest", label: "Forest" \}/);
-  assert.match(toolbarSource, /\{ value: "midnight", label: "Midnight" \}/);
-  assert.match(stylesSource, /\.toolbar-theme-switch \{/);
-  assert.match(stylesSource, /\.toolbar-theme-chip \{/);
 });
 
 test("format toolbar carries the core insertion actions inline", () => {
@@ -36,20 +28,19 @@ test("format toolbar groups commands by writing task", () => {
   assert.match(toolbarSource, /<ToolbarSection title="Review"/);
 });
 
-test("toolbar separates utility and mode controls for responsive layout", () => {
-  assert.match(toolbarSource, /document-toolbar-utility/);
-  assert.match(toolbarSource, /document-toolbar-modes/);
-  assert.match(stylesSource, /\.document-toolbar-utility,/);
+test("toolbar keeps utility and contextual sections responsive", () => {
+  assert.match(toolbarSource, /toolbar-section-utility/);
+  assert.match(toolbarSource, /toolbar-context-actions/);
   assert.match(stylesSource, /@media \(max-width: 1024px\)/);
-  assert.match(stylesSource, /\.format-toolbar \{\s*min-height: 64px;/);
+  assert.match(stylesSource, /\.format-toolbar \{/);
+  assert.match(stylesSource, /\.toolbar-section \{/);
 });
 
-test("toolbar supports contextual emphasis and current context pill", () => {
+test("toolbar supports contextual emphasis and action pills", () => {
   assert.match(toolbarSource, /resolveToolbarSectionEmphasis/);
-  assert.match(toolbarSource, /toolbar-context-pill/);
   assert.match(toolbarSource, /toolbar-context-actions/);
   assert.match(stylesSource, /\.toolbar-section\.active \{/);
-  assert.match(stylesSource, /\.toolbar-context-pill \{/);
+  assert.match(stylesSource, /\.toolbar-context-actions \{/);
   assert.match(stylesSource, /\.toolbar-context-action \{/);
 });
 

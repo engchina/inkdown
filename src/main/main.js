@@ -11,11 +11,8 @@ const isDev = Boolean(process.env.VITE_DEV_SERVER_URL);
 const ASSET_PROTOCOL = "inkdown-asset";
 const MARKDOWN_EXTENSIONS = new Set(DEFAULT_MARKDOWN_EXTENSIONS);
 const HELP_LINKS = {
-  quickStart: "https://support.typora.io/Quick-Start/",
   markdownReference: "https://support.typora.io/Markdown-Reference/",
-  customThemes: "https://support.typora.io/Custom-Themes/",
-  whatsNew: "https://support.typora.io/what's-new/",
-  website: "https://typora.io/"
+  website: "https://github.com/engchina"
 };
 
 const state = {
@@ -698,11 +695,6 @@ function rebuildMenu(window) {
           accelerator: "CmdOrCtrl+Shift+2",
           click: () => emitMenuAction(window, { type: "set-sidebar-tab", tab: "files" })
         },
-        {
-          label: "Front Matter",
-          accelerator: "CmdOrCtrl+Shift+3",
-          click: () => emitMenuAction(window, { type: "set-sidebar-tab", tab: "properties" })
-        },
         { type: "separator" },
         {
           label: "Editor Only",
@@ -780,10 +772,6 @@ function rebuildMenu(window) {
       label: "Help",
       submenu: [
         {
-          label: "Quick Start",
-          click: () => shell.openExternal(HELP_LINKS.quickStart)
-        },
-        {
           label: "Markdown Reference",
           click: () => shell.openExternal(HELP_LINKS.markdownReference)
         },
@@ -791,14 +779,6 @@ function rebuildMenu(window) {
           label: "Shortcuts & Transforms",
           accelerator: "CmdOrCtrl+/",
           click: () => emitMenuAction(window, { type: "open-editing-cheatsheet" })
-        },
-        {
-          label: "Custom Themes",
-          click: () => shell.openExternal(HELP_LINKS.customThemes)
-        },
-        {
-          label: "What's New",
-          click: () => shell.openExternal(HELP_LINKS.whatsNew)
         },
         { type: "separator" },
         {

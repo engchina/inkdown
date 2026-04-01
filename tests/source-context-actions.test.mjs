@@ -9,8 +9,8 @@ test("source pane surfaces object-level context and actions", () => {
   assert.match(appSource, /Link selected/);
   assert.match(appSource, /Image selected/);
   assert.match(appSource, /Edit Link/);
-  assert.match(appSource, /Remove Link/);
+  assert.match(appSource, /Remove/);
   assert.match(appSource, /Replace Image/);
-  assert.match(appSource, /Remove Image/);
-  assert.match(appSource, /Add Table Row/);
+  assert.match(appSource, /Add Row/);
+  assert.match(appSource, /Copy HTML/);
 });

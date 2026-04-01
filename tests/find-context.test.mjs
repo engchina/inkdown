@@ -16,17 +16,17 @@ test("find bar and status bar receive active pane context", () => {
   assert.match(statusSource, /positionSummary/);
 });
 
-test("source and preview headers render contextual chips", () => {
-  assert.match(appSource, /side-pane-header-row/);
-  assert.match(appSource, /side-pane-chip/);
-  assert.match(appSource, /sourceSelectionMeta\.lineLabel/);
-  assert.match(appSource, /sourceSelectionMeta\.columnLabel/);
-  assert.match(appSource, /HTTP Media Blocked/);
+test("source and preview context route through toolbar state", () => {
+  assert.match(appSource, /const toolbarContext = useMemo/);
+  assert.match(appSource, /pane: "Source"/);
+  assert.match(appSource, /pane: "Preview"/);
+  assert.match(appSource, /sourceSelectionMeta\.statusLabel/);
+  assert.match(appSource, /HTTP media blocked/);
 });
 
-test("styles define pane header chips and find scope chip", () => {
-  assert.match(stylesSource, /\.side-pane-header-row \{/);
-  assert.match(stylesSource, /\.side-pane-chip \{/);
-  assert.match(stylesSource, /\.side-pane-chip\.position-chip,/);
+test("styles define find summary chips and toolbar context actions", () => {
+  assert.match(stylesSource, /\.find-bar-summary-chip \{/);
   assert.match(stylesSource, /\.find-scope-chip \{/);
+  assert.match(stylesSource, /\.toolbar-context-actions \{/);
+  assert.match(stylesSource, /\.toolbar-context-action \{/);
 });
