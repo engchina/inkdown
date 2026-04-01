@@ -1,10 +1,13 @@
-import React from "react";
+import React, { useMemo, useRef, useState } from "react";
 import * as yaml from "js-yaml";
+import { formatFrontMatterDate, getYamlErrorDetails, splitTagTokens } from "../utils/frontMatter.mjs";
 
 function wrapYaml(raw) {
   const normalized = String(raw || "").trim();
   return normalized ? `---\n${normalized}\n---\n\n` : "";
 }
+
+const COMMON_FIELD_SET = new Set(["title", "tags", "date", "description", "draft"]);
 
 function parseScalar(value) {
   const text = String(value ?? "");
@@ -45,6 +48,10 @@ function convertValueKind(value, nextKind) {
 
 function dumpYaml(value) {
   return wrapYaml(yaml.dump(value || {}, { lineWidth: 100, noRefs: true }).trim());
+}
+
+function isPlainObject(value) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 function cloneValue(value) {
@@ -131,20 +138,54 @@ function recommendationForKey(key) {
   return null;
 }
 
-function countVisibleFields(value) {
+function normalizeTagList(value) {
   if (Array.isArray(value)) {
-    return value.reduce((total, item) => total + countVisibleFields(item), value.length);
+    return value.filter((item) => typeof item === "string" && item.trim()).map((item) => item.trim());
   }
-
-  if (value && typeof value === "object") {
-    return Object.entries(value).reduce((total, [, child]) => total + countVisibleFields(child), Object.keys(value).length);
+  if (typeof value === "string" && value.trim()) {
+    return [value.trim()];
   }
-
-  return 1;
+  return [];
 }
 
-function TreeEditor({ editable = false, onChange, path = [], value }) {
+function canEditCommonField(key, value) {
+  if (value === undefined) {
+    return true;
+  }
+
+  switch (String(key || "").toLowerCase()) {
+    case "title":
+    case "date":
+    case "description":
+      return typeof value === "string";
+    case "draft":
+      return typeof value === "boolean";
+    case "tags":
+      return typeof value === "string" || (Array.isArray(value) && value.every((item) => typeof item === "string"));
+    default:
+      return false;
+  }
+}
+
+function TreeEditor({ editable = false, onChange, path = [], showAdvancedControls = false, value }) {
+  const [activeActionKey, setActiveActionKey] = useState("");
+  const [newFieldName, setNewFieldName] = useState("");
+  const [newFieldType, setNewFieldType] = useState("text");
   const kind = valueKind(value);
+
+  function addObjectField(currentValue, currentPath) {
+    const nextKey = newFieldName.trim();
+    if (!nextKey || Object.prototype.hasOwnProperty.call(currentValue || {}, nextKey)) {
+      return;
+    }
+    onChange({ ...(currentValue || {}), [nextKey]: convertValueKind("", newFieldType) }, currentPath);
+    setNewFieldName("");
+    setNewFieldType("text");
+  }
+
+  function toggleActionMenu(nextKey) {
+    setActiveActionKey((current) => (current === nextKey ? "" : nextKey));
+  }
 
   if (Array.isArray(value)) {
     return (
@@ -156,7 +197,7 @@ function TreeEditor({ editable = false, onChange, path = [], value }) {
                 <div className="front-matter-tree-label-stack">
                   <div className="front-matter-tree-key">[{index}]</div>
                 </div>
-                {editable ? (
+                {editable && showAdvancedControls ? (
                   <select
                     className="front-matter-tree-type"
                     value={valueKind(item)}
@@ -171,20 +212,37 @@ function TreeEditor({ editable = false, onChange, path = [], value }) {
                   </select>
                 ) : null}
                 <div className="front-matter-tree-field">
-                  <TreeEditor editable={editable} onChange={onChange} path={[...path, index]} value={item} />
+                  <TreeEditor
+                    editable={editable}
+                    onChange={onChange}
+                    path={[...path, index]}
+                    showAdvancedControls={showAdvancedControls}
+                    value={item}
+                  />
                 </div>
               </div>
               {editable ? (
                 <div className="front-matter-tree-actions">
-                  <button className="tool-button tool-button-ghost" type="button" onClick={() => onChange(moveAtPath(value, [index], -1), path)}>
-                    Up
+                  <button className="tool-button tool-button-ghost front-matter-action-trigger" type="button" onClick={() => toggleActionMenu(`item-${path.join(".")}-${index}`)}>
+                    Field
                   </button>
-                  <button className="tool-button tool-button-ghost" type="button" onClick={() => onChange(moveAtPath(value, [index], 1), path)}>
-                    Down
-                  </button>
-                  <button className="tool-button tool-button-ghost" type="button" onClick={() => onChange(removeAtPath(value, [index]), path)}>
-                    Remove
-                  </button>
+                  {activeActionKey === `item-${path.join(".")}-${index}` ? (
+                    <div className="front-matter-action-menu">
+                      {showAdvancedControls ? (
+                        <>
+                          <button className="tool-button tool-button-ghost" type="button" onClick={() => onChange(moveAtPath(value, [index], -1), path)}>
+                            Move Up
+                          </button>
+                          <button className="tool-button tool-button-ghost" type="button" onClick={() => onChange(moveAtPath(value, [index], 1), path)}>
+                            Move Down
+                          </button>
+                        </>
+                      ) : null}
+                      <button className="tool-button tool-button-ghost" type="button" onClick={() => onChange(removeAtPath(value, [index]), path)}>
+                        Remove
+                      </button>
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
             </div>
@@ -212,7 +270,7 @@ function TreeEditor({ editable = false, onChange, path = [], value }) {
                     <span className="front-matter-tree-hint">Suggest {recommendationForKey(key)}</span>
                   ) : null}
                 </div>
-                {editable ? (
+                {editable && showAdvancedControls ? (
                   <select
                     className="front-matter-tree-type"
                     value={valueKind(child)}
@@ -227,38 +285,72 @@ function TreeEditor({ editable = false, onChange, path = [], value }) {
                   </select>
                 ) : null}
                 <div className="front-matter-tree-field">
-                  <TreeEditor editable={editable} onChange={onChange} path={[...path, key]} value={child} />
+                  <TreeEditor
+                    editable={editable}
+                    onChange={onChange}
+                    path={[...path, key]}
+                    showAdvancedControls={showAdvancedControls}
+                    value={child}
+                  />
                 </div>
               </div>
               {editable ? (
                 <div className="front-matter-tree-actions">
-                  <button className="tool-button tool-button-ghost" type="button" onClick={() => onChange(moveAtPath(value, [key], -1), path)}>
-                    Up
+                  <button className="tool-button tool-button-ghost front-matter-action-trigger" type="button" onClick={() => toggleActionMenu(`field-${path.join(".")}-${key}`)}>
+                    Field
                   </button>
-                  <button className="tool-button tool-button-ghost" type="button" onClick={() => onChange(moveAtPath(value, [key], 1), path)}>
-                    Down
-                  </button>
-                  <button className="tool-button tool-button-ghost" type="button" onClick={() => onChange(removeAtPath(value, [key]), path)}>
-                    Remove
-                  </button>
+                  {activeActionKey === `field-${path.join(".")}-${key}` ? (
+                    <div className="front-matter-action-menu">
+                      {showAdvancedControls ? (
+                        <>
+                          <button className="tool-button tool-button-ghost" type="button" onClick={() => onChange(moveAtPath(value, [key], -1), path)}>
+                            Move Up
+                          </button>
+                          <button className="tool-button tool-button-ghost" type="button" onClick={() => onChange(moveAtPath(value, [key], 1), path)}>
+                            Move Down
+                          </button>
+                        </>
+                      ) : null}
+                      <button className="tool-button tool-button-ghost" type="button" onClick={() => onChange(removeAtPath(value, [key]), path)}>
+                        Remove
+                      </button>
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
             </div>
           ))}
           {editable ? (
-            <button
-              className="tool-button tool-button-ghost front-matter-add-button"
-              type="button"
-              onClick={() => {
-                const nextKey = window.prompt("Property name");
-                if (!nextKey) {
-                  return;
-                }
-                onChange({ ...(value || {}), [nextKey]: "" }, path);
-              }}
-            >
-              Add Field
-            </button>
+            <div className="front-matter-add-row">
+              <input
+                className="find-input front-matter-add-input"
+                type="text"
+                value={newFieldName}
+                placeholder="New field name"
+                onChange={(event) => setNewFieldName(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    addObjectField(value, path);
+                  }
+                }}
+              />
+              <select
+                className="front-matter-tree-type"
+                value={newFieldType}
+                onChange={(event) => setNewFieldType(event.target.value)}
+              >
+                <option value="text">Text</option>
+                <option value="number">Number</option>
+                <option value="boolean">Boolean</option>
+                <option value="null">Null</option>
+                <option value="list">List</option>
+                <option value="object">Object</option>
+              </select>
+              <button className="tool-button tool-button-ghost front-matter-add-button" type="button" onClick={() => addObjectField(value, path)}>
+                Add Field
+              </button>
+            </div>
           ) : null}
         </div>
       </div>
@@ -285,71 +377,321 @@ function TreeEditor({ editable = false, onChange, path = [], value }) {
 }
 
 export default function PropertiesPanel({ onRawChange, rawFrontMatter }) {
+  const [showAdvancedFieldControls, setShowAdvancedFieldControls] = useState(false);
+  const [tagDraft, setTagDraft] = useState("");
+  const rawTextareaRef = useRef(null);
   let parsed = {};
   let parseFailed = false;
+  let parseError = null;
+  let rootIsObject = true;
 
   try {
-    parsed = yaml.load(String(rawFrontMatter || "").replace(/^---\r?\n/, "").replace(/\r?\n---\s*$/, "")) || {};
-  } catch {
+    const loaded = yaml.load(String(rawFrontMatter || "").replace(/^---\r?\n/, "").replace(/\r?\n---\s*$/, ""));
+    rootIsObject = loaded == null || isPlainObject(loaded);
+    parsed = rootIsObject ? loaded || {} : {};
+  } catch (error) {
     parseFailed = true;
+    parseError = error;
     parsed = {};
   }
-  const fieldCount = parseFailed ? 0 : countVisibleFields(parsed);
+  parseFailed = parseFailed || !rootIsObject;
+  const topLevelFieldCount = parseFailed ? 0 : Object.keys(parsed).length;
   const yamlLineCount = String(rawFrontMatter || "").split(/\r?\n/).filter(Boolean).length;
+  const hasFrontMatter = Boolean(String(rawFrontMatter || "").trim());
+  const hasAdditionalFields = useMemo(
+    () =>
+      Object.entries(parsed).some(
+        ([key, value]) => !COMMON_FIELD_SET.has(String(key).toLowerCase()) || !canEditCommonField(key, value)
+      ),
+    [parsed]
+  );
+  const additionalFields = useMemo(
+    () =>
+      Object.fromEntries(
+        Object.entries(parsed).filter(
+          ([key, value]) => !COMMON_FIELD_SET.has(String(key).toLowerCase()) || !canEditCommonField(key, value)
+        )
+      ),
+    [parsed]
+  );
+  const tags = canEditCommonField("tags", parsed.tags) ? normalizeTagList(parsed.tags) : [];
+  const { line: parseErrorLine, column: parseErrorColumn, reason: parseErrorReason } = getYamlErrorDetails(parseError);
+
+  function commitObject(nextObject) {
+    onRawChange(Object.keys(nextObject).length === 0 ? "" : dumpYaml(nextObject));
+  }
+
+  function updateField(key, nextValue, options = {}) {
+    const { removeIfEmpty = true } = options;
+    const nextObject = { ...parsed };
+    const removeValue =
+      nextValue === undefined ||
+      nextValue === null ||
+      (removeIfEmpty && typeof nextValue === "string" && !nextValue.trim()) ||
+      (removeIfEmpty && Array.isArray(nextValue) && nextValue.length === 0);
+
+    if (removeValue) {
+      delete nextObject[key];
+    } else {
+      nextObject[key] = nextValue;
+    }
+
+    commitObject(nextObject);
+  }
+
+  function handleTagKeyDown(event) {
+    if (!["Enter", ",", "Tab"].includes(event.key)) {
+      return;
+    }
+
+    const nextTag = tagDraft.trim();
+    if (!nextTag) {
+      return;
+    }
+
+    event.preventDefault();
+    updateField("tags", Array.from(new Set([...tags, nextTag])));
+    setTagDraft("");
+  }
+
+  function handleTagPaste(event) {
+    const pastedText = event.clipboardData?.getData("text") || "";
+    const nextTags = splitTagTokens(pastedText);
+    if (nextTags.length <= 1) {
+      return;
+    }
+
+    event.preventDefault();
+    updateField("tags", Array.from(new Set([...tags, ...nextTags])));
+    setTagDraft("");
+  }
+
+  function focusRawYamlLine(targetLine) {
+    const textarea = rawTextareaRef.current;
+    if (!textarea || !targetLine) {
+      return;
+    }
+
+    const lines = String(rawFrontMatter || "").split(/\r?\n/);
+    const safeLine = Math.max(1, Math.min(targetLine, lines.length));
+    const selectionStart = lines.slice(0, safeLine - 1).reduce((total, line) => total + line.length + 1, 0);
+    const selectionEnd = selectionStart + (lines[safeLine - 1]?.length || 0);
+    textarea.focus();
+    textarea.setSelectionRange(selectionStart, selectionEnd);
+  }
+
+  function addStarterFrontMatter() {
+    commitObject({ title: "", tags: [], draft: false });
+  }
 
   return (
     <div className="properties-panel">
       <div className="properties-toolbar">
         <div className="properties-summary-card">
-          <div className="sidebar-kicker">Front matter</div>
-          <div className="properties-title-row">
-            <div className="properties-title">Metadata</div>
-            <span className="properties-pill">{parseFailed ? "Needs fix" : `${fieldCount} fields`}</span>
-          </div>
-          <div className="sidebar-caption">Edit front matter as a tree, then drop to raw YAML only when you need full control.</div>
-          <div className="properties-stats">
-            <span className="properties-stat">{parseFailed ? "Structured editor unavailable" : "Structured editor ready"}</span>
+          <div className="properties-summary-row">
+            <div className="properties-summary-title">
+              <span className="sidebar-kicker">Front matter</span>
+              <span className="properties-title">Document metadata</span>
+            </div>
+            <span className="properties-pill">{parseFailed ? "Needs attention" : hasFrontMatter ? `${topLevelFieldCount} fields` : "Optional"}</span>
+            <span className="properties-stat">
+              {parseFailed ? "Use YAML below to fix the document header" : hasFrontMatter ? "Common fields ready" : "No front matter yet"}
+            </span>
             <span className="properties-stat">{yamlLineCount} YAML lines</span>
           </div>
+          {!hasFrontMatter ? (
+            <div className="properties-summary-actions">
+              <button className="tool-button tool-button-primary" type="button" onClick={addStarterFrontMatter}>
+                Add Front Matter
+              </button>
+            </div>
+          ) : null}
         </div>
       </div>
 
       {!parseFailed ? (
-        <section className="properties-section">
-          <div className="properties-section-header">
-            <div>
-              <div className="panel-heading">Structured fields</div>
-              <div className="sidebar-caption">Update values with type-aware controls instead of editing YAML syntax directly.</div>
+        <>
+          <section className="properties-section">
+            <div className="properties-section-header">
+              <div className="panel-heading">Common fields</div>
             </div>
-          </div>
-          <div className="front-matter-tree properties-tree">
-            <TreeEditor
-              editable
-              value={parsed}
-              onChange={(nextValue, path) => {
-                const updated = path.length === 0 ? nextValue : updateAtPath(parsed, path, () => nextValue);
-                onRawChange(dumpYaml(updated));
-              }}
-            />
-          </div>
-        </section>
+
+            <div className="properties-grid">
+              <label className="property-row property-row-inline">
+                <span className="property-row-label">Title</span>
+                <input
+                  className="find-input property-row-control"
+                  type="text"
+                  value={typeof parsed.title === "string" ? parsed.title : ""}
+                  placeholder="Document title"
+                  onChange={(event) => updateField("title", event.target.value)}
+                />
+              </label>
+
+              <div className="property-row property-row-stack">
+                <span className="property-row-label">Tags</span>
+                <div className="properties-tag-list property-row-control">
+                  {tags.map((tag) => (
+                    <button
+                      key={tag}
+                      className="properties-tag-chip"
+                      type="button"
+                      onClick={() => updateField("tags", tags.filter((item) => item !== tag))}
+                    >
+                      <span>{tag}</span>
+                      <span aria-hidden="true">×</span>
+                    </button>
+                  ))}
+                  <input
+                    className="properties-tag-input"
+                    type="text"
+                    value={tagDraft}
+                    placeholder={tags.length === 0 ? "Add a tag and press Enter" : "Add tag"}
+                    onChange={(event) => setTagDraft(event.target.value)}
+                    onKeyDown={handleTagKeyDown}
+                    onPaste={handleTagPaste}
+                    onBlur={() => {
+                      if (!tagDraft.trim()) {
+                        return;
+                      }
+                      updateField("tags", Array.from(new Set([...tags, tagDraft.trim()])));
+                      setTagDraft("");
+                    }}
+                  />
+                </div>
+              </div>
+
+              <label className="property-row property-row-stack">
+                <div className="properties-row-header">
+                  <span className="property-row-label">Date</span>
+                  <div className="properties-inline-actions">
+                    <button className="tool-button tool-button-ghost properties-inline-button" type="button" onClick={() => updateField("date", formatFrontMatterDate(new Date(), false))}>
+                      Today
+                    </button>
+                    <button className="tool-button tool-button-ghost properties-inline-button" type="button" onClick={() => updateField("date", formatFrontMatterDate(new Date(), true))}>
+                      Date & Time
+                    </button>
+                  </div>
+                </div>
+                <input
+                  className="find-input property-row-control"
+                  type="text"
+                  value={typeof parsed.date === "string" ? parsed.date : ""}
+                  placeholder="2026-04-01"
+                  onChange={(event) => updateField("date", event.target.value)}
+                />
+                <span className="properties-helper-text">Shortcuts fill a value, but the final YAML stays editable.</span>
+              </label>
+
+              <label className="property-row property-row-stack">
+                <span className="property-row-label">Description</span>
+                <textarea
+                  className="properties-textarea property-row-control"
+                  value={typeof parsed.description === "string" ? parsed.description : ""}
+                  placeholder="Short summary for previews and exports"
+                  onChange={(event) => updateField("description", event.target.value)}
+                />
+              </label>
+
+              <label className="property-row property-row-toggle">
+                <span className="property-row-copy">
+                  <span className="property-row-label">Draft</span>
+                  <span className="properties-helper-text">Mark unpublished notes explicitly.</span>
+                </span>
+                <input
+                  type="checkbox"
+                  checked={parsed.draft === true}
+                  onChange={(event) => updateField("draft", event.target.checked, { removeIfEmpty: false })}
+                />
+              </label>
+            </div>
+          </section>
+
+          <section className="properties-section">
+            <details className="properties-disclosure" open={hasAdditionalFields}>
+              <summary className="properties-disclosure-summary">
+                <span className="panel-heading">Additional fields</span>
+                <span className="properties-disclosure-meta">
+                  {hasAdditionalFields ? `${Object.keys(additionalFields).length} more field${Object.keys(additionalFields).length === 1 ? "" : "s"}` : "None"}
+                </span>
+              </summary>
+              <div className="properties-section-actions">
+                <button
+                  className={`tool-button tool-button-ghost properties-advanced-toggle${showAdvancedFieldControls ? " active" : ""}`}
+                  type="button"
+                  onClick={() => setShowAdvancedFieldControls((current) => !current)}
+                >
+                  {showAdvancedFieldControls ? "Hide advanced controls" : "Show advanced controls"}
+                </button>
+              </div>
+              {hasAdditionalFields ? (
+                <div className="front-matter-tree properties-tree">
+                  <TreeEditor
+                    editable
+                    showAdvancedControls={showAdvancedFieldControls}
+                    value={additionalFields}
+                    onChange={(nextValue, path) => {
+                      const mergedRoot = { ...parsed };
+                      Object.keys(mergedRoot).forEach((key) => {
+                        if (!COMMON_FIELD_SET.has(String(key).toLowerCase()) || !canEditCommonField(key, mergedRoot[key])) {
+                          delete mergedRoot[key];
+                        }
+                      });
+                      const updatedAdditional = path.length === 0 ? nextValue : updateAtPath(additionalFields, path, () => nextValue);
+                      const sanitizedAdditional = Object.fromEntries(
+                        Object.entries(updatedAdditional || {}).filter(
+                          ([key, value]) => !COMMON_FIELD_SET.has(String(key).toLowerCase()) || !canEditCommonField(key, value)
+                        )
+                      );
+                      commitObject({ ...mergedRoot, ...sanitizedAdditional });
+                    }}
+                  />
+                </div>
+              ) : (
+                <div className="properties-empty-state">
+                  <div className="properties-empty-title">Nothing extra to manage</div>
+                  <div className="properties-empty-copy">Stick with the common fields above, or add advanced keys in YAML when needed.</div>
+                </div>
+              )}
+            </details>
+          </section>
+        </>
       ) : (
         <div className="properties-empty-state">
-          <div className="properties-empty-title">YAML parse error</div>
-          <div className="properties-empty-copy">Fix the raw YAML below to restore structured editing.</div>
+          <div className="properties-empty-title">Front matter needs a valid YAML object</div>
+          <div className="properties-empty-copy">
+            Fix the document header below to restore common-field editing.
+            {parseErrorLine ? ` Error at line ${parseErrorLine}${parseErrorColumn ? `, column ${parseErrorColumn}` : ""}.` : ""}
+          </div>
         </div>
       )}
 
       <section className="properties-section">
-        <div className="properties-section-header">
-          <div>
-            <div className="panel-heading">Raw YAML</div>
-            <div className="sidebar-caption">Use this when you want exact ordering, nesting, or syntax-level edits.</div>
-          </div>
-        </div>
-        <label className="front-matter-pane front-matter-pane-merged properties-raw-pane">
-          <textarea value={rawFrontMatter || ""} onChange={(event) => onRawChange(event.target.value)} />
-        </label>
+        <details className="properties-disclosure" open={parseFailed}>
+          <summary className="properties-disclosure-summary">
+            <span className="panel-heading">Raw YAML</span>
+            <span className="properties-disclosure-meta">{hasFrontMatter ? "Advanced" : "Start here"}</span>
+          </summary>
+          {parseFailed && parseErrorReason ? (
+            <div className="properties-yaml-error">
+              <div className="properties-yaml-error-copy">
+                <div className="properties-empty-title">YAML error</div>
+                <div className="properties-empty-copy">
+                  {parseErrorReason}
+                  {parseErrorLine ? ` Line ${parseErrorLine}${parseErrorColumn ? `, column ${parseErrorColumn}` : ""}.` : ""}
+                </div>
+              </div>
+              {parseErrorLine ? (
+                <button className="tool-button tool-button-ghost" type="button" onClick={() => focusRawYamlLine(parseErrorLine)}>
+                  Jump to line
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+          <label className="front-matter-pane front-matter-pane-merged properties-raw-pane">
+            <textarea ref={rawTextareaRef} value={rawFrontMatter || ""} onChange={(event) => onRawChange(event.target.value)} />
+          </label>
+        </details>
       </section>
     </div>
   );

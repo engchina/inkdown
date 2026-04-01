@@ -90,6 +90,7 @@ export default function Sidebar({
   const normalizedFilter = filterText.trim().toLowerCase();
   const filteredTree = useMemo(() => filterTree(workspaceTree, normalizedFilter), [workspaceTree, normalizedFilter]);
   const fileRootLabel = workspaceRoot ? workspaceRoot.split(/[\\/]/).filter(Boolean).pop() : "No folder opened";
+  const hasFrontMatter = Boolean(String(frontMatterRaw || "").trim());
   const tabMeta = {
     outline: {
       title: "Document map",
@@ -104,10 +105,10 @@ export default function Sidebar({
       sectionLabel: "Filter files"
     },
     properties: {
-      title: "Properties",
-      caption: "Front matter and document metadata",
-      badge: "YAML",
-      sectionLabel: "Metadata"
+      title: "Front Matter",
+      caption: hasFrontMatter ? "Document metadata kept in standard YAML front matter" : "Optional metadata for publishing and note workflows",
+      badge: hasFrontMatter ? "Ready" : "Optional",
+      sectionLabel: "Document metadata"
     }
   };
   const activeTabMeta = tabMeta[sidebarTab];
@@ -132,21 +133,14 @@ export default function Sidebar({
           >
             Files
           </button>
-          <button
-            type="button"
-            className={`sidebar-tab${sidebarTab === "properties" ? " active" : ""}`}
-            onClick={() => onSidebarTabChange("properties")}
-            aria-selected={sidebarTab === "properties"}
-          >
-            Properties
-          </button>
         </div>
+        {sidebarTab === "properties" ? <div className="sidebar-context-label">Front Matter</div> : null}
       </div>
 
       <div className="sidebar-body">
         <div className="sidebar-meta">
           <div className="sidebar-meta-copy">
-            <div className="sidebar-kicker">{sidebarTab === "outline" ? "Outline" : sidebarTab === "files" ? "Files" : "Properties"}</div>
+            <div className="sidebar-kicker">{sidebarTab === "outline" ? "Outline" : sidebarTab === "files" ? "Files" : "Front matter"}</div>
             <div className="sidebar-title-row">
               <div className="sidebar-title">{activeTabMeta.title}</div>
               <span className="sidebar-badge">{activeTabMeta.badge}</span>

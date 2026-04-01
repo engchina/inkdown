@@ -48,8 +48,11 @@ const sections = [
   {
     title: "Front Matter",
     items: [
-      "Edit front matter from the persistent sidebar tree",
-      "Switch field types between text, number, boolean, list, and object",
+      "Use Front Matter to edit title, tags, date, and draft state",
+      "Open Additional fields when a note needs less common metadata",
+      "Turn on advanced controls only when you need type changes or field ordering",
+      "Use each field's row menu for remove and move actions",
+      "Paste comma- or newline-separated tags to add several at once, and jump straight to YAML error lines when parsing fails",
       "Use merge dialog when pasted front matter conflicts with the current document"
     ]
   }

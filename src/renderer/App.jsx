@@ -45,6 +45,7 @@ import TableToolbar from "./components/TableToolbar";
 import FrontMatterMergeDialog from "./components/FrontMatterMergeDialog";
 import TableSelectionHandles from "./components/TableSelectionHandles";
 import EditingCheatsheetDialog from "./components/EditingCheatsheetDialog";
+import { summarizeFrontMatter } from "./utils/frontMatter.mjs";
 
 const editorMarked = new Marked({ gfm: true, breaks: true });
 const previewMarked = new Marked({ gfm: true, breaks: true });
@@ -2220,6 +2221,9 @@ export default function App() {
       raw
     };
   }, [markdownText]);
+  const frontMatterSummary = useMemo(() => {
+    return summarizeFrontMatter(frontMatterState.raw);
+  }, [frontMatterState.raw]);
   const recentFiles = useMemo(() => normalizeRecentFiles(preferences.recentFiles), [preferences.recentFiles]);
   const paletteUsage = useMemo(() => normalizePaletteUsage(preferences.paletteUsage), [preferences.paletteUsage]);
   const workspaceFiles = useMemo(
@@ -2379,16 +2383,16 @@ export default function App() {
         shortcut: "Ctrl+Shift+2",
         keywords: "sidebar files workspace"
       },
-      {
-        id: "open-properties",
-        kind: "command",
-        badge: "Side",
-        section: "Sidebar",
-        label: "Show properties",
-        description: "Edit title, tags, and front matter",
-        shortcut: "Ctrl+Shift+3",
-        keywords: "sidebar properties front matter metadata tags"
-      },
+        {
+          id: "open-properties",
+          kind: "command",
+          badge: "Side",
+          section: "Sidebar",
+          label: "Show front matter",
+          description: "Edit title, tags, and document metadata",
+          shortcut: "Ctrl+Shift+3",
+          keywords: "sidebar front matter metadata tags yaml"
+        },
       {
         id: "theme-paper",
         kind: "command",
@@ -4151,7 +4155,7 @@ export default function App() {
   function addFrontMatterField() {
     commitFrontMatterFields([...frontMatterState.fields, { key: "", type: "text", value: "" }]);
     updatePreferences({ sidebarVisible: true, sidebarTab: "properties" });
-    setStatus("Added a new property");
+    setStatus("Added a front matter field");
   }
 
   function removeFrontMatterField(index) {
@@ -4826,10 +4830,15 @@ export default function App() {
         documentPath={documentPathLabel}
         documentTitle={documentTitle}
         editor={editor}
+        frontMatterActive={preferences.sidebarVisible && preferences.sidebarTab === "properties"}
+        hasFrontMatter={frontMatterSummary.hasFrontMatter}
+        frontMatterStatusText={frontMatterSummary.statusText}
+        frontMatterTone={frontMatterSummary.tone}
         isDirty={isDirty}
         onNew={createNewDocument}
         onOpen={openDocument}
         onOpenPalette={openCommandPalette}
+        onOpenFrontMatter={() => updatePreferences({ sidebarVisible: true, sidebarTab: "properties" })}
         onRevealCurrentFile={revealCurrentFile}
         onInsertImage={insertImage}
         onInsertTable={insertTable}

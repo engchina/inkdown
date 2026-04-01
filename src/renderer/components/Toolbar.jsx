@@ -20,9 +20,14 @@ export default function Toolbar({
   documentPath,
   documentTitle,
   editor,
+  frontMatterActive,
+  hasFrontMatter,
+  frontMatterStatusText,
+  frontMatterTone,
   isDirty,
   onExport,
   onExportPdf,
+  onOpenFrontMatter,
   onOpenPalette,
   onNew,
   onOpen,
@@ -59,8 +64,19 @@ export default function Toolbar({
             <div className="document-meta-title" title={documentTitle}>
               {documentTitle}
             </div>
-            <div className="document-meta-path" title={documentPath || "Unsaved document"}>
-              {documentPath || "Unsaved document"}
+            <div className="document-meta-row">
+              <div className="document-meta-path" title={documentPath || "Unsaved document"}>
+                {documentPath || "Unsaved document"}
+              </div>
+              <button
+                type="button"
+                className={`document-meta-chip document-meta-chip-${frontMatterTone}${frontMatterActive ? " active" : ""}`}
+                onClick={onOpenFrontMatter}
+                title={hasFrontMatter ? "Open front matter" : "Add front matter"}
+              >
+                <span className="document-meta-chip-label">{hasFrontMatter ? "Front Matter" : "Add Front Matter"}</span>
+                {frontMatterStatusText ? <span className="document-meta-chip-status">{frontMatterStatusText}</span> : null}
+              </button>
             </div>
           </div>
         </div>

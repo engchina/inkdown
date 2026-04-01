@@ -712,11 +712,11 @@ function rebuildMenu(window) {
           accelerator: "CmdOrCtrl+Shift+2",
           click: () => emitMenuAction(window, { type: "set-sidebar-tab", tab: "files" })
         },
-        {
-          label: "Properties",
-          accelerator: "CmdOrCtrl+Shift+3",
-          click: () => emitMenuAction(window, { type: "set-sidebar-tab", tab: "properties" })
-        },
+          {
+            label: "Front Matter",
+            accelerator: "CmdOrCtrl+Shift+3",
+            click: () => emitMenuAction(window, { type: "set-sidebar-tab", tab: "properties" })
+          },
         {
           label: "Outline",
           accelerator: "CmdOrCtrl+Shift+1",
