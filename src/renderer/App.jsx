@@ -1247,11 +1247,11 @@ function getEditorSlashContext(instance) {
   };
 }
 
-function serializeEditorHtmlToMarkdown(html) {
+function serializeEditorHtmlToMarkdown(html, existingRawFrontMatter = "") {
   const container = document.createElement("div");
   container.innerHTML = String(html || "");
   const frontMatterNode = container.querySelector(":scope > .yaml-front-matter");
-  const rawFrontMatter = frontMatterNode ? buildRawFrontMatter(frontMatterNode.textContent || "") : "";
+  const rawFrontMatter = frontMatterNode ? buildRawFrontMatter(frontMatterNode.textContent || "") : existingRawFrontMatter;
   if (frontMatterNode) {
     frontMatterNode.remove();
   }
@@ -1628,13 +1628,13 @@ function decorateRenderedHtml(container, outline, options = {}) {
 }
 
 function renderMarkdownForEditor(markdown, currentFilePath, outline) {
-  const { content: frontMatterContent, body } = extractYamlFrontMatter(markdown);
+  const { body } = extractYamlFrontMatter(markdown);
   const container = resolveImageSources(
     editorMarked.parse(preprocessMarkdownSyntax(body, { enableExtendedInlineSyntax: true })),
     currentFilePath,
     window.editorApi.resolveMarkdownAsset
   );
-  return decorateRenderedHtml(container, outline, { frontMatterContent, enableCallouts: true });
+  return decorateRenderedHtml(container, outline, { enableCallouts: true });
 }
 
 function renderMarkdownSnippetForEditor(markdown, currentFilePath) {
@@ -3529,14 +3529,6 @@ export default function App() {
       ];
     }
 
-    if (activePane === "editor" && editorObjectContext?.kind === "heading") {
-      return [
-        { id: "heading-1", label: "H1", onSelect: () => applyFormatting("heading-1") },
-        { id: "heading-2", label: "H2", onSelect: () => applyFormatting("heading-2") },
-        { id: "heading-3", label: "H3", onSelect: () => applyFormatting("heading-3") }
-      ];
-    }
-
     return [];
   }, [activePane, editorObjectContext, preferences.allowInsecureRemoteMedia, sourceObjectContext]);
 
@@ -4708,7 +4700,7 @@ export default function App() {
 
   function syncMarkdownFromEditor(instance) {
     programmaticMarkdownSyncRef.current = true;
-    const nextMarkdown = serializeEditorHtmlToMarkdown(instance.getHTML());
+    const nextMarkdown = serializeEditorHtmlToMarkdown(instance.getHTML(), frontMatterState.raw);
     lastEditorMarkdownRef.current = nextMarkdown;
     startTransition(() => {
       const nextOutline = extractOutlineFromMarkdown(nextMarkdown);
@@ -5608,3 +5600,4 @@ export default function App() {
     </div>
   );
 }
+
