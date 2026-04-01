@@ -164,6 +164,26 @@ async function openMarkdownFile(window, filePath) {
   };
 }
 
+async function safeOpenMarkdownFile(window, filePath) {
+  try {
+    return await openMarkdownFile(window, filePath);
+  } catch (error) {
+    const name = path.basename(filePath || "") || "document";
+    const detail =
+      error?.code === "ENOENT"
+        ? "The file no longer exists."
+        : error?.code === "EACCES"
+          ? "Permission was denied."
+          : String(error?.message || error || "Unknown error.");
+
+    return {
+      canceled: true,
+      filePath,
+      error: `Could not open ${name}. ${detail}`
+    };
+  }
+}
+
 async function createPdfFromHtml(window, payload) {
   const defaultName = state.currentFilePath
     ? `${path.basename(state.currentFilePath, path.extname(state.currentFilePath))}.pdf`
@@ -921,7 +941,7 @@ ipcMain.handle("dialog:open-markdown", async () => {
     return { canceled: true };
   }
 
-  return openMarkdownFile(window, result.filePaths[0]);
+  return safeOpenMarkdownFile(window, result.filePaths[0]);
 });
 
 ipcMain.handle("dialog:pick-workspace", async () => {
@@ -1020,7 +1040,7 @@ ipcMain.handle("file:save-pdf", async (_, payload) => {
 
 ipcMain.handle("file:open-markdown-path", async (_, filePath) => {
   const window = BrowserWindow.getFocusedWindow();
-  return openMarkdownFile(window, filePath);
+  return safeOpenMarkdownFile(window, filePath);
 });
 
 ipcMain.handle("file:list-workspace-tree", async (_, rootPath) => {

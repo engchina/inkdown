@@ -13,6 +13,7 @@
     "dev:electron:debug": "wait-on tcp:5173 && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5173 ELECTRON_ENABLE_LOGGING=true ELECTRON_ENABLE_STACK_DUMPING=true DEBUG=* NODE_OPTIONS=--trace-warnings electron .",
     "build:web": "vite build",
     "build": "npm run build:web",
+    "test": "node --test --test-concurrency=1 --test-isolation=none tests/frontmatter-utils.test.mjs tests/source-editing-utils.test.mjs tests/editor-structured-editing.test.mjs",
     "test:frontmatter": "node --test --test-concurrency=1 --test-isolation=none tests/frontmatter-utils.test.mjs",
     "package": "npm run build:web && electron-builder",
     "package:win": "npm run build:web && electron-builder --win nsis --x64",
