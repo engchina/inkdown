@@ -20,6 +20,8 @@ test("styles keep shared toolbar emphasis states", () => {
   assert.match(stylesSource, /\.toolbar-section\.active \.toolbar-section-label \{/);
   assert.match(stylesSource, /\.editor-image-node \{/);
   assert.match(stylesSource, /\.editor-image-markdown-block \{/);
+  assert.match(stylesSource, /\.mark-source-editor \{/);
+  assert.match(stylesSource, /\.mark-source-input \{/);
   assert.match(stylesSource, /overflow: hidden;/);
   assert.match(stylesSource, /resize: none;/);
 });
@@ -42,6 +44,8 @@ test("selected editor images expose an inline editable markdown block", () => {
   assert.match(appSource, /function formatMarkdownImageSnippet\(\{ alt = "", url = "", title = "" \} = \{\}\)/);
   assert.match(appSource, /function parseMarkdownImageSnippet\(value\)/);
   assert.match(appSource, /function ImageNodeView\(\{ editor, extension, getPos, node, selected, updateAttributes \}\)/);
+  assert.match(appSource, /const currentMarkdown = formatMarkdownImageSnippet\(/);
+  assert.match(appSource, /event\.target\.value\.trim\(\) === currentMarkdown\.trim\(\)/);
   assert.match(appSource, /return ReactNodeViewRenderer\(ImageNodeView\)/);
   assert.match(appSource, /className=\{`editor-image-node\$\{shown \? " is-selected" : ""\}`\}/);
   assert.match(appSource, /className="editor-image-markdown-block"/);
@@ -49,4 +53,23 @@ test("selected editor images expose an inline editable markdown block", () => {
   assert.match(appSource, /className="editor-image-markdown-block"[\s\S]*<img/);
   assert.match(appSource, /function applyMarkdown\(nextValue = draft\)/);
   assert.match(appSource, /updateAttributes\(nextAttrs\)/);
+});
+
+test("source auto pair is disabled and inline mark source uses editable widgets", () => {
+  assert.match(appSource, /autoPair: false/);
+  assert.doesNotMatch(appSource, /if \(sourceRules\.autoPair \?\? true\) \{\s*handleSourceAutoPair\(event\);/);
+  assert.match(appSource, /function getMarkSignature\(mark\)/);
+  assert.match(appSource, /otherMarks: commonMarks/);
+  assert.match(appSource, /function applyEditableMarkChange\(view, range, nextValue\)/);
+  assert.match(appSource, /className = "mark-source-editor"/);
+  assert.match(appSource, /className = "mark-source-input"/);
+  assert.match(appSource, /Decoration\.inline\(range\.from, range\.to, \{ class: "mark-source-hidden" \}/);
+});
+
+test("inline mark reveal is click-driven and no longer reacts to hover", () => {
+  assert.match(appSource, /handleDOMEvents: \{\s*click\(view, event\)/);
+  assert.doesNotMatch(appSource, /mousemove\(view, event\)/);
+  assert.doesNotMatch(appSource, /mouseleave\(view/);
+  assert.match(appSource, /const positions = \[\];/);
+  assert.match(appSource, /if \(revealPos !== null\) \{/);
 });

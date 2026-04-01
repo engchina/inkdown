@@ -104,7 +104,7 @@ const defaultPreferences = {
   smartTransformSource: {
     tabIndent: true,
     continueList: true,
-    autoPair: true,
+    autoPair: false,
     literalEscape: true
   },
   allowInsecureRemoteMedia: false,
@@ -277,6 +277,11 @@ function ImageNodeView({ editor, extension, getPos, node, selected, updateAttrib
   const [editing, setEditing] = useState(false);
   const [draftError, setDraftError] = useState("");
   const markdownSource = node.attrs.markdownSource || node.attrs.src || "";
+  const currentMarkdown = formatMarkdownImageSnippet({
+    alt: node.attrs.alt || "",
+    url: markdownSource,
+    title: node.attrs.title || ""
+  });
   const shown = selected || editing;
   const resolvedSrc =
     (typeof extension.options.resolveAsset === "function" ? extension.options.resolveAsset(markdownSource) : "") ||
@@ -284,15 +289,9 @@ function ImageNodeView({ editor, extension, getPos, node, selected, updateAttrib
     markdownSource;
 
   useEffect(() => {
-    setDraft(
-      formatMarkdownImageSnippet({
-        alt: node.attrs.alt || "",
-        url: markdownSource,
-        title: node.attrs.title || ""
-      })
-    );
+    setDraft(currentMarkdown);
     setDraftError("");
-  }, [markdownSource, node.attrs.alt, node.attrs.title]);
+  }, [currentMarkdown]);
 
   useEffect(() => {
     if (!shown || !textareaRef.current) {
@@ -358,7 +357,7 @@ function ImageNodeView({ editor, extension, getPos, node, selected, updateAttrib
             }}
             onBlur={(event) => {
               setEditing(false);
-              if (event.target.value.trim() === draft.trim()) {
+              if (event.target.value.trim() === currentMarkdown.trim()) {
                 return;
               }
               applyMarkdown(event.target.value);
@@ -372,13 +371,7 @@ function ImageNodeView({ editor, extension, getPos, node, selected, updateAttrib
               }
               if (event.key === "Escape") {
                 event.preventDefault();
-                setDraft(
-                  formatMarkdownImageSnippet({
-                    alt: node.attrs.alt || "",
-                    url: markdownSource,
-                    title: node.attrs.title || ""
-                  })
-                );
+                setDraft(currentMarkdown);
                 setDraftError("");
                 setEditing(false);
                 focusImageNode();
@@ -801,17 +794,86 @@ const Highlight = createInlineTagMark("highlight", "mark");
 const Subscript = createInlineTagMark("subscript", "sub");
 const Superscript = createInlineTagMark("superscript", "sup");
 
-const MARK_SYNTAX = {
-  bold: "**",
-  italic: "*",
-  strike: "~~",
-  code: "`",
-  highlight: "==",
-  subscript: "~",
-  superscript: "^"
-};
+const INLINE_SOURCE_MARKS = new Set(["bold", "italic", "strike", "code", "highlight", "subscript", "superscript", "underline", "link"]);
 
 const inlineMarkRevealKey = new PluginKey("inlineMarkReveal");
+
+function getEditableMarkSyntax(markName, text, attrs = {}) {
+  switch (markName) {
+    case "bold":
+      return `**${text}**`;
+    case "italic":
+      return `*${text}*`;
+    case "strike":
+      return `~~${text}~~`;
+    case "code":
+      return `\`${text}\``;
+    case "highlight":
+      return `==${text}==`;
+    case "subscript":
+      return `~${text}~`;
+    case "superscript":
+      return `^${text}^`;
+    case "underline":
+      return `<u>${text}</u>`;
+    case "link":
+      return `[${text}](${attrs.href || ""})`;
+    default:
+      return "";
+  }
+}
+
+function parseEditableMarkSyntax(markName, rawValue) {
+  const value = String(rawValue || "");
+  switch (markName) {
+    case "bold": {
+      const match = /^\*\*([\s\S]*)\*\*$/.exec(value);
+      return match ? { text: match[1], attrs: {} } : { text: value, attrs: null };
+    }
+    case "italic": {
+      const match = /^\*([\s\S]*)\*$/.exec(value);
+      return match ? { text: match[1], attrs: {} } : { text: value, attrs: null };
+    }
+    case "strike": {
+      const match = /^~~([\s\S]*)~~$/.exec(value);
+      return match ? { text: match[1], attrs: {} } : { text: value, attrs: null };
+    }
+    case "code": {
+      const match = /^`([\s\S]*)`$/.exec(value);
+      return match ? { text: match[1], attrs: {} } : { text: value, attrs: null };
+    }
+    case "highlight": {
+      const match = /^==([\s\S]*)==$/.exec(value);
+      return match ? { text: match[1], attrs: {} } : { text: value, attrs: null };
+    }
+    case "subscript": {
+      const match = /^~([\s\S]*)~$/.exec(value);
+      return match ? { text: match[1], attrs: {} } : { text: value, attrs: null };
+    }
+    case "superscript": {
+      const match = /^\^([\s\S]*)\^$/.exec(value);
+      return match ? { text: match[1], attrs: {} } : { text: value, attrs: null };
+    }
+    case "underline": {
+      const match = /^<u>([\s\S]*)<\/u>$/.exec(value.trim());
+      return match ? { text: match[1], attrs: {} } : { text: value, attrs: null };
+    }
+    case "link": {
+      const match = /^\[([\s\S]*)\]\(([\s\S]+)\)$/.exec(value.trim());
+      return match ? { text: match[1], attrs: { href: match[2].trim() } } : { text: value, attrs: null };
+    }
+    default:
+      return { text: value, attrs: null };
+  }
+}
+
+function marksAreEqual(left, right) {
+  return left?.type === right?.type && JSON.stringify(left?.attrs || {}) === JSON.stringify(right?.attrs || {});
+}
+
+function getMarkSignature(mark) {
+  return `${mark?.type?.name || ""}:${JSON.stringify(mark?.attrs || {})}`;
+}
 
 function collectMarkRanges(parent, parentStart) {
   const ranges = [];
@@ -826,41 +888,181 @@ function collectMarkRanges(parent, parentStart) {
     if (!node.isText || !node.marks.length) continue;
 
     for (const mark of node.marks) {
-      const syntax = MARK_SYNTAX[mark.type.name];
-      if (!syntax) continue;
+      if (!INLINE_SOURCE_MARKS.has(mark.type.name)) continue;
 
       let rangeFrom = nodeFrom;
       let rangeTo = nodes[i].to;
 
       for (let j = i - 1; j >= 0; j--) {
-        if (nodes[j].node.isText && nodes[j].to === rangeFrom && nodes[j].node.marks.some((m) => m.type === mark.type)) {
+        if (nodes[j].node.isText && nodes[j].to === rangeFrom && nodes[j].node.marks.some((m) => marksAreEqual(m, mark))) {
           rangeFrom = nodes[j].from;
         } else {
           break;
         }
       }
       for (let j = i + 1; j < nodes.length; j++) {
-        if (nodes[j].node.isText && nodes[j].from === rangeTo && nodes[j].node.marks.some((m) => m.type === mark.type)) {
+        if (nodes[j].node.isText && nodes[j].from === rangeTo && nodes[j].node.marks.some((m) => marksAreEqual(m, mark))) {
           rangeTo = nodes[j].to;
         } else {
           break;
         }
       }
 
-      const rangeKey = `${mark.type.name}:${rangeFrom}-${rangeTo}`;
+      const rangeKey = `${mark.type.name}:${JSON.stringify(mark.attrs || {})}:${rangeFrom}-${rangeTo}`;
       if (!seen.has(rangeKey)) {
         seen.add(rangeKey);
-        ranges.push({ markName: mark.type.name, syntax, from: rangeFrom, to: rangeTo });
+        const coveredNodes = nodes.filter(
+          (candidate) => candidate.node.isText && candidate.from < rangeTo && candidate.to > rangeFrom
+        );
+        const commonMarks = coveredNodes.reduce((carry, candidate, index) => {
+          const candidateMarks = candidate.node.marks.filter((currentMark) => !marksAreEqual(currentMark, mark));
+          if (index === 0) {
+            return candidateMarks;
+          }
+          const candidateKeys = new Set(candidateMarks.map(getMarkSignature));
+          return carry.filter((currentMark) => candidateKeys.has(getMarkSignature(currentMark)));
+        }, []);
+        ranges.push({
+          markName: mark.type.name,
+          attrs: mark.attrs || {},
+          from: rangeFrom,
+          to: rangeTo,
+          otherMarks: commonMarks
+        });
       }
     }
   }
   return ranges;
 }
 
+function applyEditableMarkChange(view, range, nextValue) {
+  const parsed = parseEditableMarkSyntax(range.markName, nextValue);
+  const tr = view.state.tr.insertText(parsed.text, range.from, range.to);
+  const nextTo = range.from + parsed.text.length;
+  range.otherMarks.forEach((mark) => {
+    tr.addMark(range.from, nextTo, mark);
+  });
+  if (parsed.attrs) {
+    const markType = view.state.schema.marks[range.markName];
+    if (markType && parsed.text.length > 0) {
+      tr.addMark(range.from, nextTo, markType.create(parsed.attrs));
+    }
+  }
+  tr.setSelection(TextSelection.create(tr.doc, Math.min(nextTo, tr.doc.content.size)));
+  view.dispatch(tr.scrollIntoView());
+}
+
+function buildEditableMarkDecorations(view, doc, revealTargets) {
+  const decorations = [];
+  const activeRanges = new Map();
+
+  revealTargets.forEach(({ pos, source }) => {
+    let $pos;
+    try {
+      $pos = doc.resolve(pos);
+    } catch {
+      return;
+    }
+    const parent = $pos.parent;
+    if (!parent.isTextblock || parent.type.name === "codeBlock") {
+      return;
+    }
+
+    const parentRanges = collectMarkRanges(parent, $pos.start());
+    const ranges =
+      source === "selection"
+        ? parentRanges
+        : parentRanges
+            .filter((range) => pos >= range.from && pos <= range.to)
+            .sort((left, right) => (left.to - left.from) - (right.to - right.from))
+            .slice(0, 1);
+    if (ranges.length === 0) {
+      return;
+    }
+
+    ranges.forEach((activeRange) => {
+      const key = `${activeRange.markName}:${JSON.stringify(activeRange.attrs || {})}:${activeRange.from}-${activeRange.to}`;
+      const existing = activeRanges.get(key);
+      if (!existing || source === "selection") {
+        activeRanges.set(key, { ...activeRange, source });
+      }
+    });
+  });
+
+  activeRanges.forEach((range) => {
+    const text = doc.textBetween(range.from, range.to, "", "");
+    const initialValue = getEditableMarkSyntax(range.markName, text, range.attrs);
+
+    decorations.push(
+      Decoration.inline(range.from, range.to, { class: "mark-source-hidden" }, { inclusiveStart: false, inclusiveEnd: false })
+    );
+    decorations.push(
+      Decoration.widget(
+        range.from,
+        () => {
+          const wrapper = document.createElement("span");
+          wrapper.className = "mark-source-editor";
+          wrapper.contentEditable = "false";
+
+          const textarea = document.createElement("textarea");
+          textarea.className = "mark-source-input";
+          textarea.value = initialValue;
+          textarea.rows = 1;
+          textarea.spellcheck = false;
+
+          const resize = () => {
+            textarea.style.height = "0px";
+            textarea.style.height = `${textarea.scrollHeight}px`;
+          };
+          resize();
+
+          textarea.addEventListener("mousedown", (event) => event.stopPropagation());
+          textarea.addEventListener("click", (event) => event.stopPropagation());
+          textarea.addEventListener("input", resize);
+          textarea.addEventListener("blur", () => {
+            if (textarea.value.trim() === initialValue.trim()) {
+              return;
+            }
+            applyEditableMarkChange(view, range, textarea.value);
+          });
+          textarea.addEventListener("keydown", (event) => {
+            if (event.key === "Enter" && !event.shiftKey) {
+              event.preventDefault();
+              applyEditableMarkChange(view, range, textarea.value);
+              view.focus();
+            }
+            if (event.key === "Escape") {
+              event.preventDefault();
+              textarea.value = initialValue;
+              resize();
+              view.focus();
+            }
+          });
+
+          wrapper.appendChild(textarea);
+          if (range.source === "selection") {
+            queueMicrotask(() => {
+              textarea.focus();
+              textarea.select();
+            });
+          }
+          return wrapper;
+        },
+        { side: -1, key: `mark-editor-${range.markName}-${range.from}-${range.to}` }
+      )
+    );
+  });
+
+  return decorations.length ? DecorationSet.create(doc, decorations) : DecorationSet.empty;
+}
+
 const InlineMarkReveal = Extension.create({
   name: "inlineMarkReveal",
 
   addProseMirrorPlugins() {
+    let revealPos = null;
+    let editorView = null;
+
     return [
       new Plugin({
         key: inlineMarkRevealKey,
@@ -869,46 +1071,82 @@ const InlineMarkReveal = Extension.create({
             return DecorationSet.empty;
           },
           apply(tr, oldSet, oldState, newState) {
-            const sel = newState.selection;
-            if (!sel.empty || !sel.$from.parent.isTextblock || sel.$from.parent.type.name === "codeBlock") {
-              return DecorationSet.empty;
+            if (tr.getMeta(inlineMarkRevealKey) !== undefined) {
+              revealPos = tr.getMeta(inlineMarkRevealKey);
             }
 
-            const $from = sel.$from;
-            const parent = $from.parent;
-            const parentStart = $from.start();
-            const ranges = collectMarkRanges(parent, parentStart);
-
-            const decorations = [];
-            for (const range of ranges) {
-              if (sel.from < range.from || sel.from > range.to) {
-                continue;
-              }
-
-              decorations.push(
-                Decoration.widget(range.from, () => {
-                  const span = document.createElement("span");
-                  span.className = "mark-syntax-reveal";
-                  span.textContent = range.syntax;
-                  return span;
-                }, { side: -1, key: `mark-open-${range.markName}-${range.from}` })
-              );
-              decorations.push(
-                Decoration.widget(range.to, () => {
-                  const span = document.createElement("span");
-                  span.className = "mark-syntax-reveal";
-                  span.textContent = range.syntax;
-                  return span;
-                }, { side: 1, key: `mark-close-${range.markName}-${range.to}` })
-              );
+            const positions = [];
+            if (revealPos !== null) {
+              positions.push({ pos: revealPos, source: "click" });
             }
-
-            return decorations.length ? DecorationSet.create(newState.doc, decorations) : DecorationSet.empty;
+            if (positions.length === 0) return DecorationSet.empty;
+            return editorView ? buildEditableMarkDecorations(editorView, newState.doc, positions) : DecorationSet.empty;
           }
+        },
+        view(view) {
+          editorView = view;
+          return {
+            destroy: () => {
+              editorView = null;
+            }
+          };
         },
         props: {
           decorations(state) {
             return this.getState(state);
+          },
+          handleDOMEvents: {
+            click(view, event) {
+              const target = event.target;
+              if (target instanceof HTMLElement && target.closest(".mark-source-editor")) {
+                return false;
+              }
+
+              const coords = { left: event.clientX, top: event.clientY };
+              const posResult = view.posAtCoords(coords);
+              const nextRevealPos = posResult ? posResult.pos : null;
+              if (nextRevealPos === null) {
+                if (revealPos === null) {
+                  return false;
+                }
+                const tr = view.state.tr.setMeta(inlineMarkRevealKey, null);
+                tr.setMeta("addToHistory", false);
+                view.dispatch(tr);
+                return false;
+              }
+
+              let resolved;
+              try {
+                resolved = view.state.doc.resolve(nextRevealPos);
+              } catch {
+                return false;
+              }
+
+              const parent = resolved.parent;
+              if (!parent.isTextblock || parent.type.name === "codeBlock") {
+                if (revealPos === null) {
+                  return false;
+                }
+                const tr = view.state.tr.setMeta(inlineMarkRevealKey, null);
+                tr.setMeta("addToHistory", false);
+                view.dispatch(tr);
+                return false;
+              }
+
+              const activeRange = collectMarkRanges(parent, resolved.start())
+                .filter((range) => nextRevealPos >= range.from && nextRevealPos <= range.to)
+                .sort((left, right) => (left.to - left.from) - (right.to - right.from))[0];
+              const targetPos = activeRange ? nextRevealPos : null;
+
+              if (targetPos === revealPos) {
+                return false;
+              }
+
+              const tr = view.state.tr.setMeta(inlineMarkRevealKey, targetPos);
+              tr.setMeta("addToHistory", false);
+              view.dispatch(tr);
+              return false;
+            }
           }
         }
       })
@@ -2685,6 +2923,37 @@ export default function App() {
     return false;
   }
 
+  function clearStoredEditorMarks(tr, schema) {
+    Object.values(schema.marks || {}).forEach((markType) => {
+      tr.removeStoredMark(markType);
+    });
+    tr.setStoredMarks([]);
+  }
+
+  function splitEditorBlockWithoutMarks() {
+    return runEditorCommand((chain) =>
+      chain
+        .splitBlock({ keepMarks: false })
+        .command(({ tr, state }) => {
+          clearStoredEditorMarks(tr, state.schema);
+          return true;
+        })
+        .run()
+    );
+  }
+
+  function splitEditorListItemWithoutMarks(itemType) {
+    return runEditorCommand((chain) =>
+      chain
+        .splitListItem(itemType)
+        .command(({ tr, state }) => {
+          clearStoredEditorMarks(tr, state.schema);
+          return true;
+        })
+        .run()
+    );
+  }
+
   function insertParagraphAfterCurrentBlock(view) {
     const { state, dispatch } = view;
     const { selection, schema } = state;
@@ -2700,6 +2969,7 @@ export default function App() {
     const insertPos = selection.$from.after();
     const tr = state.tr.insert(insertPos, paragraphType.create());
     tr.setSelection(TextSelection.create(tr.doc, insertPos + 1));
+    clearStoredEditorMarks(tr, state.schema);
     dispatch(tr.scrollIntoView());
     return true;
   }
@@ -2766,6 +3036,18 @@ export default function App() {
       }
     }
 
+    if (event.key === "Enter" && !emptyTextblock) {
+      if (state.inTaskItem) {
+        event.preventDefault();
+        return splitEditorListItemWithoutMarks("taskItem");
+      }
+
+      if (state.inListItem) {
+        event.preventDefault();
+        return splitEditorListItemWithoutMarks("listItem");
+      }
+    }
+
     if (event.key === "Enter" && state.inHeading) {
       if (emptyTextblock) {
         const applied = runEditorCommand((chain) => chain.setParagraph().run());
@@ -2785,6 +3067,15 @@ export default function App() {
     if (event.key === "Enter" && emptyTextblock && state.inBlockquote) {
       event.preventDefault();
       runEditorCommand((chain) => chain.toggleBlockquote().run());
+      return true;
+    }
+
+    if (event.key === "Enter" && !state.inHeading && !state.inCodeBlock) {
+      const applied = splitEditorBlockWithoutMarks();
+      if (applied === false) {
+        return false;
+      }
+      event.preventDefault();
       return true;
     }
 
@@ -4659,9 +4950,6 @@ export default function App() {
       return;
     }
 
-    if (sourceRules.autoPair ?? true) {
-      handleSourceAutoPair(event);
-    }
   }
 
   function applyPastedLinkInSource(url) {
