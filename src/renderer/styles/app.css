@@ -170,117 +170,290 @@
 
 :root[data-theme="midnight"] .app-shell::before {
   background:
-    radial-gradient(circle at 14% 14%, rgba(77, 142, 247, 0.06) 0%, transparent 34%),
-    radial-gradient(circle at 84% 84%, rgba(139, 92, 246, 0.05) 0%, transparent 38%);
-  opacity: 0.9;
+    radial-gradient(circle at 10% 10%, rgba(90, 150, 251, 0.07) 0%, transparent 32%),
+    radial-gradient(circle at 88% 80%, rgba(139, 92, 246, 0.06) 0%, transparent 36%);
+  opacity: 1;
 }
 
 :root[data-theme="midnight"] .app-shell::after {
-  background: linear-gradient(180deg, rgba(77, 142, 247, 0.06) 0%, transparent 22%);
-  opacity: 0.5;
+  background: linear-gradient(180deg, rgba(90, 150, 251, 0.05) 0%, transparent 20%);
+  opacity: 0.6;
 }
 
 :root[data-theme="midnight"] .toolbar-shell {
-  background: linear-gradient(180deg, color-mix(in srgb, var(--panel) 92%, transparent) 0%, color-mix(in srgb, var(--panel-soft) 70%, transparent) 100%);
+  background: linear-gradient(180deg, rgba(20, 30, 52, 0.94) 0%, rgba(14, 22, 40, 0.88) 100%);
+  border-bottom-color: rgba(130, 165, 220, 0.08);
 }
 
 :root[data-theme="midnight"] .sidebar-panel {
-  background: linear-gradient(180deg, color-mix(in srgb, var(--panel-strong) 68%, transparent) 0%, color-mix(in srgb, var(--panel-soft) 90%, transparent) 100%);
-  box-shadow: inset -1px 0 0 rgba(148, 176, 218, 0.04);
+  background: linear-gradient(180deg, rgba(18, 28, 48, 0.95) 0%, rgba(10, 16, 30, 0.92) 100%);
+  border-right-color: rgba(130, 165, 220, 0.07);
+  box-shadow: inset -1px 0 0 rgba(130, 165, 220, 0.04);
 }
 
 :root[data-theme="midnight"] .paper {
-  border-color: rgba(148, 176, 218, 0.10);
+  border-color: rgba(130, 165, 220, 0.12);
   background:
-    linear-gradient(180deg, rgba(77, 142, 247, 0.03) 0%, transparent 14%),
-    linear-gradient(180deg, color-mix(in srgb, var(--panel-strong) 96%, transparent) 0%, color-mix(in srgb, var(--panel-soft) 68%, transparent) 100%);
-  box-shadow: var(--shadow-xl), inset 0 1px 0 rgba(148, 176, 218, 0.05);
+    linear-gradient(180deg, rgba(90, 150, 251, 0.04) 0%, transparent 12%),
+    linear-gradient(180deg, rgba(24, 36, 60, 0.98) 0%, rgba(16, 24, 44, 0.95) 100%);
+  box-shadow: var(--shadow-xl), inset 0 1px 0 rgba(130, 165, 220, 0.06), 0 0 0 1px rgba(130, 165, 220, 0.03);
 }
 
 :root[data-theme="midnight"] .paper::before {
-  border-bottom-color: rgba(77, 142, 247, 0.08);
-  background: linear-gradient(180deg, rgba(77, 142, 247, 0.04) 0%, transparent 100%);
+  border-bottom-color: rgba(90, 150, 251, 0.10);
+  background: linear-gradient(180deg, rgba(90, 150, 251, 0.05) 0%, transparent 100%);
 }
 
 :root[data-theme="midnight"] .paper::after {
-  border-color: rgba(148, 176, 218, 0.04);
+  border-color: rgba(130, 165, 220, 0.05);
+}
+
+:root[data-theme="midnight"] .editor-pane.pane-active .paper {
+  border-color: rgba(90, 150, 251, 0.22);
+  box-shadow: var(--shadow-xl), 0 0 0 1px rgba(90, 150, 251, 0.10);
 }
 
 :root[data-theme="midnight"] .side-pane {
+  border-color: rgba(130, 165, 220, 0.10);
   background:
-    linear-gradient(180deg, rgba(77, 142, 247, 0.02) 0%, transparent 18%),
-    linear-gradient(180deg, color-mix(in srgb, var(--panel-strong) 72%, transparent) 0%, color-mix(in srgb, var(--panel-soft) 88%, transparent) 100%);
+    linear-gradient(180deg, rgba(90, 150, 251, 0.03) 0%, transparent 16%),
+    linear-gradient(180deg, rgba(22, 34, 56, 0.96) 0%, rgba(14, 22, 40, 0.92) 100%);
+}
+
+:root[data-theme="midnight"] .side-pane.pane-active {
+  border-color: rgba(90, 150, 251, 0.18);
+  background: linear-gradient(180deg, rgba(90, 150, 251, 0.05) 0%, rgba(14, 22, 40, 0.94) 100%);
+  box-shadow: inset 0 0 0 1px rgba(90, 150, 251, 0.06), var(--shadow-md);
 }
 
 :root[data-theme="midnight"] .preview-pane .preview-surface {
+  border-color: rgba(130, 165, 220, 0.10);
   background:
-    linear-gradient(180deg, rgba(77, 142, 247, 0.03) 0%, transparent 16%),
-    linear-gradient(180deg, color-mix(in srgb, var(--panel-strong) 94%, transparent) 0%, color-mix(in srgb, var(--panel-soft) 72%, transparent) 100%);
+    linear-gradient(180deg, rgba(90, 150, 251, 0.03) 0%, transparent 14%),
+    linear-gradient(180deg, rgba(22, 34, 56, 0.96) 0%, rgba(14, 22, 40, 0.92) 100%);
+  box-shadow: var(--shadow-md), inset 0 1px 0 rgba(130, 165, 220, 0.04);
 }
 
 :root[data-theme="midnight"] .source-editor-shell {
+  border-color: rgba(130, 165, 220, 0.10);
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--panel-soft) 24%, transparent) 0%, transparent 18%),
-    color-mix(in srgb, var(--panel-strong) 94%, transparent);
+    linear-gradient(180deg, rgba(90, 150, 251, 0.02) 0%, transparent 16%),
+    rgba(18, 28, 48, 0.96);
+  box-shadow: var(--shadow-md), inset 0 1px 0 rgba(130, 165, 220, 0.04);
 }
 
 :root[data-theme="midnight"] .source-editor-shell::before {
-  background: linear-gradient(180deg, color-mix(in srgb, var(--panel-soft) 88%, transparent) 0%, color-mix(in srgb, var(--panel) 48%, transparent) 100%);
-  border-right-color: rgba(148, 176, 218, 0.05);
+  background: linear-gradient(180deg, rgba(12, 20, 36, 0.95) 0%, rgba(8, 14, 28, 0.88) 100%);
+  border-right-color: rgba(130, 165, 220, 0.06);
 }
 
 :root[data-theme="midnight"] .sidebar-content-shell {
-  background: color-mix(in srgb, var(--panel-strong) 80%, transparent);
-  border-color: rgba(148, 176, 218, 0.06);
+  background: rgba(20, 30, 52, 0.88);
+  border-color: rgba(130, 165, 220, 0.07);
 }
 
 :root[data-theme="midnight"] .sidebar-tabs {
-  background: color-mix(in srgb, var(--panel-strong) 80%, transparent);
-  border-color: rgba(148, 176, 218, 0.06);
+  background: rgba(20, 30, 52, 0.88);
+  border-color: rgba(130, 165, 220, 0.07);
+}
+
+:root[data-theme="midnight"] .sidebar-tab.active {
+  background: linear-gradient(135deg, rgba(90, 150, 251, 0.14) 0%, rgba(22, 34, 56, 0.92) 100%);
+  box-shadow: inset 0 0 0 1px rgba(90, 150, 251, 0.12), var(--shadow-sm);
 }
 
 :root[data-theme="midnight"] .status-bar {
-  background: color-mix(in srgb, var(--panel) 92%, transparent);
+  background: rgba(14, 22, 38, 0.94);
+  border-top-color: rgba(130, 165, 220, 0.07);
+}
+
+:root[data-theme="midnight"] .workspace-main {
+  background: linear-gradient(180deg, rgba(8, 14, 28, 0.3) 0%, transparent 100%);
+}
+
+:root[data-theme="midnight"] .tool-button {
+  background: linear-gradient(180deg, rgba(26, 38, 62, 0.95) 0%, rgba(18, 28, 48, 0.90) 100%);
+  border-color: rgba(130, 165, 220, 0.10);
+}
+
+:root[data-theme="midnight"] .tool-button:hover {
+  border-color: rgba(90, 150, 251, 0.40);
+  background: linear-gradient(180deg, rgba(32, 46, 72, 0.98) 0%, rgba(22, 34, 56, 0.94) 100%);
+}
+
+:root[data-theme="midnight"] .tool-button.active {
+  background: linear-gradient(180deg, rgba(90, 150, 251, 0.18) 0%, rgba(90, 150, 251, 0.08) 100%);
+  border-color: rgba(90, 150, 251, 0.30);
+}
+
+:root[data-theme="midnight"] .tool-button-primary {
+  background: linear-gradient(135deg, rgba(90, 150, 251, 0.80) 0%, rgba(90, 150, 251, 0.60) 100%);
+  color: #f0f4fc;
+  border-color: rgba(90, 150, 251, 0.30);
+}
+
+:root[data-theme="midnight"] .sidebar-stat-card {
+  background: rgba(20, 30, 52, 0.80);
+  border-color: rgba(130, 165, 220, 0.07);
+}
+
+:root[data-theme="midnight"] .sidebar-spotlight-card {
+  background: linear-gradient(180deg, rgba(22, 34, 56, 0.92) 0%, rgba(90, 150, 251, 0.06) 100%);
+  border-color: rgba(130, 165, 220, 0.08);
+}
+
+:root[data-theme="midnight"] .sidebar-empty-state {
+  background: linear-gradient(180deg, rgba(20, 30, 52, 0.88) 0%, rgba(14, 22, 40, 0.80) 100%);
+  border-color: rgba(130, 165, 220, 0.08);
+}
+
+:root[data-theme="midnight"] .sidebar-empty-state-hero {
+  border-color: rgba(90, 150, 251, 0.12);
+  background:
+    radial-gradient(circle at top right, rgba(90, 150, 251, 0.08) 0%, transparent 34%),
+    linear-gradient(180deg, rgba(22, 34, 56, 0.94) 0%, rgba(14, 22, 40, 0.88) 100%);
+}
+
+:root[data-theme="midnight"] .sidebar-recent-block {
+  background: linear-gradient(180deg, rgba(22, 34, 56, 0.90) 0%, rgba(14, 22, 40, 0.82) 100%);
+  border-color: rgba(130, 165, 220, 0.07);
+}
+
+:root[data-theme="midnight"] .sidebar-recent-item {
+  background: rgba(16, 24, 42, 0.70);
+}
+
+:root[data-theme="midnight"] .sidebar-recent-item:hover {
+  background: rgba(90, 150, 251, 0.12);
+  border-color: rgba(90, 150, 251, 0.22);
+}
+
+:root[data-theme="midnight"] .outline-item:hover,
+:root[data-theme="midnight"] .outline-item.active,
+:root[data-theme="midnight"] .file-leaf:hover,
+:root[data-theme="midnight"] .file-leaf.active {
+  background: rgba(90, 150, 251, 0.12);
+  border-left-color: rgba(90, 150, 251, 0.36);
 }
 
 :root[data-theme="midnight"] .editor-surface img,
 :root[data-theme="midnight"] .preview-surface img {
-  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.55);
+}
+
+:root[data-theme="midnight"] .find-input,
+:root[data-theme="midnight"] .pref-row select,
+:root[data-theme="midnight"] .pref-row input[type="text"] {
+  background: rgba(16, 24, 42, 0.85);
+  border-color: rgba(130, 165, 220, 0.10);
+}
+
+:root[data-theme="midnight"] .find-count {
+  background: rgba(20, 30, 52, 0.85);
+  border-color: rgba(130, 165, 220, 0.08);
+}
+
+:root[data-theme="midnight"] .status-view-switch {
+  background: rgba(20, 30, 52, 0.88);
+  border-color: rgba(130, 165, 220, 0.08);
+}
+
+:root[data-theme="midnight"] .status-pill {
+  background: rgba(20, 30, 52, 0.88);
+  border-color: rgba(130, 165, 220, 0.08);
 }
 
 :root[data-theme="midnight"] .dialog-backdrop {
-  background: rgba(2, 4, 12, 0.52);
+  background: rgba(2, 4, 10, 0.58);
 }
 
 :root[data-theme="midnight"] .preferences-dialog,
 :root[data-theme="midnight"] .link-dialog,
 :root[data-theme="midnight"] .front-matter-merge-dialog,
 :root[data-theme="midnight"] .editing-cheatsheet-dialog {
-  background: color-mix(in srgb, var(--panel-strong) 98%, transparent);
-  border-color: rgba(148, 176, 218, 0.10);
+  background: rgba(18, 28, 48, 0.98);
+  border-color: rgba(130, 165, 220, 0.12);
+  box-shadow: var(--shadow-xl), inset 0 1px 0 rgba(130, 165, 220, 0.04);
 }
 
 :root[data-theme="midnight"] .command-palette-backdrop {
-  background: rgba(2, 4, 12, 0.38);
+  background: rgba(2, 4, 10, 0.44);
 }
 
 :root[data-theme="midnight"] .command-palette {
-  background: color-mix(in srgb, var(--panel-strong) 94%, transparent);
-  border-color: rgba(148, 176, 218, 0.08);
+  background: rgba(18, 28, 48, 0.97);
+  border-color: rgba(130, 165, 220, 0.10);
+}
+
+:root[data-theme="midnight"] .command-palette-input {
+  background: rgba(12, 18, 34, 0.88);
+  border-color: rgba(130, 165, 220, 0.10);
 }
 
 :root[data-theme="midnight"] .toolbar-menu-panel {
-  background: color-mix(in srgb, var(--panel-strong) 96%, transparent);
-  box-shadow: 0 18px 36px rgba(0, 0, 0, 0.44);
+  background: rgba(20, 30, 52, 0.97);
+  border-color: rgba(130, 165, 220, 0.08);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.52);
 }
 
 :root[data-theme="midnight"] .slash-menu {
-  background: color-mix(in srgb, var(--panel-strong) 96%, transparent);
-  border-color: rgba(148, 176, 218, 0.08);
+  background: rgba(20, 30, 52, 0.97);
+  border-color: rgba(130, 165, 220, 0.10);
 }
 
 :root[data-theme="midnight"] .code-block-html-preview {
-  background: #0c1220;
+  background: #0a1020;
+}
+
+:root[data-theme="midnight"] .callout {
+  background: rgba(16, 24, 42, 0.70);
+  border-color: rgba(130, 165, 220, 0.10);
+}
+
+:root[data-theme="midnight"] .table-of-contents {
+  background: rgba(20, 30, 52, 0.80);
+  border-color: rgba(130, 165, 220, 0.08);
+}
+
+:root[data-theme="midnight"] .code-block-mermaid-preview {
+  background: rgba(20, 30, 52, 0.88);
+  border-color: rgba(130, 165, 220, 0.08);
+}
+
+:root[data-theme="midnight"] .table-toolbar {
+  background: rgba(20, 30, 52, 0.96);
+  border-color: rgba(130, 165, 220, 0.10);
+}
+
+:root[data-theme="midnight"] .preferences-theme-card {
+  background: rgba(20, 30, 52, 0.90);
+  border-color: rgba(130, 165, 220, 0.08);
+}
+
+:root[data-theme="midnight"] .preferences-theme-card:hover,
+:root[data-theme="midnight"] .preferences-theme-card.active {
+  border-color: rgba(90, 150, 251, 0.28);
+  background: rgba(90, 150, 251, 0.10);
+}
+
+:root[data-theme="midnight"] .preferences-card {
+  background: rgba(20, 30, 52, 0.88);
+  border-color: rgba(130, 165, 220, 0.08);
+}
+
+:root[data-theme="midnight"] .preferences-session-item {
+  background: rgba(16, 24, 42, 0.80);
+  border-color: rgba(130, 165, 220, 0.07);
+}
+
+:root[data-theme="midnight"] .preferences-rule-item {
+  background: rgba(20, 30, 52, 0.85);
+  border-color: rgba(130, 165, 220, 0.08);
+}
+
+:root[data-theme="midnight"] .editing-cheatsheet-card {
+  background: rgba(20, 30, 52, 0.85);
+  border-color: rgba(130, 165, 220, 0.08);
 }
 
 * {
@@ -580,7 +753,7 @@ select {
 }
 
 .toolbar-theme-swatch.theme-midnight {
-  background: linear-gradient(135deg, #4d8ef7 0%, #0e1526 100%);
+  background: linear-gradient(135deg, #5a96fb 0%, #0c1222 100%);
 }
 
 .document-toolbar-modes {
@@ -1726,7 +1899,7 @@ select {
 
 :root[data-theme="midnight"] .editor-surface mark,
 :root[data-theme="midnight"] .preview-surface mark {
-  background: color-mix(in srgb, #ffd166 28%, #3a2200);
+  background: color-mix(in srgb, #ffd166 26%, #332000);
 }
 
 .editor-surface sub,
@@ -3320,7 +3493,7 @@ select {
 }
 
 .preferences-theme-preview.theme-midnight {
-  background: linear-gradient(180deg, #1a2438 0%, #0a0f1c 100%);
+  background: linear-gradient(180deg, #182640 0%, #0a0f1c 100%);
 }
 
 .preferences-theme-preview-bar {
