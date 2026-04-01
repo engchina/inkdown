@@ -207,3 +207,25 @@ test("replaceAllLiteralMatches reports replacement count and resulting matches",
   assert.equal(result.replacedCount, 2);
   assert.deepEqual(result.nextMatches, []);
 });
+
+test("buildToggledPrefixedSourceLines normalizes deeper headings to heading one instead of removing them", () => {
+  const result = buildToggledPrefixedSourceLines("#### title", 0, 10, "# ", {
+    isApplied: (line) => /^#\s+/.test(line),
+    strip: (line) => line.replace(/^#\s+/, ""),
+    normalize: (line) => line.replace(/^#{1,6}\s+/, "")
+  });
+  assert.equal(result.text, "# title");
+  assert.equal(result.selectionStart, 0);
+  assert.equal(result.selectionEnd, 7);
+});
+
+test("buildToggledPrefixedSourceLines normalizes headings without a space before applying a new level", () => {
+  const result = buildToggledPrefixedSourceLines("####title", 0, 9, "# ", {
+    isApplied: (line) => /^#\s+/.test(line),
+    strip: (line) => line.replace(/^#\s+/, ""),
+    normalize: (line) => line.replace(/^#{1,6}\s*/, "")
+  });
+  assert.equal(result.text, "# title");
+  assert.equal(result.selectionStart, 0);
+  assert.equal(result.selectionEnd, 7);
+});

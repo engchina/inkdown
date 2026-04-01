@@ -17,3 +17,17 @@ test("styles keep shared toolbar emphasis states", () => {
   assert.match(stylesSource, /\.toolbar-section\.active \{/);
   assert.match(stylesSource, /\.toolbar-section\.active \.toolbar-section-label \{/);
 });
+
+test("smart heading transform and slash commands support heading levels four through six", () => {
+  assert.match(appSource, /const headingShortcut = \/\^\(#\{1,6\}\)\$\/\.exec\(beforeCursor\)/);
+  assert.match(appSource, /applyHeadingShortcut\(shortcutFrom, selection\.from, level\)/);
+  assert.match(appSource, /id: "heading-4"/);
+  assert.match(appSource, /id: "heading-5"/);
+  assert.match(appSource, /id: "heading-6"/);
+  assert.match(appSource, /toggleHeading\(\{ level: 4 \}\)/);
+  assert.match(appSource, /toggleHeading\(\{ level: 5 \}\)/);
+  assert.match(appSource, /toggleHeading\(\{ level: 6 \}\)/);
+  assert.match(appSource, /togglePrefixedSourceLines\("#### "/);
+  assert.match(appSource, /togglePrefixedSourceLines\("##### "/);
+  assert.match(appSource, /togglePrefixedSourceLines\("###### "/);
+});

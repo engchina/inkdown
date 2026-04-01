@@ -19,7 +19,6 @@ import TableHeader from "@tiptap/extension-table-header";
 import TableCell from "@tiptap/extension-table-cell";
 import { Marked } from "marked";
 import markedKatex from "marked-katex-extension";
-import TurndownService from "turndown";
 import hljs from "highlight.js/lib/core";
 import javascript from "highlight.js/lib/languages/javascript";
 import typescript from "highlight.js/lib/languages/typescript";
@@ -47,6 +46,12 @@ import EditingCheatsheetDialog from "./components/EditingCheatsheetDialog";
 import LinkDialog from "./components/LinkDialog";
 import { resolveEditingSurface } from "./utils/editingSurface.mjs";
 import { escapeHtml, sanitizePreviewContainer } from "./utils/previewSanitizer.mjs";
+import {
+  convertClipboardHtmlToMarkdown,
+  hasStructuredClipboardHtml,
+  normalizeMarkdownBlock,
+  serializeHtmlToMarkdown
+} from "./utils/clipboardMarkdown.mjs";
 import {
   buildRemovedMarkdownLinkSelection,
   buildLinkedSourceSelection,
@@ -76,13 +81,6 @@ previewMarked.use(
     nonStandard: true
   })
 );
-
-const turndown = new TurndownService({
-  headingStyle: "atx",
-  codeBlockStyle: "fenced",
-  bulletListMarker: "-",
-  emDelimiter: "*"
-});
 
 const defaultPreferences = {
   theme: "paper",
@@ -1006,9 +1004,7 @@ function getEditorSlashContext(instance) {
 }
 
 function serializeEditorHtmlToMarkdown(html, existingRawFrontMatter = "") {
-  const container = document.createElement("div");
-  container.innerHTML = String(html || "");
-  return prependFrontMatter(existingRawFrontMatter, turndown.turndown(container.innerHTML));
+  return prependFrontMatter(existingRawFrontMatter, serializeHtmlToMarkdown(html));
 }
 
 function extractFootnotes(markdown) {
@@ -1178,68 +1174,6 @@ function buildTableOfContentsHtml(outline) {
     .map((item) => `<a class="toc-item level-${item.level}" href="#${escapeHtml(item.domId)}">${escapeHtml(item.text)}</a>`)
     .join("");
   return `<nav class="table-of-contents"><div class="toc-title">Table of Contents</div>${items}</nav>`;
-}
-
-function escapeMarkdownImageAlt(value) {
-  return String(value || "").replace(/\\/g, "\\\\").replace(/\[/g, "\\[").replace(/\]/g, "\\]");
-}
-
-function escapeMarkdownTitle(value) {
-  return String(value || "").replace(/\\/g, "\\\\").replace(/"/g, '\\"');
-}
-
-function formatMarkdownImageSource(value) {
-  const normalized = String(value || "").trim();
-  if (!normalized) {
-    return "";
-  }
-  return /[\s()]/.test(normalized) ? `<${normalized}>` : normalized;
-}
-
-function escapeTableCell(content) {
-  const normalized = content.replace(/\r?\n/g, "<br>").replace(/\|/g, "\\|").trim();
-  return normalized || " ";
-}
-
-function serializeTableCell(cell) {
-  const markdown = turndown.turndown(cell.innerHTML || "").trim();
-  return escapeTableCell(markdown || cell.textContent || "");
-}
-
-function serializeTable(node) {
-  const rows = Array.from(node.rows || []);
-  if (rows.length === 0) {
-    return "";
-  }
-
-  const columnCount = Math.max(...rows.map((row) => row.cells.length));
-  if (columnCount === 0) {
-    return "";
-  }
-
-  const toMarkdownRow = (row) => {
-    const cells = Array.from(row.cells || []);
-    const values = Array.from({ length: columnCount }, (_, index) =>
-      cells[index] ? serializeTableCell(cells[index]) : " "
-    );
-    return `| ${values.join(" | ")} |`;
-  };
-
-  const alignmentRowSource = rows[0];
-  const headerRow = toMarkdownRow(rows[0]);
-  const dividerRow = `| ${Array.from({ length: columnCount }, (_, index) => {
-    const cell = alignmentRowSource?.cells?.[index];
-    const align = cell?.style?.textAlign || cell?.getAttribute?.("data-align") || "";
-    if (align === "center") {
-      return ":---:";
-    }
-    if (align === "right") {
-      return "---:";
-    }
-    return "---";
-  }).join(" | ")} |`;
-  const bodyRows = rows.slice(1).map(toMarkdownRow);
-  return `\n\n${[headerRow, dividerRow, ...bodyRows].join("\n")}\n\n`;
 }
 
 function resolveImageSources(html, currentFilePath, resolveAsset) {
@@ -1564,7 +1498,7 @@ function looksLikeMarkdownSnippet(value) {
   if (!text || isProbablyUrl(text)) {
     return false;
   }
-  return /^(#{1,6}\s|>\s|[-*+]\s|\d+\.\s|[-*+]\s\[(?: |x|X)\]\s|```|~~~|\|.+\|)/m.test(text) || /\n/.test(text);
+  return /^(#{1,6}\s|>\s|[-*+]\s|\d+\.\s|[-*+]\s\[(?: |x|X)\]\s|```|~~~|\|.+\|)/m.test(text);
 }
 
 function formatJsonLikeText(value) {
@@ -1593,15 +1527,6 @@ function formatSqlLikeText(value) {
 function formatYamlLikeText(value) {
   const parsed = yaml.load(String(value || ""));
   return yaml.dump(parsed, { lineWidth: 100, noRefs: true }).trim();
-}
-
-function normalizeMarkdownBlock(value) {
-  return String(value || "")
-    .replace(/\r/g, "")
-    .replace(/[ \t]+\n/g, "\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .replace(/^(#{1,6})(\S)/gm, "$1 $2")
-    .trim();
 }
 
 function getTableLayoutDocumentKey(filePath) {
@@ -1829,105 +1754,6 @@ function placeCursorInTrailingParagraph(view) {
   view.focus();
   return true;
 }
-
-turndown.addRule("taskListItems", {
-  filter(node) {
-    return node.nodeName === "LI" && node.getAttribute("data-type") === "taskItem";
-  },
-  replacement(content, node) {
-    return `- [${node.getAttribute("data-checked") === "true" ? "x" : " "}] ${content.trim()}\n`;
-  }
-});
-
-turndown.addRule("tables", {
-  filter(node) {
-    return node.nodeName === "TABLE";
-  },
-  replacement(content, node) {
-    return serializeTable(node);
-  }
-});
-
-turndown.addRule("images", {
-  filter(node) {
-    return node.nodeName === "IMG";
-  },
-  replacement(content, node) {
-    const source = formatMarkdownImageSource(node.getAttribute("data-md-src") || node.getAttribute("src"));
-    if (!source) {
-      return "";
-    }
-    const alt = escapeMarkdownImageAlt(node.getAttribute("alt"));
-    const title = node.getAttribute("title");
-    return `\n\n![${alt}](${source}${title ? ` "${escapeMarkdownTitle(title)}"` : ""})\n\n`;
-  }
-});
-
-turndown.addRule("codeBlocksWithLanguage", {
-  filter(node) {
-    return node.nodeName === "PRE" && node.firstElementChild?.nodeName === "CODE";
-  },
-  replacement(content, node) {
-    const code = node.firstElementChild;
-    const language =
-      code?.getAttribute("data-language") ||
-      (code?.getAttribute("class") || "")
-        .split(/\s+/)
-        .find((value) => value.startsWith("language-"))
-        ?.replace(/^language-/, "") ||
-      "";
-    const value = code?.textContent?.replace(/\n$/, "") || "";
-    return `\n\n\`\`\`${language}\n${value}\n\`\`\`\n\n`;
-  }
-});
-
-turndown.addRule("headings", {
-  filter(node) {
-    return /^H[1-6]$/.test(node.nodeName);
-  },
-  replacement(content, node) {
-    const level = Number(node.nodeName.slice(1));
-    const prefix = "#".repeat(level);
-    const text = content.trim();
-    return `\n\n${prefix} ${text}\n\n`;
-  }
-});
-
-turndown.addRule("tableOfContents", {
-  filter(node) {
-    return node.nodeType === Node.ELEMENT_NODE && node.classList?.contains("table-of-contents");
-  },
-  replacement() {
-    return "\n\n[TOC]\n\n";
-  }
-});
-
-turndown.addRule("highlight", {
-  filter(node) {
-    return node.nodeName === "MARK";
-  },
-  replacement(content) {
-    return `==${content}==`;
-  }
-});
-
-turndown.addRule("subscript", {
-  filter(node) {
-    return node.nodeName === "SUB";
-  },
-  replacement(content) {
-    return `~${content}~`;
-  }
-});
-
-turndown.addRule("superscript", {
-  filter(node) {
-    return node.nodeName === "SUP" && !node.classList?.contains("footnote-ref");
-  },
-  replacement(content) {
-    return `^${content}^`;
-  }
-});
 
 export default function App() {
   const [filePath, setFilePath] = useState(null);
@@ -2243,6 +2069,9 @@ export default function App() {
       { id: "heading-1", badge: "H1", label: "Heading 1", description: "Large document title", keywords: "heading title h1" },
       { id: "heading-2", badge: "H2", label: "Heading 2", description: "Section heading", keywords: "heading section h2" },
       { id: "heading-3", badge: "H3", label: "Heading 3", description: "Subsection heading", keywords: "heading subsection h3" },
+      { id: "heading-4", badge: "H4", label: "Heading 4", description: "Minor section heading", keywords: "heading minor h4" },
+      { id: "heading-5", badge: "H5", label: "Heading 5", description: "Deep subsection heading", keywords: "heading deep h5" },
+      { id: "heading-6", badge: "H6", label: "Heading 6", description: "Smallest heading", keywords: "heading smallest h6" },
       { id: "bullet-list", badge: "List", label: "Bullet list", description: "Unordered list items", keywords: "list bullet unordered" },
       { id: "ordered-list", badge: "1.", label: "Numbered list", description: "Ordered list items", keywords: "list ordered numbered" },
       { id: "task-list", badge: "Task", label: "Task list", description: "Checkbox list for todos", keywords: "task checkbox todo" },
@@ -2562,6 +2391,15 @@ export default function App() {
       case "heading-3":
         runEditorCommand((chain) => chain.deleteRange({ from: context.from, to: context.to }).toggleHeading({ level: 3 }).run());
         break;
+      case "heading-4":
+        runEditorCommand((chain) => chain.deleteRange({ from: context.from, to: context.to }).toggleHeading({ level: 4 }).run());
+        break;
+      case "heading-5":
+        runEditorCommand((chain) => chain.deleteRange({ from: context.from, to: context.to }).toggleHeading({ level: 5 }).run());
+        break;
+      case "heading-6":
+        runEditorCommand((chain) => chain.deleteRange({ from: context.from, to: context.to }).toggleHeading({ level: 6 }).run());
+        break;
       case "bullet-list":
         runEditorCommand((chain) => chain.deleteRange({ from: context.from, to: context.to }).toggleBulletList().run());
         break;
@@ -2597,6 +2435,10 @@ export default function App() {
 
   function applyEditorMarkdownShortcut(rangeFrom, rangeTo, apply) {
     return runEditorCommand((chain) => apply(chain.deleteRange({ from: rangeFrom, to: rangeTo })));
+  }
+
+  function applyHeadingShortcut(rangeFrom, rangeTo, level) {
+    return applyEditorMarkdownShortcut(rangeFrom, rangeTo, (chain) => chain.toggleHeading({ level }).run());
   }
 
   function isEditorSelectionInsideList(selection) {
@@ -2836,6 +2678,15 @@ export default function App() {
       return true;
     }
 
+    const headingShortcut = /^(#{1,6})$/.exec(beforeCursor);
+    if ((transformRules.heading ?? true) && headingShortcut) {
+      const level = headingShortcut[1].length;
+      applyHeadingShortcut(shortcutFrom, selection.from, level);
+      flashActiveEditorBlock();
+      setHint(`Heading ${level}.`);
+      return true;
+    }
+
     if ((transformRules.taskList ?? true) && /^[-*+]\s\[(?: |x|X)\]$/.test(beforeCursor)) {
       applyEditorMarkdownShortcut(shortcutFrom, selection.from, (chain) => chain.toggleTaskList().run());
       flashActiveEditorBlock();
@@ -2889,6 +2740,16 @@ export default function App() {
           chain.insertContent(`${escapedSpacePrefix[1]} `).run()
         );
         setHint("Inserted literal Markdown marker.");
+        return true;
+      }
+
+      const headingShortcut = /^(#{1,6})$/.exec(beforeCursor);
+      if ((transformRules.heading ?? true) && headingShortcut) {
+        const level = headingShortcut[1].length;
+        event.preventDefault();
+        applyHeadingShortcut(shortcutFrom, selection.from, level);
+        flashActiveEditorBlock();
+        setHint(`Heading ${level}.`);
         return true;
       }
 
@@ -3550,6 +3411,7 @@ export default function App() {
         return;
       }
       const pastedText = String(event.clipboardData?.getData("text/plain") || "").trim();
+      const pastedHtml = String(event.clipboardData?.getData("text/html") || "");
       const sourceFocused = sourceRef.current && (event.target === sourceRef.current || document.activeElement === sourceRef.current);
       const editorFocused = !sourceFocused && editor?.isFocused;
       if (pastedText && isProbablyUrl(pastedText)) {
@@ -3580,6 +3442,25 @@ export default function App() {
         });
         setStatus("Inserted Markdown snippet");
         return;
+      }
+
+      if (hasStructuredClipboardHtml(pastedHtml, pastedText)) {
+        const markdownFromHtml = convertClipboardHtmlToMarkdown(pastedHtml);
+        if (markdownFromHtml) {
+          event.preventDefault();
+          if (sourceFocused) {
+            insertIntoSource(markdownFromHtml, {
+              block: /[\r\n]/.test(markdownFromHtml) || /^(#{1,6}\s|>\s|[-*+]\s|\d+\.\s|!\[|```|~~~|\|)/m.test(markdownFromHtml)
+            });
+          } else {
+            const renderedSnippetHtml = renderMarkdownSnippetForEditor(markdownFromHtml, filePath);
+            runEditorCommand((chain) => chain.insertContent(renderedSnippetHtml).run(), {
+              preserveScroll: true
+            });
+          }
+          setStatus("Converted web content to Markdown");
+          return;
+        }
       }
 
       const imageItem = Array.from(event.clipboardData?.items || []).find((item) => item.type.startsWith("image/"));
@@ -4789,23 +4670,44 @@ export default function App() {
           break;
         case "heading-1":
           togglePrefixedSourceLines("# ", {
-            isApplied: (line) => /^#{1,6}\s+/.test(line),
-            strip: (line) => line.replace(/^#{1,6}\s+/, ""),
-            normalize: (line) => line.replace(/^#{1,6}\s+/, "")
+            isApplied: (line) => /^#\s+/.test(line),
+            strip: (line) => line.replace(/^#\s+/, ""),
+            normalize: (line) => line.replace(/^#{1,}\s*/, "")
           });
           break;
         case "heading-2":
           togglePrefixedSourceLines("## ", {
             isApplied: (line) => /^##\s+/.test(line),
             strip: (line) => line.replace(/^##\s+/, ""),
-            normalize: (line) => line.replace(/^#{1,6}\s+/, "")
+            normalize: (line) => line.replace(/^#{1,}\s*/, "")
           });
           break;
         case "heading-3":
           togglePrefixedSourceLines("### ", {
             isApplied: (line) => /^###\s+/.test(line),
             strip: (line) => line.replace(/^###\s+/, ""),
-            normalize: (line) => line.replace(/^#{1,6}\s+/, "")
+            normalize: (line) => line.replace(/^#{1,}\s*/, "")
+          });
+          break;
+        case "heading-4":
+          togglePrefixedSourceLines("#### ", {
+            isApplied: (line) => /^####\s+/.test(line),
+            strip: (line) => line.replace(/^####\s+/, ""),
+            normalize: (line) => line.replace(/^#{1,}\s*/, "")
+          });
+          break;
+        case "heading-5":
+          togglePrefixedSourceLines("##### ", {
+            isApplied: (line) => /^#####\s+/.test(line),
+            strip: (line) => line.replace(/^#####\s+/, ""),
+            normalize: (line) => line.replace(/^#{1,}\s*/, "")
+          });
+          break;
+        case "heading-6":
+          togglePrefixedSourceLines("###### ", {
+            isApplied: (line) => /^######\s+/.test(line),
+            strip: (line) => line.replace(/^######\s+/, ""),
+            normalize: (line) => line.replace(/^#{1,}\s*/, "")
           });
           break;
         case "bullet-list":
@@ -4899,6 +4801,15 @@ export default function App() {
         break;
       case "heading-3":
         runEditorCommand((chain) => chain.toggleHeading({ level: 3 }).run());
+        break;
+      case "heading-4":
+        runEditorCommand((chain) => chain.toggleHeading({ level: 4 }).run());
+        break;
+      case "heading-5":
+        runEditorCommand((chain) => chain.toggleHeading({ level: 5 }).run());
+        break;
+      case "heading-6":
+        runEditorCommand((chain) => chain.toggleHeading({ level: 6 }).run());
         break;
       case "bullet-list":
         runEditorCommand((chain) => chain.toggleBulletList().run());

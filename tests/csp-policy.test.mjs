@@ -5,6 +5,7 @@ import fs from "node:fs/promises";
 const indexHtml = await fs.readFile(new URL("../index.html", import.meta.url), "utf8");
 const appSource = await fs.readFile(new URL("../src/renderer/App.jsx", import.meta.url), "utf8");
 const mainSource = await fs.readFile(new URL("../src/main/main.js", import.meta.url), "utf8");
+const preloadSource = await fs.readFile(new URL("../src/preload/preload.js", import.meta.url), "utf8");
 
 test("index.html CSP blocks remote font dependencies and broad network access", () => {
   assert.match(indexHtml, /form-action 'none';/);
@@ -35,4 +36,11 @@ test("renderer threads remote media policy through preview and export paths", ()
 
 test("prompt-based editing interactions are removed from the app shell", () => {
   assert.doesNotMatch(appSource, /window\.prompt\(/);
+});
+
+test("preload resolves file urls without depending on node:url conversion helpers", () => {
+  assert.match(preloadSource, /function toFileSystemUrl\(filePath\)/);
+  assert.match(preloadSource, /function fromFileSystemUrl\(fileUrl\)/);
+  assert.doesNotMatch(preloadSource, /pathToFileURL/);
+  assert.doesNotMatch(preloadSource, /fileURLToPath/);
 });
