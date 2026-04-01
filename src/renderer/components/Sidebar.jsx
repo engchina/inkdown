@@ -1,6 +1,25 @@
 import React, { useMemo } from "react";
 import PropertiesPanel from "./PropertiesPanel";
 
+function getPathLabel(filePath) {
+  return String(filePath || "")
+    .split(/[\\/]/)
+    .filter(Boolean)
+    .pop() || filePath;
+}
+
+function countTreeFiles(node) {
+  if (!node) {
+    return 0;
+  }
+
+  if (node.type === "file") {
+    return 1;
+  }
+
+  return (node.children || []).reduce((total, child) => total + countTreeFiles(child), 0);
+}
+
 function matchesFilter(node, keyword) {
   if (!keyword) {
     return true;
@@ -75,14 +94,17 @@ export default function Sidebar({
   activeOutlineId,
   filterText,
   frontMatterRaw,
+  onCreateDocument,
   onFilterChange,
   onFrontMatterRawChange,
   onJumpOutline,
+  onOpenDocument,
   onOpenFile,
   onPickWorkspace,
   onRevealCurrentFile,
   onSidebarTabChange,
   outline,
+  recentFiles = [],
   sidebarTab,
   workspaceRoot,
   workspaceTree
@@ -93,6 +115,7 @@ export default function Sidebar({
     () => outline.filter((item) => !normalizedFilter || item.text.toLowerCase().includes(normalizedFilter)),
     [outline, normalizedFilter]
   );
+  const filteredFileCount = useMemo(() => countTreeFiles(filteredTree), [filteredTree]);
   const fileRootLabel = workspaceRoot ? workspaceRoot.split(/[\\/]/).filter(Boolean).pop() : "No folder opened";
   const hasFrontMatter = Boolean(String(frontMatterRaw || "").trim());
   const tabMeta = {
@@ -116,6 +139,15 @@ export default function Sidebar({
     }
   };
   const activeTabMeta = tabMeta[sidebarTab];
+  const showRecentFiles = sidebarTab === "files" && recentFiles.length > 0;
+  const resultBadge =
+    sidebarTab === "outline"
+      ? `${filteredOutline.length} item${filteredOutline.length === 1 ? "" : "s"}`
+      : sidebarTab === "files"
+        ? `${filteredFileCount} file${filteredFileCount === 1 ? "" : "s"}`
+        : hasFrontMatter
+          ? "Metadata ready"
+          : "No metadata";
 
   return (
     <aside className="sidebar-panel">
@@ -190,11 +222,7 @@ export default function Sidebar({
         <div className="sidebar-content-shell">
           <div className="sidebar-content-header">
             <div className="sidebar-section-label">{sidebarTab === "properties" ? activeTabMeta.sectionLabel : "Results"}</div>
-            {sidebarTab === "outline" ? (
-              <span className="sidebar-content-count">
-                {filteredOutline.length} item{filteredOutline.length === 1 ? "" : "s"}
-              </span>
-            ) : null}
+            <span className="sidebar-content-count">{resultBadge}</span>
           </div>
 
           {sidebarTab === "outline" ? (
@@ -209,14 +237,100 @@ export default function Sidebar({
                     {item.text}
                   </button>
                 ))}
-              {filteredOutline.length === 0 ? <div className="outline-empty">{outline.length === 0 ? "No headings yet" : "No headings match the current filter"}</div> : null}
+              {filteredOutline.length === 0 ? (
+                <div className="sidebar-empty-state">
+                  <div className="sidebar-empty-title">{outline.length === 0 ? "No headings yet" : "No headings match this filter"}</div>
+                  <div className="sidebar-empty-copy">
+                    {outline.length === 0
+                      ? "Add a heading in the editor to build a navigable document map."
+                      : "Try a broader heading filter or clear the search to see the full structure."}
+                  </div>
+                  {filterText ? (
+                    <div className="sidebar-empty-actions">
+                      <button type="button" className="sidebar-utility-button" onClick={() => onFilterChange("")}>
+                        Clear filter
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
           ) : sidebarTab === "files" ? (
             <div className="sidebar-content">
-              {filteredTree ? (
+              {!workspaceRoot ? (
+                <div className="sidebar-launchpad">
+                  <div className="sidebar-empty-state">
+                    <div className="sidebar-empty-title">Open a writing workspace</div>
+                    <div className="sidebar-empty-copy">
+                      Browse a folder for project notes, open a single Markdown file, or start a blank draft.
+                    </div>
+                    <div className="sidebar-empty-actions">
+                      <button type="button" className="sidebar-utility-button" onClick={onPickWorkspace}>
+                        Open folder
+                      </button>
+                      <button type="button" className="sidebar-utility-button" onClick={onOpenDocument}>
+                        Open document
+                      </button>
+                      <button type="button" className="sidebar-utility-button" onClick={onCreateDocument}>
+                        New document
+                      </button>
+                    </div>
+                  </div>
+                  {showRecentFiles ? (
+                    <div className="sidebar-recent-block">
+                      <div className="sidebar-section-label">Recent documents</div>
+                      <div className="sidebar-recent-list">
+                        {recentFiles.map((path) => (
+                          <button key={path} type="button" className="sidebar-recent-item" onClick={() => onOpenFile(path)}>
+                            <span className="sidebar-recent-name">{getPathLabel(path)}</span>
+                            <span className="sidebar-recent-path" title={path}>
+                              {path}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              ) : filteredTree ? (
                 <FileTreeNode node={filteredTree} activeFilePath={activeFilePath} onOpenFile={onOpenFile} />
               ) : (
-                <div className="outline-empty">No Markdown files to display</div>
+                <div className="sidebar-empty-state">
+                  <div className="sidebar-empty-title">No Markdown files to display</div>
+                  <div className="sidebar-empty-copy">
+                    {filterText
+                      ? "No files match the current filter in this workspace."
+                      : "This workspace does not contain visible Markdown files yet."}
+                  </div>
+                  <div className="sidebar-empty-actions">
+                    {filterText ? (
+                      <button type="button" className="sidebar-utility-button" onClick={() => onFilterChange("")}>
+                        Clear filter
+                      </button>
+                    ) : null}
+                    <button type="button" className="sidebar-utility-button" onClick={onPickWorkspace}>
+                      Change folder
+                    </button>
+                    <button type="button" className="sidebar-utility-button" onClick={onOpenDocument}>
+                      Open document
+                    </button>
+                  </div>
+                  {showRecentFiles ? (
+                    <div className="sidebar-recent-block compact">
+                      <div className="sidebar-section-label">Recent documents</div>
+                      <div className="sidebar-recent-list">
+                        {recentFiles.map((path) => (
+                          <button key={path} type="button" className="sidebar-recent-item" onClick={() => onOpenFile(path)}>
+                            <span className="sidebar-recent-name">{getPathLabel(path)}</span>
+                            <span className="sidebar-recent-path" title={path}>
+                              {path}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
               )}
             </div>
           ) : (

@@ -1,10 +1,8 @@
 const { contextBridge, ipcRenderer } = require("electron");
-const os = require("node:os");
-const path = require("node:path");
 const { fileURLToPath, pathToFileURL } = require("node:url");
 
 const ASSET_PROTOCOL = "inkdown-asset";
-const TEMP_IMAGE_DIR = path.join(os.tmpdir(), "inkdown-images");
+const TEMP_IMAGE_DIR = appendNativePath(ipcRenderer.sendSync("app:get-path", "temp"), "inkdown-images");
 
 function isExternalSource(value) {
   return /^(https?:|data:|blob:)/i.test(value);
@@ -18,8 +16,43 @@ function isRelativeImagesPath(assetPath) {
   return /^(?:\.\/)?images\/.+/i.test(assetPath || "");
 }
 
+function normalizeSlashes(value) {
+  return String(value || "").replace(/\\/g, "/");
+}
+
+function appendNativePath(basePath, segment) {
+  const normalizedBase = String(basePath || "").replace(/[\\/]+$/, "");
+  const separator = normalizedBase.includes("\\") && !normalizedBase.includes("/") ? "\\" : "/";
+  return `${normalizedBase}${separator}${segment}`;
+}
+
+function isWindowsDrivePath(value) {
+  return /^[A-Za-z]:[\\/]/.test(String(value || ""));
+}
+
+function isAbsolutePath(value) {
+  const normalized = String(value || "");
+  return isWindowsDrivePath(normalized) || normalized.startsWith("\\\\") || normalized.startsWith("/");
+}
+
+function dirnamePath(filePath) {
+  const normalized = String(filePath || "").replace(/[\\/]+$/, "");
+  const slashIndex = Math.max(normalized.lastIndexOf("/"), normalized.lastIndexOf("\\"));
+  return slashIndex === -1 ? "" : normalized.slice(0, slashIndex);
+}
+
+function ensureDirectoryUrlPath(directoryPath) {
+  const normalized = normalizeSlashes(directoryPath);
+  return normalized.endsWith("/") ? normalized : `${normalized}/`;
+}
+
+function joinPathSegments(basePath, relativePath) {
+  const baseUrl = pathToFileURL(ensureDirectoryUrlPath(basePath)).href;
+  return fileURLToPath(new URL(normalizeSlashes(relativePath), baseUrl));
+}
+
 function toAssetUrl(filePath) {
-  return `${ASSET_PROTOCOL}://local/?path=${encodeURIComponent(path.normalize(filePath))}`;
+  return `${ASSET_PROTOCOL}://local/?path=${encodeURIComponent(String(filePath || ""))}`;
 }
 
 function resolveAbsoluteAssetPath(documentPath, assetPath) {
@@ -31,19 +64,19 @@ function resolveAbsoluteAssetPath(documentPath, assetPath) {
     return fileURLToPath(assetPath);
   }
 
-  if (path.isAbsolute(assetPath)) {
+  if (isAbsolutePath(assetPath)) {
     return assetPath;
   }
 
   if (!documentPath) {
     if (isRelativeImagesPath(assetPath)) {
       const relativeImagePath = assetPath.replace(/^(?:\.\/)?images\//i, "");
-      return path.join(TEMP_IMAGE_DIR, ...relativeImagePath.split("/"));
+      return joinPathSegments(TEMP_IMAGE_DIR, relativeImagePath);
     }
     return null;
   }
 
-  return path.resolve(path.dirname(documentPath), assetPath);
+  return joinPathSegments(dirnamePath(documentPath), assetPath);
 }
 
 contextBridge.exposeInMainWorld("editorApi", {

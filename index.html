@@ -8,23 +8,21 @@
       content="
         default-src 'self';
         base-uri 'self';
+        form-action 'none';
         object-src 'none';
         script-src 'self';
-        style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
-        font-src 'self' data: https://fonts.gstatic.com;
+        style-src 'self' 'unsafe-inline';
+        font-src 'self' data:;
         img-src 'self' data: blob: http: https: inkdown-asset:;
         media-src 'self' data: blob: http: https: inkdown-asset:;
-        connect-src 'self' ws://127.0.0.1:5173 http://127.0.0.1:5173 ws://localhost:5173 http://localhost:5173 https:;
+        connect-src 'self' ws://127.0.0.1:5173 http://127.0.0.1:5173 ws://localhost:5173 http://localhost:5173;
         frame-src 'self';
         worker-src 'self' blob:;
       "
     />
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <title>Inkdown</title>
     <style>
-      body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: transparent; font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+      body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: transparent; font-family: "Segoe UI Variable", "Segoe UI", "Helvetica Neue", Arial, sans-serif; }
       #splash-screen {
         position: fixed;
         inset: 0;
