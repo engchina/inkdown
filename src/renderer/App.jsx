@@ -94,6 +94,10 @@ const defaultPreferences = {
   tableLayouts: {}
 };
 
+function isComposingInputEvent(event) {
+  return Boolean(event?.isComposing || event?.nativeEvent?.isComposing || event?.keyCode === 229 || event?.nativeEvent?.keyCode === 229);
+}
+
 const codeLanguageOptions = [
   { value: "", label: "Plain text" },
   { value: "js", label: "JavaScript" },
@@ -2201,6 +2205,10 @@ export default function App() {
   const executeSlashCommandRef = useRef(null);
   const paperRef = useRef(null);
   const suppressNextSmartTransformRef = useRef(false);
+  const sourceComposingRef = useRef(false);
+  const editorComposingRef = useRef(false);
+  const pendingEditorCompositionSyncRef = useRef(false);
+  const editorInstanceRef = useRef(null);
 
   const deferredMarkdown = useDeferredValue(markdownText);
   const matches = useMemo(() => findMatches(markdownText, findQuery), [markdownText, findQuery]);
@@ -2932,6 +2940,10 @@ export default function App() {
   }
 
   function handleEditorSmartTextInput(view, from, to, text) {
+    if (editorComposingRef.current || view.composing) {
+      return false;
+    }
+
     if (!preferencesRef.current.smartMarkdownTransform) {
       return false;
     }
@@ -3013,6 +3025,10 @@ export default function App() {
   }
 
   function handleEditorSmartMarkdown(view, event) {
+    if (editorComposingRef.current || view.composing || isComposingInputEvent(event)) {
+      return false;
+    }
+
     if (handleEditorStructuredEditing(view, event)) {
       return true;
     }
@@ -3124,6 +3140,21 @@ export default function App() {
           return handleEditorSmartTextInput(view, from, to, text);
         },
         handleDOMEvents: {
+          compositionstart() {
+            editorComposingRef.current = true;
+            pendingEditorCompositionSyncRef.current = false;
+            return false;
+          },
+          compositionend() {
+            window.requestAnimationFrame(() => {
+              editorComposingRef.current = false;
+              if (pendingEditorCompositionSyncRef.current && editorInstanceRef.current) {
+                pendingEditorCompositionSyncRef.current = false;
+                syncMarkdownFromEditor(editorInstanceRef.current);
+              }
+            });
+            return false;
+          },
           keydown: (view, event) => {
             if (slashMenuStateRef.current.open) {
               if (event.key === "ArrowDown") {
@@ -3179,6 +3210,7 @@ export default function App() {
         }
       },
       onCreate({ editor: instance }) {
+        editorInstanceRef.current = instance;
         editorHeadingsRef.current = buildEditorHeadingPositions(instance);
         syncEditorModes(instance);
         syncSlashMenu(instance);
@@ -3217,15 +3249,12 @@ export default function App() {
           programmaticEditorSyncRef.current = false;
           return;
         }
-        programmaticMarkdownSyncRef.current = true;
-        const nextMarkdown = serializeEditorHtmlToMarkdown(instance.getHTML());
-        lastEditorMarkdownRef.current = nextMarkdown;
-        startTransition(() => {
-          const nextOutline = extractOutlineFromMarkdown(nextMarkdown);
-          setMarkdownText(nextMarkdown);
-          setOutline(nextOutline);
-        });
-        setIsDirty(true);
+        if (editorComposingRef.current || instance.view.composing) {
+          pendingEditorCompositionSyncRef.current = true;
+          return;
+        }
+        pendingEditorCompositionSyncRef.current = false;
+        syncMarkdownFromEditor(instance);
       },
       onSelectionUpdate({ editor: instance }) {
         const sel = instance.state.selection;
@@ -3312,6 +3341,7 @@ export default function App() {
     if (!editor) {
       return;
     }
+    editorInstanceRef.current = editor;
     if (markdownText === lastEditorMarkdownRef.current) {
       return;
     }
@@ -3321,6 +3351,9 @@ export default function App() {
     }
     const syncEditorContent = () => {
       if (!hasMountedEditorView(editor)) {
+        return false;
+      }
+      if (editorComposingRef.current || editor.view.composing) {
         return false;
       }
       const nextOutline = extractOutlineFromMarkdown(markdownText);
@@ -3433,6 +3466,10 @@ export default function App() {
 
   useEffect(() => {
     const handleKeyDown = (event) => {
+      if (isComposingInputEvent(event)) {
+        return;
+      }
+
       const isModifier = event.metaKey || event.ctrlKey;
       const key = event.key.toLowerCase();
 
@@ -4301,6 +4338,18 @@ export default function App() {
     setStatus(`Replaced all ${matches.length} matches`);
   }
 
+  function syncMarkdownFromEditor(instance) {
+    programmaticMarkdownSyncRef.current = true;
+    const nextMarkdown = serializeEditorHtmlToMarkdown(instance.getHTML());
+    lastEditorMarkdownRef.current = nextMarkdown;
+    startTransition(() => {
+      const nextOutline = extractOutlineFromMarkdown(nextMarkdown);
+      setMarkdownText(nextMarkdown);
+      setOutline(nextOutline);
+    });
+    setIsDirty(true);
+  }
+
   function handleSourceChange(event) {
     setMarkdownText(event.target.value);
     setIsDirty(true);
@@ -4522,6 +4571,10 @@ export default function App() {
   }
 
   function handleSourceKeyDown(event) {
+    if (sourceComposingRef.current || isComposingInputEvent(event)) {
+      return;
+    }
+
     const sourceRules = preferencesRef.current.smartTransformSource || {};
 
     if (event.key === "Tab" && (sourceRules.tabIndent ?? true)) {
@@ -4865,6 +4918,14 @@ export default function App() {
                   value={markdownText}
                   onChange={handleSourceChange}
                   onClick={handleSourceSelection}
+                  onCompositionStart={() => {
+                    sourceComposingRef.current = true;
+                  }}
+                  onCompositionEnd={() => {
+                    window.requestAnimationFrame(() => {
+                      sourceComposingRef.current = false;
+                    });
+                  }}
                   onKeyDown={handleSourceKeyDown}
                   onKeyUp={handleSourceSelection}
                   onScroll={handleSourceScroll}
