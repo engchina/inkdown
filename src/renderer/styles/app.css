@@ -2099,6 +2099,55 @@ select {
   box-shadow: 0 18px 40px rgba(56, 44, 26, 0.18);
 }
 
+.editor-image-node {
+  display: block;
+  margin: 1.05em 0;
+}
+
+.editor-image-node.is-selected img,
+.editor-surface img.ProseMirror-selectednode {
+  outline: 3px solid color-mix(in srgb, var(--accent) 54%, transparent);
+  outline-offset: 6px;
+}
+
+.editor-image-markdown-block {
+  width: 100%;
+  margin: 0 0 10px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.editor-image-markdown-input {
+  display: block;
+  width: 100%;
+  min-height: 0;
+  overflow: hidden;
+  padding: 0;
+  border: 0;
+  outline: none;
+  resize: none;
+  background: transparent;
+  color: var(--text);
+  overflow-wrap: anywhere;
+  font-family: inherit;
+  font-size: 1em;
+  line-height: 1.7;
+  white-space: pre-wrap;
+}
+
+.editor-image-markdown-input.invalid {
+  color: #b34727;
+}
+
+.editor-image-markdown-error {
+  margin-top: 8px;
+  color: #b34727;
+  font-size: 0.84rem;
+  font-weight: 700;
+}
+
 .remote-media-placeholder {
   display: grid;
   gap: 6px;

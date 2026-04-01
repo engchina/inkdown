@@ -1,7 +1,7 @@
 import React, { startTransition, useDeferredValue, useEffect, useId, useMemo, useRef, useState } from "react";
 import { Mark, mergeAttributes, Extension, getMarkRange } from "@tiptap/core";
 import Heading from "@tiptap/extension-heading";
-import { Plugin, PluginKey, Selection, TextSelection } from "@tiptap/pm/state";
+import { NodeSelection, Plugin, PluginKey, Selection, TextSelection } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import { CellSelection, TableMap } from "@tiptap/pm/tables";
 import { EditorContent, NodeViewContent, NodeViewWrapper, ReactNodeViewRenderer, useEditor } from "@tiptap/react";
@@ -226,6 +226,12 @@ function normalizeHighlightLanguage(value) {
 }
 
 const MarkdownImage = Image.extend({
+  addOptions() {
+    return {
+      ...this.parent?.(),
+      resolveAsset: (value) => value
+    };
+  },
   addAttributes() {
     return {
       ...this.parent?.(),
@@ -259,8 +265,140 @@ const MarkdownImage = Image.extend({
           return true;
         }
     };
+  },
+  addNodeView() {
+    return ReactNodeViewRenderer(ImageNodeView);
   }
 });
+
+function ImageNodeView({ editor, extension, getPos, node, selected, updateAttributes }) {
+  const textareaRef = useRef(null);
+  const [draft, setDraft] = useState("");
+  const [editing, setEditing] = useState(false);
+  const [draftError, setDraftError] = useState("");
+  const markdownSource = node.attrs.markdownSource || node.attrs.src || "";
+  const shown = selected || editing;
+  const resolvedSrc =
+    (typeof extension.options.resolveAsset === "function" ? extension.options.resolveAsset(markdownSource) : "") ||
+    node.attrs.src ||
+    markdownSource;
+
+  useEffect(() => {
+    setDraft(
+      formatMarkdownImageSnippet({
+        alt: node.attrs.alt || "",
+        url: markdownSource,
+        title: node.attrs.title || ""
+      })
+    );
+    setDraftError("");
+  }, [markdownSource, node.attrs.alt, node.attrs.title]);
+
+  useEffect(() => {
+    if (!shown || !textareaRef.current) {
+      return;
+    }
+    textareaRef.current.focus();
+    textareaRef.current.select();
+  }, [shown, node.attrs.alt, markdownSource, node.attrs.title]);
+
+  useEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) {
+      return;
+    }
+    textarea.style.height = "0px";
+    textarea.style.height = `${textarea.scrollHeight}px`;
+  }, [draft, shown]);
+
+  function focusImageNode() {
+    const pos = typeof getPos === "function" ? getPos() : null;
+    editor.chain().focus(typeof pos === "number" ? pos : undefined).run();
+  }
+
+  function applyMarkdown(nextValue = draft) {
+    const parsed = parseMarkdownImageSnippet(nextValue);
+    if (!parsed?.url) {
+      setDraftError("Use valid Markdown image syntax like ![alt](url)");
+      return false;
+    }
+
+    const nextAttrs = {
+      ...node.attrs,
+      alt: parsed.alt,
+      title: parsed.title || null,
+      markdownSource: parsed.url,
+      src:
+        (typeof extension.options.resolveAsset === "function" ? extension.options.resolveAsset(parsed.url) : "") || parsed.url
+    };
+    updateAttributes(nextAttrs);
+    setDraft(formatMarkdownImageSnippet(parsed));
+    setDraftError("");
+    setEditing(false);
+    return true;
+  }
+
+  return (
+    <NodeViewWrapper className={`editor-image-node${shown ? " is-selected" : ""}`}>
+      {shown ? (
+        <div className="editor-image-markdown-block" contentEditable={false}>
+          <textarea
+            ref={textareaRef}
+            className={`editor-image-markdown-input${draftError ? " invalid" : ""}`}
+            value={draft}
+            rows={1}
+            spellCheck={false}
+            onMouseDown={(event) => event.stopPropagation()}
+            onFocus={() => setEditing(true)}
+            onChange={(event) => {
+              setDraft(event.target.value);
+              if (draftError) {
+                setDraftError("");
+              }
+            }}
+            onBlur={(event) => {
+              setEditing(false);
+              if (event.target.value.trim() === draft.trim()) {
+                return;
+              }
+              applyMarkdown(event.target.value);
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !event.shiftKey) {
+                event.preventDefault();
+                if (applyMarkdown(event.currentTarget.value)) {
+                  focusImageNode();
+                }
+              }
+              if (event.key === "Escape") {
+                event.preventDefault();
+                setDraft(
+                  formatMarkdownImageSnippet({
+                    alt: node.attrs.alt || "",
+                    url: markdownSource,
+                    title: node.attrs.title || ""
+                  })
+                );
+                setDraftError("");
+                setEditing(false);
+                focusImageNode();
+              }
+            }}
+          />
+          {draftError ? <div className="editor-image-markdown-error">{draftError}</div> : null}
+        </div>
+      ) : null}
+      <img
+        src={resolvedSrc}
+        alt={node.attrs.alt || ""}
+        title={node.attrs.title || ""}
+        width={node.attrs.width || undefined}
+        height={node.attrs.height || undefined}
+        draggable="false"
+      />
+    </NodeViewWrapper>
+  );
+}
 
 function CodeBlockNodeView({ editor, getPos, node, updateAttributes }) {
   const activeValue = node.attrs.language || "";
@@ -1315,6 +1453,85 @@ function renderMarkdownSnippetForEditor(markdown, currentFilePath) {
     window.editorApi.resolveMarkdownAsset
   );
   return decorateRenderedHtml(container, snippetOutline, { enableCallouts: true });
+}
+
+function escapeMarkdownImageAlt(value) {
+  return String(value || "").replace(/\\/g, "\\\\").replace(/\[/g, "\\[").replace(/\]/g, "\\]");
+}
+
+function escapeMarkdownImageTitle(value) {
+  return String(value || "").replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+}
+
+function formatMarkdownImageDestination(value) {
+  const normalized = String(value || "").trim();
+  if (!normalized) {
+    return "";
+  }
+  return /[\s()]/.test(normalized) ? `<${normalized}>` : normalized;
+}
+
+function formatMarkdownImageSnippet({ alt = "", url = "", title = "" } = {}) {
+  const destination = formatMarkdownImageDestination(url);
+  if (!destination) {
+    return "";
+  }
+  return `![${escapeMarkdownImageAlt(alt)}](${destination}${title ? ` "${escapeMarkdownImageTitle(title)}"` : ""})`;
+}
+
+function parseMarkdownImageSnippet(value) {
+  const match =
+    /^!\[([^\]]*)\]\(\s*(<[^>\r\n]+>|(?:\\.|[^\\\s)])+)(?:\s+((?:"(?:\\.|[^"])*"|'(?:\\.|[^'])*'|\((?:\\.|[^)])*\))))?\s*\)$/.exec(
+      String(value || "").trim()
+    );
+  if (!match) {
+    return null;
+  }
+
+  const rawSource = match[2] || "";
+  return {
+    alt: match[1] || "",
+    url: rawSource.startsWith("<") && rawSource.endsWith(">") ? rawSource.slice(1, -1) : rawSource,
+    title: String(match[3] || "").trim().replace(/^["'(]+|["')]+$/g, "")
+  };
+}
+
+function serializeEditorSelectionForClipboard(view) {
+  const selection = view.state.selection;
+  if (selection.empty) {
+    return null;
+  }
+
+  const { dom, text } = view.serializeForClipboard(selection.content());
+  const html = dom.innerHTML;
+  const markdown = convertClipboardHtmlToMarkdown(html) || normalizeMarkdownBlock(text);
+  return { html, text, markdown };
+}
+
+function handleEditorClipboardEvent(view, event, cut = false) {
+  const data = event.clipboardData;
+  if (!data) {
+    return false;
+  }
+
+  const serialized = serializeEditorSelectionForClipboard(view);
+  if (!serialized) {
+    return false;
+  }
+
+  const { html, text, markdown } = serialized;
+  event.preventDefault();
+  data.clearData();
+  data.setData("text/html", html);
+  data.setData("text/plain", markdown || text);
+  try {
+    data.setData("text/markdown", markdown || text);
+  } catch {}
+
+  if (cut) {
+    view.dispatch(view.state.tr.deleteSelection().scrollIntoView().setMeta("uiEvent", "cut"));
+  }
+  return true;
 }
 
 function renderMarkdownForPreview(
@@ -2805,7 +3022,11 @@ export default function App() {
         Subscript,
         Superscript,
         Link.configure({ openOnClick: true, autolink: true, defaultProtocol: "https" }),
-        MarkdownImage.configure({ inline: false, allowBase64: true }),
+        MarkdownImage.configure({
+          inline: false,
+          allowBase64: true,
+          resolveAsset: (assetPath) => window.editorApi.resolveMarkdownAsset(filePath, assetPath)
+        }),
         Placeholder.configure({ placeholder: "Start writing and edit Markdown directly in the document, just like Typora." }),
         TaskList,
         TaskItem.configure({ nested: true }),
@@ -2838,6 +3059,14 @@ export default function App() {
               }
             });
             return false;
+          },
+          copy(view, event) {
+            markEditorAsActive();
+            return handleEditorClipboardEvent(view, event, false);
+          },
+          cut(view, event) {
+            markEditorAsActive();
+            return handleEditorClipboardEvent(view, event, true);
           },
           keydown: (view, event) => {
             markEditorAsActive();
@@ -2979,6 +3208,9 @@ export default function App() {
     if (parentType === "codeBlock") {
       return { kind: "code", label: "Code block" };
     }
+    if (selection instanceof NodeSelection && selection.node?.type?.name === "image") {
+      return { kind: "image", label: "Image" };
+    }
 
     const blockState = isEditorSelectionInsideList(selection);
     if (blockState.inTaskItem) {
@@ -3061,6 +3293,13 @@ export default function App() {
         { id: "editor-add-row", label: "Add Row", onSelect: () => handleTableAction("add-row-after") },
         { id: "editor-add-column", label: "Add Column", onSelect: () => handleTableAction("add-col-after") },
         { id: "editor-delete-table", label: "Delete Table", onSelect: () => handleTableAction("delete-table"), tone: "danger" }
+      ];
+    }
+
+    if (activePane === "editor" && editorObjectContext?.kind === "image") {
+      return [
+        { id: "editor-replace-image", label: "Replace Image", onSelect: insertImage },
+        { id: "editor-remove-image", label: "Remove", onSelect: () => runEditorCommand((chain) => chain.deleteSelection().run()), tone: "danger" }
       ];
     }
 

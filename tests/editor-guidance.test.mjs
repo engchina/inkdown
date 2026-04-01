@@ -11,11 +11,17 @@ test("editor context still describes current block and routes through toolbar st
   assert.match(appSource, /pane: "Editor"/);
   assert.match(appSource, /kind: editorObjectContext\?\.kind \|\| "paragraph"/);
   assert.match(appSource, /label: editorObjectContext\?\.label \|\| "Paragraph"/);
+  assert.match(appSource, /selection instanceof NodeSelection && selection\.node\?\.type\?\.name === "image"/);
+  assert.match(appSource, /kind: "image", label: "Image"/);
 });
 
 test("styles keep shared toolbar emphasis states", () => {
   assert.match(stylesSource, /\.toolbar-section\.active \{/);
   assert.match(stylesSource, /\.toolbar-section\.active \.toolbar-section-label \{/);
+  assert.match(stylesSource, /\.editor-image-node \{/);
+  assert.match(stylesSource, /\.editor-image-markdown-block \{/);
+  assert.match(stylesSource, /overflow: hidden;/);
+  assert.match(stylesSource, /resize: none;/);
 });
 
 test("smart heading transform and slash commands support heading levels four through six", () => {
@@ -30,4 +36,17 @@ test("smart heading transform and slash commands support heading levels four thr
   assert.match(appSource, /togglePrefixedSourceLines\("#### "/);
   assert.match(appSource, /togglePrefixedSourceLines\("##### "/);
   assert.match(appSource, /togglePrefixedSourceLines\("###### "/);
+});
+
+test("selected editor images expose an inline editable markdown block", () => {
+  assert.match(appSource, /function formatMarkdownImageSnippet\(\{ alt = "", url = "", title = "" \} = \{\}\)/);
+  assert.match(appSource, /function parseMarkdownImageSnippet\(value\)/);
+  assert.match(appSource, /function ImageNodeView\(\{ editor, extension, getPos, node, selected, updateAttributes \}\)/);
+  assert.match(appSource, /return ReactNodeViewRenderer\(ImageNodeView\)/);
+  assert.match(appSource, /className=\{`editor-image-node\$\{shown \? " is-selected" : ""\}`\}/);
+  assert.match(appSource, /className="editor-image-markdown-block"/);
+  assert.match(appSource, /className=\{`editor-image-markdown-input\$\{draftError \? " invalid" : ""\}`\}/);
+  assert.match(appSource, /className="editor-image-markdown-block"[\s\S]*<img/);
+  assert.match(appSource, /function applyMarkdown\(nextValue = draft\)/);
+  assert.match(appSource, /updateAttributes\(nextAttrs\)/);
 });

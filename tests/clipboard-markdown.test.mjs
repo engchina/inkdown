@@ -106,6 +106,12 @@ test("markdown-looking pasted text is handled before HTML conversion", () => {
   assert.ok(markdownSnippetIndex < structuredHtmlIndex);
 });
 
+test("editor copy writes markdown clipboard data for external markdown-aware paste targets", () => {
+  assert.match(appSource, /function serializeEditorSelectionForClipboard\(view\)/);
+  assert.match(appSource, /data\.setData\("text\/plain", markdown \|\| text\);/);
+  assert.match(appSource, /data\.setData\("text\/markdown", markdown \|\| text\);/);
+});
+
 test("hasStructuredClipboardHtml treats paragraph-based article wrappers as structured web content", () => {
   withDom(() => {
     const html = '<article><p>First paragraph</p><p>Second paragraph</p></article>';
@@ -119,3 +125,4 @@ test("generic multiline plain text does not count as markdown snippet by itself"
     /return \/\^\(#{1,6}\\s\|>\\s\|\[-\*\+]\\s\|\\d\+\\.\\s\|\[-\*\+]\\s\\\[\(\?: \|x\|X\)\\\]\\s\|```\|~~~\|\\\|\.\+\\\|\)\/m\.test\(text\) \|\| \/\\n\/\.test\(text\);/
   );
 });
+
