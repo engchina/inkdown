@@ -446,6 +446,7 @@ function CodeBlockNodeView({ editor, getPos, node, updateAttributes }) {
           ))}
         </select>
         {validationState ? <span className={`code-block-status ${validationState.kind}`}>{validationState.label}</span> : null}
+        <span className="code-block-toolbar-spacer" />
         <button
           className="tool-button tool-button-ghost code-block-copy-button"
           type="button"
@@ -5407,34 +5408,15 @@ export default function App() {
         contextLabel={toolbarContext.label}
         contextActions={toolbarContextActions}
         currentContext={toolbarContext}
-        focusMode={preferences.focusMode}
-        documentPath={documentPathLabel}
-        documentTitle={documentTitle}
         editor={editor}
-        frontMatterActive={preferences.sidebarVisible && preferences.sidebarTab === "properties"}
-        hasFrontMatter={frontMatterSummary.hasFrontMatter}
-        frontMatterStatusText={frontMatterSummary.statusText}
-        frontMatterTone={frontMatterSummary.tone}
-        isDirty={isDirty}
-        onNew={createNewDocument}
-        onOpen={openDocument}
+        onSetTheme={(theme) => updatePreferences({ theme })}
         onOpenPalette={openCommandPalette}
-        onOpenFrontMatter={() => updatePreferences({ sidebarVisible: true, sidebarTab: "properties" })}
-        onRevealCurrentFile={revealCurrentFile}
         onInsertImage={insertImage}
         onInsertTable={insertTable}
         onApplyFormat={applyFormatting}
         onSave={() => saveDocument(false)}
-        onSaveAs={() => saveDocument(true)}
-        onExport={exportHtml}
-        onExportPdf={exportPdf}
         onOpenFind={openFindReplace}
-        onOpenPreferences={() => setPreferencesOpen(true)}
-        onSetViewMode={(mode) => updatePreferences({ viewMode: mode })}
-        onToggleFocusMode={() => updatePreferences({ focusMode: !preferences.focusMode })}
-        onToggleTypewriterMode={() => updatePreferences({ typewriterMode: !preferences.typewriterMode })}
-        typewriterMode={preferences.typewriterMode}
-        viewMode={preferences.viewMode}
+        theme={preferences.theme}
       />
 
       <FindReplaceBar
@@ -5638,6 +5620,7 @@ export default function App() {
         statusKind={statusState.kind}
         findSummary={findSummary}
         positionSummary={activePane === "source" ? sourceSelectionMeta.statusLabel : null}
+        onSetViewMode={(mode) => updatePreferences({ viewMode: mode })}
         onToggleSidebar={() => updatePreferences({ sidebarVisible: !preferences.sidebarVisible })}
         onDisableHints={() => updatePreferences({ smartTransformHints: false })}
       />

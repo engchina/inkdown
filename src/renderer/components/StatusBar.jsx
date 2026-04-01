@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from "react";
+import { Columns2, Eye, FileCode2, PenSquare } from "lucide-react";
 
 export default function StatusBar({
   activePane,
@@ -12,6 +13,7 @@ export default function StatusBar({
   statusKind,
   findSummary,
   positionSummary,
+  onSetViewMode,
   onToggleSidebar,
   onDisableHints
 }) {
@@ -28,18 +30,17 @@ export default function StatusBar({
 
   const activeMetric = metrics[metricIndex % metrics.length];
   const metricSummary = metrics.map((item) => item.detail).join(" • ");
-  const viewModeLabel =
-    {
-      editor: "Editor",
-      split: "Source + Preview",
-      preview: "Preview",
-      source: "Source"
-    }[viewMode] || viewMode;
   const showTransientStatus = statusMessage && statusMessage !== "Ready";
   const isHint = statusKind === "hint";
   const statusLabel = showTransientStatus ? statusMessage : "Ready";
   const activePaneLabel =
     activePane === "source" ? "Source Focus" : activePane === "preview" ? "Preview Focus" : "Editor Focus";
+  const viewItems = [
+    { id: "editor", label: "Editor", icon: PenSquare },
+    { id: "split", label: "Split", icon: Columns2 },
+    { id: "source", label: "Source", icon: FileCode2 },
+    { id: "preview", label: "Preview", icon: Eye }
+  ];
 
   return (
     <footer className="status-bar">
@@ -52,13 +53,29 @@ export default function StatusBar({
           onClick={onToggleSidebar}
         >
           <span className={`status-sidebar-icon${sidebarVisible ? " is-split" : " is-collapsed"}`} aria-hidden="true">
-            <span className="status-sidebar-icon-frame" />
-            <span className="status-sidebar-icon-sidebar" />
-            <span className="status-sidebar-icon-divider" />
-            <span className="status-sidebar-icon-content" />
+            <span className="status-sidebar-icon-rail" />
+            <span className="status-sidebar-icon-main" />
           </span>
         </button>
         <span className={`status-meta-item status-state${showTransientStatus ? " is-active" : ""}`}>{statusLabel}</span>
+        <div className="status-view-switch" role="tablist" aria-label="View mode">
+          {viewItems.map((item) => {
+            const Icon = item.icon;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                className={`status-view-button${viewMode === item.id ? " active" : ""}`}
+                title={item.label}
+                aria-label={item.label}
+                aria-pressed={viewMode === item.id}
+                onClick={() => onSetViewMode(item.id)}
+              >
+                <Icon size={14} strokeWidth={2} />
+              </button>
+            );
+          })}
+        </div>
         {isHint ? (
           <button type="button" className="status-hint-dismiss" onClick={onDisableHints}>
             Hide hints
@@ -68,9 +85,8 @@ export default function StatusBar({
 
       <div className="status-bar-section status-bar-meta">
         {findSummary ? <span className="status-meta-item status-pill">Find {findSummary}</span> : null}
-        <span className="status-meta-item status-pill">{activePaneLabel}</span>
+        <span className="status-meta-item status-pill status-pill-active">{activePaneLabel}</span>
         {positionSummary ? <span className="status-meta-item status-pill position">{positionSummary}</span> : null}
-        <span className="status-meta-item status-pill">{viewModeLabel}</span>
         <button
           type="button"
           className="status-metric-button status-pill"

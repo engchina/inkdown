@@ -25,3 +25,15 @@ test("command palette includes a title line and footer guidance", () => {
   assert.match(paletteSource, /command-palette-footer-selection/);
   assert.match(paletteSource, /Enter to run, arrows to move, Esc to close\./);
 });
+
+test("preferences exposes theme cards and section cards for final-product settings", () => {
+  assert.match(preferencesSource, /preferences-theme-grid/);
+  assert.match(preferencesSource, /preferences-layout/);
+  assert.match(preferencesSource, /preferences-card/);
+  assert.match(preferencesSource, /preferences-theme-card/);
+  assert.match(preferencesSource, /Warm paper canvas/);
+  assert.match(stylesSource, /\.preferences-layout \{/);
+  assert.match(stylesSource, /\.preferences-card \{/);
+  assert.match(stylesSource, /\.preferences-theme-grid \{/);
+  assert.match(stylesSource, /\.preferences-theme-card \{/);
+});

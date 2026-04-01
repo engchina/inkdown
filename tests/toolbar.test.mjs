@@ -5,28 +5,27 @@ import fs from "node:fs/promises";
 const toolbarSource = await fs.readFile(new URL("../src/renderer/components/Toolbar.jsx", import.meta.url), "utf8");
 const stylesSource = await fs.readFile(new URL("../src/renderer/styles/app.css", import.meta.url), "utf8");
 
-test("toolbar exposes file and insert menus in the app shell", () => {
-  assert.match(toolbarSource, /buildFileMenuItems/);
-  assert.match(toolbarSource, /buildInsertMenuItems/);
-  assert.match(toolbarSource, /<ToolbarMenu label="File"/);
-  assert.match(toolbarSource, /<ToolbarMenu label="Insert"/);
+test("toolbar exposes theme switching and direct save action in the app shell", () => {
+  assert.match(toolbarSource, /toolbar-theme-switch/);
+  assert.match(toolbarSource, /title="Save"/);
+  assert.doesNotMatch(toolbarSource, /<ToolbarMenu label="Insert"/);
+  assert.doesNotMatch(toolbarSource, /buildInsertMenuItems/);
 });
 
-test("file menu includes key document actions", () => {
-  assert.match(toolbarSource, /label: "New Document"/);
-  assert.match(toolbarSource, /label: "Open Document"/);
-  assert.match(toolbarSource, /label: "Save As"/);
-  assert.match(toolbarSource, /label: "Export HTML"/);
-  assert.match(toolbarSource, /label: "Export PDF"/);
-  assert.match(toolbarSource, /label: "Preferences"/);
+test("toolbar keeps theme chips available for quick switching", () => {
+  assert.match(toolbarSource, /const themeOptions = \[/);
+  assert.match(toolbarSource, /\{ value: "paper", label: "Paper" \}/);
+  assert.match(toolbarSource, /\{ value: "forest", label: "Forest" \}/);
+  assert.match(toolbarSource, /\{ value: "midnight", label: "Midnight" \}/);
+  assert.match(stylesSource, /\.toolbar-theme-switch \{/);
+  assert.match(stylesSource, /\.toolbar-theme-chip \{/);
 });
 
-test("insert menu includes core object insertion actions", () => {
-  assert.match(toolbarSource, /label: "Insert Link"/);
-  assert.match(toolbarSource, /label: "Insert Image"/);
-  assert.match(toolbarSource, /label: "Insert Table"/);
-  assert.match(toolbarSource, /label: "Horizontal Rule"/);
-  assert.match(toolbarSource, /label: "Code Block"/);
+test("format toolbar carries the core insertion actions inline", () => {
+  assert.match(toolbarSource, /title="Insert Link"/);
+  assert.match(toolbarSource, /title="Insert Image"/);
+  assert.match(toolbarSource, /title="Insert Table"/);
+  assert.match(toolbarSource, /title="Horizontal Rule"/);
 });
 
 test("format toolbar groups commands by writing task", () => {
@@ -54,9 +53,10 @@ test("toolbar supports contextual emphasis and current context pill", () => {
   assert.match(stylesSource, /\.toolbar-context-action \{/);
 });
 
-test("toolbar menus expose keyboard and aria affordances", () => {
-  assert.match(toolbarSource, /aria-haspopup="menu"/);
-  assert.match(toolbarSource, /aria-expanded=\{open\}/);
-  assert.match(toolbarSource, /handleTriggerKeyDown/);
-  assert.match(toolbarSource, /handleMenuKeyDown/);
+test("toolbar removes the previous writing mode box and menu-based insert trigger", () => {
+  assert.doesNotMatch(toolbarSource, /toolbar-toggle-group-writing/);
+  assert.doesNotMatch(toolbarSource, /title="Focus Mode"/);
+  assert.doesNotMatch(toolbarSource, /title="Typewriter Mode"/);
+  assert.doesNotMatch(toolbarSource, /aria-haspopup="menu"/);
+  assert.doesNotMatch(toolbarSource, /aria-expanded=\{open\}/);
 });
