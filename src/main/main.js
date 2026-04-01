@@ -728,19 +728,19 @@ function rebuildMenu(window) {
           click: () => sendPreferenceToggle(window, "sidebarVisible")
         },
         {
+          label: "Outline",
+          accelerator: "CmdOrCtrl+Shift+1",
+          click: () => emitMenuAction(window, { type: "set-sidebar-tab", tab: "outline" })
+        },
+        {
           label: "Files",
           accelerator: "CmdOrCtrl+Shift+2",
           click: () => emitMenuAction(window, { type: "set-sidebar-tab", tab: "files" })
         },
-          {
-            label: "Front Matter",
-            accelerator: "CmdOrCtrl+Shift+3",
-            click: () => emitMenuAction(window, { type: "set-sidebar-tab", tab: "properties" })
-          },
         {
-          label: "Outline",
-          accelerator: "CmdOrCtrl+Shift+1",
-          click: () => emitMenuAction(window, { type: "set-sidebar-tab", tab: "outline" })
+          label: "Front Matter",
+          accelerator: "CmdOrCtrl+Shift+3",
+          click: () => emitMenuAction(window, { type: "set-sidebar-tab", tab: "properties" })
         },
         { type: "separator" },
         {
