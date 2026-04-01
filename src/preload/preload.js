@@ -1,5 +1,4 @@
 const { contextBridge, ipcRenderer } = require("electron");
-const { fileURLToPath, pathToFileURL } = require("node:url");
 
 const ASSET_PROTOCOL = "inkdown-asset";
 const TEMP_IMAGE_DIR = appendNativePath(ipcRenderer.sendSync("app:get-path", "temp"), "inkdown-images");
@@ -46,9 +45,41 @@ function ensureDirectoryUrlPath(directoryPath) {
   return normalized.endsWith("/") ? normalized : `${normalized}/`;
 }
 
+function toFileSystemUrl(filePath) {
+  const normalized = normalizeSlashes(filePath);
+  if (!normalized) {
+    return "";
+  }
+
+  if (normalized.startsWith("//")) {
+    return `file:${encodeURI(normalized)}`;
+  }
+
+  if (/^[A-Za-z]:\//.test(normalized)) {
+    return `file:///${encodeURI(normalized)}`;
+  }
+
+  return `file://${encodeURI(normalized.startsWith("/") ? normalized : `/${normalized}`)}`;
+}
+
+function fromFileSystemUrl(fileUrl) {
+  const parsed = new URL(String(fileUrl || ""));
+  const decodedPathname = decodeURIComponent(parsed.pathname || "");
+
+  if (parsed.host) {
+    return `//${parsed.host}${decodedPathname}`;
+  }
+
+  if (/^\/[A-Za-z]:\//.test(decodedPathname)) {
+    return decodedPathname.slice(1);
+  }
+
+  return decodedPathname;
+}
+
 function joinPathSegments(basePath, relativePath) {
-  const baseUrl = pathToFileURL(ensureDirectoryUrlPath(basePath)).href;
-  return fileURLToPath(new URL(normalizeSlashes(relativePath), baseUrl));
+  const baseUrl = toFileSystemUrl(ensureDirectoryUrlPath(basePath));
+  return fromFileSystemUrl(new URL(normalizeSlashes(relativePath), baseUrl).href);
 }
 
 function toAssetUrl(filePath) {
@@ -61,7 +92,7 @@ function resolveAbsoluteAssetPath(documentPath, assetPath) {
   }
 
   if (isFileUrl(assetPath)) {
-    return fileURLToPath(assetPath);
+    return fromFileSystemUrl(assetPath);
   }
 
   if (isAbsolutePath(assetPath)) {
@@ -103,7 +134,7 @@ contextBridge.exposeInMainWorld("editorApi", {
     return () => ipcRenderer.removeListener("menu-action", listener);
   },
   toAssetUrl,
-  toFileUrl: (filePath) => (isFileUrl(filePath) ? filePath : pathToFileURL(filePath).href),
+  toFileUrl: (filePath) => (isFileUrl(filePath) ? filePath : toFileSystemUrl(filePath)),
   resolveMarkdownAsset: (documentPath, assetPath) => {
     if (!assetPath || isExternalSource(assetPath)) {
       return assetPath;
@@ -118,6 +149,6 @@ contextBridge.exposeInMainWorld("editorApi", {
     }
 
     const absolutePath = resolveAbsoluteAssetPath(documentPath, assetPath);
-    return absolutePath ? pathToFileURL(absolutePath).href : "";
+    return absolutePath ? toFileSystemUrl(absolutePath) : "";
   }
 });
