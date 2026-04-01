@@ -1664,18 +1664,47 @@ function buildStandaloneHtml(title, bodyHtml, theme) {
       :root { color-scheme: ${theme === "midnight" ? "dark" : "light"}; }
       html { margin: 0; padding: 0; background: ${theme === "midnight" ? "#0f1724" : theme === "forest" ? "#eef5ee" : "#faf7f1"}; }
       body {
-        max-width: 900px;
+        max-width: 820px;
         margin: 0 auto;
-        padding: 24px 24px 96px;
-        font: 18px/1.8 "Segoe UI", "Microsoft YaHei", sans-serif;
-        color: ${theme === "midnight" ? "#e8eef8" : "#1d232e"};
+        padding: 14px 26px 56px;
+        font: 17px/1.68 "Segoe UI", "Microsoft YaHei", sans-serif;
+        color: ${theme === "midnight" ? "#dbe4f0" : theme === "forest" ? "#243328" : "#2f3437"};
         background: ${theme === "midnight" ? "#0f1724" : theme === "forest" ? "#eef5ee" : "#faf7f1"};
+      }
+      .export-document {
+        width: 100%;
+        overflow-wrap: anywhere;
       }
       .export-document > :first-child { margin-top: 0; }
       .export-document > :last-child { margin-bottom: 0; }
-      img { max-width: 100%; border-radius: 12px; }
-      pre { overflow-x: auto; padding: 16px; border-radius: 14px; background: ${theme === "midnight" ? "#1c2434" : "#22252b"}; color: #f5f7fa; }
+      h1, h2, h3, h4, h5, h6 {
+        margin: 1.35em 0 0.42em;
+        line-height: 1.24;
+        color: ${theme === "midnight" ? "#edf3fb" : theme === "forest" ? "#17241a" : "#22262b"};
+        font-weight: 650;
+        letter-spacing: -0.015em;
+      }
+      h1 { font-size: 1.96em; line-height: 1.12; }
+      h2 { font-size: 1.62em; }
+      h3 { font-size: 1.36em; }
+      h4 { font-size: 1.15em; }
+      h5 { font-size: 1.03em; }
+      h6 { font-size: 0.94em; }
+      p { margin: 0.52em 0; color: inherit; }
+      ul, ol { margin: 0.5em 0; padding-left: 1.55em; }
+      li { margin: 0.1em 0; }
+      li > p { margin: 0.2em 0; }
+      ul ul, ul ol, ol ul, ol ol { margin: 0.16em 0; }
+      img { display: block; max-width: 100%; margin: 0.95em 0; border-radius: 12px; }
+      pre { overflow-x: auto; margin: 0.88em 0; padding: 14px 16px; border-radius: 12px; background: ${theme === "midnight" ? "#1c2434" : "#22252b"}; color: #f5f7fa; }
       code { font-family: "Cascadia Code", "JetBrains Mono", monospace; }
+      :not(pre) > code {
+        padding: 0.08em 0.34em;
+        border-radius: 0.34em;
+        background: ${theme === "midnight" ? "rgba(148, 163, 184, 0.16)" : "rgba(15, 23, 42, 0.06)"};
+        color: inherit;
+        font-size: 0.92em;
+      }
       .hljs { color: inherit; background: transparent; }
       .hljs-comment, .hljs-quote { color: #94a3b8; font-style: italic; }
       .hljs-keyword, .hljs-selector-tag, .hljs-literal, .hljs-name, .hljs-tag { color: #f97316; }
@@ -1686,54 +1715,45 @@ function buildStandaloneHtml(title, bodyHtml, theme) {
       mark { padding: 0.08em 0.32em; border-radius: 0.36em; background: ${theme === "midnight" ? "#5a4300" : "#ffe08a"}; color: inherit; }
       sub, sup { font-size: 0.78em; }
       blockquote:not(.callout) {
-        min-height: 1.6em;
-        margin: 1.15em 0;
-        padding: 0.35em 0 0.35em 1em;
-        border-left: 3px solid ${
+        min-height: 1.4em;
+        margin: 0.88em 0;
+        padding: 0.08em 0 0.08em 1em;
+        border-left: 2px solid ${
           theme === "midnight"
-            ? "rgba(148, 163, 184, 0.5)"
+            ? "rgba(148, 163, 184, 0.42)"
             : theme === "forest"
-              ? "rgba(5, 150, 105, 0.28)"
-              : "rgba(79, 70, 229, 0.26)"
+              ? "rgba(5, 150, 105, 0.22)"
+              : "rgba(120, 128, 140, 0.34)"
         };
-        border-radius: 0 10px 10px 0;
-        background: linear-gradient(
-          90deg,
-          ${
-            theme === "midnight"
-              ? "rgba(30, 41, 59, 0.52)"
-              : theme === "forest"
-                ? "rgba(255, 255, 255, 0.48)"
-                : "rgba(255, 255, 255, 0.52)"
-          } 0%,
-          transparent 82%
-        );
-        color: ${theme === "midnight" ? "#d3dbe8" : theme === "forest" ? "#065f46" : "#5b6476"};
+        border-radius: 0;
+        background: transparent;
+        color: ${theme === "midnight" ? "#b9c6d8" : theme === "forest" ? "#4c6853" : "#6b7280"};
+        font-size: 0.98em;
       }
       blockquote:not(.callout) > :first-child { margin-top: 0; }
       blockquote:not(.callout) > :last-child { margin-bottom: 0; }
-      blockquote:not(.callout) p { margin: 0.45em 0; }
+      blockquote:not(.callout) p { margin: 0.24em 0; }
       blockquote:not(.callout) blockquote:not(.callout) {
         min-height: 0;
-        margin: 0.7em 0 0.35em;
-        padding-left: 0.9em;
+        margin: 0.45em 0 0.22em;
+        padding-left: 0.85em;
         border-left-width: 2px;
-        border-radius: 0 8px 8px 0;
+        border-radius: 0;
         background: none;
       }
-      table { width: 100%; border-collapse: collapse; }
+      table { width: 100%; margin: 0.95em 0; border-collapse: collapse; }
       th, td { border: 1px solid rgba(160, 160, 160, 0.3); padding: 10px 12px; }
       td[data-align="left"], th[data-align="left"] { text-align: left; }
       td[data-align="center"], th[data-align="center"] { text-align: center; }
       td[data-align="right"], th[data-align="right"] { text-align: right; }
-      .table-of-contents { display: grid; gap: 8px; padding: 16px 18px; border: 1px solid rgba(160, 160, 160, 0.24); border-radius: 14px; background: rgba(255, 255, 255, 0.6); }
+      .table-of-contents { display: grid; gap: 3px; margin: 0.68em 0 0.9em; padding: 11px 13px; border: 1px solid rgba(160, 160, 160, 0.18); border-radius: 12px; background: ${theme === "midnight" ? "rgba(28, 36, 52, 0.58)" : "rgba(255, 255, 255, 0.42)"}; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16); }
       .toc-title { font-size: 12px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; }
-      .toc-item { color: inherit; text-decoration: none; }
+      .toc-item { color: inherit; text-decoration: none; padding: 0.08em 0; opacity: 0.92; }
       .toc-item.level-2 { padding-left: 12px; }
       .toc-item.level-3 { padding-left: 24px; }
       .toc-item.level-4, .toc-item.level-5, .toc-item.level-6 { padding-left: 36px; }
       .footnotes-title { margin-bottom: 10px; font-size: 12px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: ${theme === "midnight" ? "#b8c7d9" : "#69553f"}; }
-      .callout { position: relative; padding: 14px 16px 14px 18px; border: 1px solid rgba(160, 160, 160, 0.24); border-radius: 16px; background: rgba(255, 255, 255, 0.6); }
+      .callout { position: relative; margin: 0.9em 0; padding: 12px 15px 12px 18px; border: 1px solid rgba(160, 160, 160, 0.24); border-radius: 16px; background: rgba(255, 255, 255, 0.6); }
       .callout::before { content: ""; position: absolute; inset: 10px auto 10px 0; width: 4px; border-radius: 999px; background: #9a5a26; }
       .callout-title { margin-bottom: 6px; font-size: 13px; font-weight: 700; color: inherit; }
       .callout-note::before { background: #3b82f6; }
@@ -1741,9 +1761,9 @@ function buildStandaloneHtml(title, bodyHtml, theme) {
       .callout-important::before { background: #7c3aed; }
       .callout-warning::before { background: #d97706; }
       .callout-caution::before { background: #dc2626; }
-      .footnotes { margin-top: 32px; padding-top: 20px; border-top: 1px solid rgba(160, 160, 160, 0.24); }
+      .footnotes { margin-top: 20px; padding-top: 16px; border-top: 1px solid rgba(160, 160, 160, 0.24); }
       .footnote-backref { margin-left: 6px; text-decoration: none; }
-      .mermaid { margin: 1.5rem 0; }
+      .mermaid { margin: 0.95rem 0; }
     </style>
   </head>
   <body><main class="export-document">${bodyHtml}</main></body>
