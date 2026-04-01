@@ -1681,7 +1681,8 @@ function buildStandaloneHtml(title, bodyHtml, theme) {
         margin: 1.35em 0 0.42em;
         line-height: 1.24;
         color: ${theme === "midnight" ? "#e8eef8" : "#1d232e"};
-        font-weight: 700;
+        font-weight: 650;
+        letter-spacing: -0.015em;
       }
       h1 { font-size: 1.86em; line-height: 1.14; }
       h2 { font-size: 1.55em; }
@@ -1694,7 +1695,7 @@ function buildStandaloneHtml(title, bodyHtml, theme) {
       li { margin: 0.14em 0; }
       li > p { margin: 0.2em 0; }
       img { display: block; max-width: 100%; margin: 0.95em 0; border-radius: 12px; }
-      pre { overflow-x: auto; margin: 0.95em 0; padding: 16px; border-radius: 14px; background: ${theme === "midnight" ? "#1c2434" : "#22252b"}; color: #f5f7fa; }
+      pre { overflow-x: auto; margin: 0.88em 0; padding: 14px 16px; border-radius: 12px; background: ${theme === "midnight" ? "#1c2434" : "#22252b"}; color: #f5f7fa; }
       code { font-family: "Cascadia Code", "JetBrains Mono", monospace; }
       .hljs { color: inherit; background: transparent; }
       .hljs-comment, .hljs-quote { color: #94a3b8; font-style: italic; }
@@ -1746,9 +1747,9 @@ function buildStandaloneHtml(title, bodyHtml, theme) {
       td[data-align="left"], th[data-align="left"] { text-align: left; }
       td[data-align="center"], th[data-align="center"] { text-align: center; }
       td[data-align="right"], th[data-align="right"] { text-align: right; }
-      .table-of-contents { display: grid; gap: 4px; margin: 0.72em 0 0.92em; padding: 12px 14px; border: 1px solid rgba(160, 160, 160, 0.24); border-radius: 14px; background: rgba(255, 255, 255, 0.6); }
+      .table-of-contents { display: grid; gap: 3px; margin: 0.68em 0 0.9em; padding: 11px 13px; border: 1px solid rgba(160, 160, 160, 0.18); border-radius: 12px; background: ${theme === "midnight" ? "rgba(28, 36, 52, 0.58)" : "rgba(255, 255, 255, 0.42)"}; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16); }
       .toc-title { font-size: 12px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; }
-      .toc-item { color: inherit; text-decoration: none; padding: 0.1em 0; }
+      .toc-item { color: inherit; text-decoration: none; padding: 0.08em 0; opacity: 0.92; }
       .toc-item.level-2 { padding-left: 12px; }
       .toc-item.level-3 { padding-left: 24px; }
       .toc-item.level-4, .toc-item.level-5, .toc-item.level-6 { padding-left: 36px; }
