@@ -25,8 +25,9 @@ test("styles keep shared toolbar emphasis states", () => {
 });
 
 test("smart heading transform and slash commands support heading levels four through six", () => {
+  assert.match(appSource, /function applyEditorParagraphSpaceShortcut\(view, beforeCursor, rangeFrom, rangeTo\)/);
   assert.match(appSource, /const headingShortcut = \/\^\(#\{1,6\}\)\$\/\.exec\(beforeCursor\)/);
-  assert.match(appSource, /applyHeadingShortcut\(shortcutFrom, selection\.from, level\)/);
+  assert.match(appSource, /applyHeadingShortcut\(rangeFrom, rangeTo, level\)/);
   assert.match(appSource, /id: "heading-4"/);
   assert.match(appSource, /id: "heading-5"/);
   assert.match(appSource, /id: "heading-6"/);

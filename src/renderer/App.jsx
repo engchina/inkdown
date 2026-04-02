@@ -2,10 +2,15 @@ import React, { startTransition, useDeferredValue, useEffect, useId, useMemo, us
 import { Mark, mergeAttributes, Extension, getMarkRange } from "@tiptap/core";
 import Heading from "@tiptap/extension-heading";
 import { NodeSelection, Plugin, PluginKey, Selection, TextSelection } from "@tiptap/pm/state";
+import { DOMParser as ProseMirrorDOMParser } from "@tiptap/pm/model";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import { CellSelection, TableMap } from "@tiptap/pm/tables";
 import { EditorContent, NodeViewContent, NodeViewWrapper, ReactNodeViewRenderer, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
+import Bold from "@tiptap/extension-bold";
+import Italic from "@tiptap/extension-italic";
+import Strike from "@tiptap/extension-strike";
+import Code from "@tiptap/extension-code";
 import Underline from "@tiptap/extension-underline";
 import Link from "@tiptap/extension-link";
 import Image from "@tiptap/extension-image";
@@ -49,9 +54,11 @@ import { escapeHtml, sanitizePreviewContainer } from "./utils/previewSanitizer.m
 import {
   convertClipboardHtmlToMarkdown,
   hasStructuredClipboardHtml,
-  normalizeMarkdownBlock,
-  serializeHtmlToMarkdown
+  normalizeMarkdownBlock
 } from "./utils/clipboardMarkdown.mjs";
+import { serializeEditorHtmlToMarkdown as serializeEditorHtmlPreservingMarkdown } from "./utils/editorMarkdownSerializer.mjs";
+import { annotateInlineMarkdownTokens } from "./utils/inlineMarkdownTokens.mjs";
+import { getCompletedInlineMarkdownMatch } from "./utils/inlineMarkdownCompletion.mjs";
 import {
   buildRemovedMarkdownLinkSelection,
   buildLinkedSourceSelection,
@@ -71,6 +78,7 @@ import {
   replaceCurrentLiteralMatch
 } from "./utils/sourceEditing.mjs";
 import { getEmptyListEnterStrategy } from "./utils/editorStructuredEditing.mjs";
+import { findMarkRangeForSelection, getInlineMarkTarget, selectionTouchesMarkRange } from "./utils/markSyntaxEditing.mjs";
 
 const editorMarked = new Marked({ gfm: true, breaks: true });
 const previewMarked = new Marked({ gfm: true, breaks: true });
@@ -767,11 +775,36 @@ function capitalize(value) {
   return String(value || "").charAt(0).toUpperCase() + String(value || "").slice(1);
 }
 
-function createInlineTagMark(name, tagName) {
+function createTokenAttributeConfig(defaultOpenToken, defaultCloseToken = defaultOpenToken) {
+  return {
+    mdOpenToken: {
+      default: defaultOpenToken,
+      parseHTML: (element) => element.getAttribute("data-md-open-token") || defaultOpenToken,
+      renderHTML: (attributes) =>
+        attributes.mdOpenToken ? { "data-md-open-token": attributes.mdOpenToken } : {}
+    },
+    mdCloseToken: {
+      default: defaultCloseToken,
+      parseHTML: (element) => element.getAttribute("data-md-close-token") || defaultCloseToken,
+      renderHTML: (attributes) =>
+        attributes.mdCloseToken ? { "data-md-close-token": attributes.mdCloseToken } : {}
+    },
+    mdDepth: {
+      default: 0,
+      parseHTML: (element) => Number(element.getAttribute("data-md-depth") || 0),
+      renderHTML: (attributes) => ({ "data-md-depth": String(Number(attributes.mdDepth) || 0) })
+    }
+  };
+}
+
+function createInlineTagMark(name, tagName, defaultOpenToken, defaultCloseToken = defaultOpenToken) {
   const commandSuffix = capitalize(name);
   return Mark.create({
     name,
     inclusive: false,
+    addAttributes() {
+      return createTokenAttributeConfig(defaultOpenToken, defaultCloseToken);
+    },
     parseHTML() {
       return [{ tag: tagName }];
     },
@@ -797,9 +830,78 @@ function createInlineTagMark(name, tagName) {
   });
 }
 
-const Highlight = createInlineTagMark("highlight", "mark");
-const Subscript = createInlineTagMark("subscript", "sub");
-const Superscript = createInlineTagMark("superscript", "sup");
+const TokenBold = Bold.extend({
+  addInputRules() {
+    return [];
+  },
+  addPasteRules() {
+    return [];
+  },
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      ...createTokenAttributeConfig("**")
+    };
+  }
+});
+
+const TokenItalic = Italic.extend({
+  addInputRules() {
+    return [];
+  },
+  addPasteRules() {
+    return [];
+  },
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      ...createTokenAttributeConfig("*")
+    };
+  }
+});
+
+const TokenStrike = Strike.extend({
+  addInputRules() {
+    return [];
+  },
+  addPasteRules() {
+    return [];
+  },
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      ...createTokenAttributeConfig("~~")
+    };
+  }
+});
+
+const TokenCode = Code.extend({
+  addInputRules() {
+    return [];
+  },
+  addPasteRules() {
+    return [];
+  },
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      ...createTokenAttributeConfig("`")
+    };
+  }
+});
+
+const Highlight = createInlineTagMark("highlight", "mark", "==");
+const Subscript = createInlineTagMark("subscript", "sub", "~");
+const Superscript = createInlineTagMark("superscript", "sup", "^");
+
+const TokenLink = Link.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      ...createTokenAttributeConfig("[", "]()")
+    };
+  }
+});
 
 const MARK_SYNTAX = {
   bold: "**",
@@ -808,10 +910,9 @@ const MARK_SYNTAX = {
   code: "`",
   highlight: "==",
   subscript: "~",
-  superscript: "^"
+  superscript: "^",
+  link: "["
 };
-
-const inlineMarkRevealKey = new PluginKey("inlineMarkReveal");
 
 function collectMarkRanges(parent, parentStart) {
   const ranges = [];
@@ -850,70 +951,303 @@ function collectMarkRanges(parent, parentStart) {
       const rangeKey = `${mark.type.name}:${rangeFrom}-${rangeTo}`;
       if (!seen.has(rangeKey)) {
         seen.add(rangeKey);
-        ranges.push({ markName: mark.type.name, syntax, from: rangeFrom, to: rangeTo });
+        ranges.push({ markName: mark.type.name, markType: mark.type, markAttrs: mark.attrs, syntax, from: rangeFrom, to: rangeTo });
       }
     }
   }
   return ranges;
 }
 
-const InlineMarkReveal = Extension.create({
-  name: "inlineMarkReveal",
+// ── MarkSyntaxEditing ────────────────────────────────────────────────────────
+// Typora-style: when cursor enters a mark range, temporarily replace the mark
+// with real editable `*` / `**` / etc. text.  When cursor leaves, restore the
+// mark (or leave plain text if the user deleted a syntax character).
+
+const markSyntaxEditingKey = new PluginKey("markSyntaxEditing");
+
+function sortSerializableMarks(marks) {
+  return [...marks]
+    .filter((mark) => MARK_SYNTAX[mark.type.name])
+    .sort((left, right) => {
+      const leftDepth = Number(left.attrs?.mdDepth ?? 0);
+      const rightDepth = Number(right.attrs?.mdDepth ?? 0);
+      if (leftDepth !== rightDepth) {
+        return leftDepth - rightDepth;
+      }
+      return left.type.name.localeCompare(right.type.name);
+    });
+}
+
+function getSerializableMarkTokens(mark) {
+  const openToken = mark.attrs?.mdOpenToken || MARK_SYNTAX[mark.type.name] || "";
+  if (mark.type.name === "link") {
+    const closeToken =
+      mark.attrs?.mdCloseToken ||
+      `](${mark.attrs?.href || ""}${mark.attrs?.title ? ` "${String(mark.attrs.title).replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"` : ""})`;
+    return { openToken, closeToken };
+  }
+  return {
+    openToken,
+    closeToken: mark.attrs?.mdCloseToken || MARK_SYNTAX[mark.type.name] || ""
+  };
+}
+
+function sameSerializableMark(left, right) {
+  return (
+    left?.type?.name === right?.type?.name &&
+    String(left?.attrs?.mdOpenToken || "") === String(right?.attrs?.mdOpenToken || "") &&
+    String(left?.attrs?.mdCloseToken || "") === String(right?.attrs?.mdCloseToken || "") &&
+    String(left?.attrs?.href || "") === String(right?.attrs?.href || "") &&
+    String(left?.attrs?.title || "") === String(right?.attrs?.title || "") &&
+    Number(left?.attrs?.mdDepth || 0) === Number(right?.attrs?.mdDepth || 0)
+  );
+}
+
+function serializeInlineFragmentContent(content) {
+  let markdown = "";
+  let textOffset = 0;
+  const positionMap = [0];
+  let activeMarks = [];
+
+  content.forEach((node) => {
+    if (!node.isText) {
+      return;
+    }
+
+    const nextMarks = sortSerializableMarks(node.marks || []);
+    let shared = 0;
+    while (shared < activeMarks.length && shared < nextMarks.length && sameSerializableMark(activeMarks[shared], nextMarks[shared])) {
+      shared += 1;
+    }
+
+    for (let index = activeMarks.length - 1; index >= shared; index -= 1) {
+      markdown += getSerializableMarkTokens(activeMarks[index]).closeToken;
+    }
+    for (let index = shared; index < nextMarks.length; index += 1) {
+      markdown += getSerializableMarkTokens(nextMarks[index]).openToken;
+    }
+
+    activeMarks = nextMarks;
+
+    const text = node.text || "";
+    for (const character of text) {
+      positionMap[textOffset] = markdown.length;
+      markdown += character;
+      textOffset += 1;
+      positionMap[textOffset] = markdown.length;
+    }
+  });
+
+  for (let index = activeMarks.length - 1; index >= 0; index -= 1) {
+    markdown += getSerializableMarkTokens(activeMarks[index]).closeToken;
+  }
+
+  if (positionMap.length === 0) {
+    positionMap.push(0);
+  }
+
+  return { markdown, positionMap };
+}
+
+function parseInlineMarkdownFragment(schema, markdown) {
+  const container = document.createElement("div");
+  container.innerHTML = editorMarked.parseInline(preprocessMarkdownSyntax(markdown, { enableExtendedInlineSyntax: true }));
+  annotateInlineMarkdownTokens(container, markdown);
+  return ProseMirrorDOMParser.fromSchema(schema).parseSlice(container, { preserveWhitespace: "full" }).content;
+}
+
+function mapExpandedSelectionPosition(positionMap, groupFrom, docPos) {
+  const cursorOffset = Math.max(0, Math.min(docPos - groupFrom, positionMap.length - 1));
+  return groupFrom + (positionMap[cursorOffset] ?? positionMap[positionMap.length - 1] ?? 0);
+}
+
+function expandMarkSyntax(state, groupFrom, groupTo, selectionAnchor, selectionHead = selectionAnchor) {
+  const fragment = state.doc.slice(groupFrom, groupTo).content;
+  const { markdown, positionMap } = serializeInlineFragmentContent(fragment);
+  const anchorPos = mapExpandedSelectionPosition(positionMap, groupFrom, selectionAnchor);
+  const headPos = mapExpandedSelectionPosition(positionMap, groupFrom, selectionHead);
+  const tr = state.tr.replaceWith(groupFrom, groupTo, state.schema.text(markdown));
+  tr.setSelection(TextSelection.create(tr.doc, anchorPos, headPos));
+  tr.setMeta(markSyntaxEditingKey, {
+    expandedRange: { from: groupFrom, to: groupFrom + markdown.length }
+  });
+  return tr;
+}
+
+function collapseMarkSyntax(state, expandedRange) {
+  const { from, to } = expandedRange;
+  const markdown = state.doc.textBetween(from, to, "\n");
+  const fragment = parseInlineMarkdownFragment(state.schema, markdown);
+  const tr = state.tr.replaceWith(from, to, fragment);
+  tr.setMeta(markSyntaxEditingKey, { expandedRange: null });
+  return tr;
+}
+
+function getSelectionTextblock(selection) {
+  if (!selection?.$from?.parent?.isTextblock || selection.$from.parent.type.name === "codeBlock") {
+    return null;
+  }
+  if (selection.$to.parent !== selection.$from.parent || selection.$to.start() !== selection.$from.start()) {
+    return null;
+  }
+  return {
+    parent: selection.$from.parent,
+    start: selection.$from.start()
+  };
+}
+
+function selectionTouchesExpandedRange(selection, expandedRange) {
+  return selectionTouchesMarkRange(expandedRange, selection.from, selection.to);
+}
+
+function findMarkGroupForSelection(state, selection, preferredMarkName = null) {
+  const textblock = getSelectionTextblock(selection);
+  if (!textblock) {
+    return null;
+  }
+
+  const markRanges = collectMarkRanges(textblock.parent, textblock.start);
+  const anchorRange = findMarkRangeForSelection(markRanges, selection.from, selection.to, preferredMarkName);
+  if (!anchorRange) {
+    return null;
+  }
+
+  const containing = markRanges.filter((range) => selectionTouchesMarkRange(range, selection.from, selection.to));
+  if (!containing.length) {
+    return null;
+  }
+
+  return {
+    from: Math.min(...containing.map((range) => range.from)),
+    to: Math.max(...containing.map((range) => range.to))
+  };
+}
+
+function findCompletedInlineRangeAtSelection(state, selection) {
+  if (!selection?.empty) {
+    return null;
+  }
+
+  const textblock = getSelectionTextblock(selection);
+  if (!textblock) {
+    return null;
+  }
+
+  const beforeCursor = textblock.parent.textContent.slice(0, selection.$from.parentOffset);
+  const match = getCompletedInlineMarkdownMatch(beforeCursor);
+  if (!match) {
+    return null;
+  }
+
+  return {
+    from: textblock.start + match.start,
+    to: textblock.start + match.end,
+    type: match.type
+  };
+}
+
+const MarkSyntaxEditing = Extension.create({
+  name: "markSyntaxEditing",
 
   addProseMirrorPlugins() {
     return [
       new Plugin({
-        key: inlineMarkRevealKey,
+        key: markSyntaxEditingKey,
+
         state: {
           init() {
-            return DecorationSet.empty;
+            return { expandedRange: null };
           },
-          apply(tr, oldSet, oldState, newState) {
-            const sel = newState.selection;
-            if (!sel.empty || !sel.$from.parent.isTextblock || sel.$from.parent.type.name === "codeBlock") {
-              return DecorationSet.empty;
-            }
-
-            const $from = sel.$from;
-            const parent = $from.parent;
-            const parentStart = $from.start();
-            const ranges = collectMarkRanges(parent, parentStart);
-
-            const decorations = [];
-            for (const range of ranges) {
-              if (sel.from < range.from || sel.from > range.to) {
-                continue;
-              }
-
-              decorations.push(
-                Decoration.widget(range.from, () => {
-                  const span = document.createElement("span");
-                  span.className = "mark-syntax-reveal";
-                  span.textContent = range.syntax;
-                  return span;
-                }, { side: -1, key: `mark-open-${range.markName}-${range.from}` })
-              );
-              decorations.push(
-                Decoration.widget(range.to, () => {
-                  const span = document.createElement("span");
-                  span.className = "mark-syntax-reveal";
-                  span.textContent = range.syntax;
-                  return span;
-                }, { side: 1, key: `mark-close-${range.markName}-${range.to}` })
-              );
-            }
-
-            return decorations.length ? DecorationSet.create(newState.doc, decorations) : DecorationSet.empty;
-          }
+          apply(tr, pluginState) {
+            const meta = tr.getMeta(markSyntaxEditingKey);
+            if (meta !== undefined) return { expandedRange: meta.expandedRange };
+            if (!pluginState.expandedRange) return pluginState;
+            const { expandedRange } = pluginState;
+            return {
+              expandedRange: {
+                ...expandedRange,
+                from: tr.mapping.map(expandedRange.from, -1),
+                to: tr.mapping.map(expandedRange.to, 1),
+              },
+            };
+          },
         },
+
         props: {
           decorations(state) {
-            return this.getState(state);
+            const { expandedRange } = markSyntaxEditingKey.getState(state);
+            if (!expandedRange) {
+              return DecorationSet.empty;
+            }
+            return DecorationSet.empty;
+          },
+          handleClick(view, pos, event) {
+            if (event.button !== 0) {
+              return false;
+            }
+
+            const { expandedRange } = markSyntaxEditingKey.getState(view.state);
+            if (expandedRange) {
+              return false;
+            }
+
+            const target = getInlineMarkTarget(event.target, view.dom);
+            if (!target) {
+              return false;
+            }
+
+            const group = findMarkGroupForSelection(view.state, Selection.near(view.state.doc.resolve(pos)), target.markName);
+            if (!group) {
+              return false;
+            }
+
+            view.dispatch(expandMarkSyntax(view.state, group.from, group.to, pos, pos));
+            view.focus();
+            return true;
+          },
+        },
+
+        appendTransaction(transactions, _oldState, newState) {
+          if (transactions.some((tr) => tr.getMeta(markSyntaxEditingKey) !== undefined)) {
+            return null;
           }
-        }
-      })
+
+          const { expandedRange } = markSyntaxEditingKey.getState(newState);
+          const sel = newState.selection;
+
+          if (expandedRange) {
+            if (!selectionTouchesExpandedRange(sel, expandedRange)) {
+              return collapseMarkSyntax(newState, expandedRange);
+            }
+            return null;
+          }
+
+          if (transactions.some((tr) => tr.docChanged)) {
+            const completedRange = findCompletedInlineRangeAtSelection(newState, sel);
+            if (completedRange) {
+              return newState.tr.setMeta(markSyntaxEditingKey, {
+                expandedRange: {
+                  from: completedRange.from,
+                  to: completedRange.to
+                }
+              });
+            }
+          }
+
+          if (!transactions.some((tr) => tr.selectionSet)) {
+            return null;
+          }
+
+          const group = findMarkGroupForSelection(newState, sel);
+          if (group) {
+            return expandMarkSyntax(newState, group.from, group.to, sel.anchor, sel.head);
+          }
+
+          return null;
+        },
+      }),
     ];
-  }
+  },
 });
 
 const calloutLabels = {
@@ -1142,7 +1476,7 @@ function getEditorSlashContext(instance) {
 }
 
 function serializeEditorHtmlToMarkdown(html, existingRawFrontMatter = "") {
-  return prependFrontMatter(existingRawFrontMatter, serializeHtmlToMarkdown(html));
+  return prependFrontMatter(existingRawFrontMatter, serializeEditorHtmlPreservingMarkdown(html));
 }
 
 function extractFootnotes(markdown) {
@@ -1441,6 +1775,7 @@ function renderMarkdownForEditor(markdown, currentFilePath, outline) {
     currentFilePath,
     window.editorApi.resolveMarkdownAsset
   );
+  annotateInlineMarkdownTokens(container, body);
   return decorateRenderedHtml(container, outline, { enableCallouts: true });
 }
 
@@ -1452,6 +1787,7 @@ function renderMarkdownSnippetForEditor(markdown, currentFilePath) {
     currentFilePath,
     window.editorApi.resolveMarkdownAsset
   );
+  annotateInlineMarkdownTokens(container, body);
   return decorateRenderedHtml(container, snippetOutline, { enableCallouts: true });
 }
 
@@ -2658,6 +2994,57 @@ export default function App() {
     return applyEditorMarkdownShortcut(rangeFrom, rangeTo, (chain) => chain.toggleHeading({ level }).run());
   }
 
+  function applyEditorParagraphSpaceShortcut(view, beforeCursor, rangeFrom, rangeTo) {
+    const transformRules = preferencesRef.current.smartTransformRules || {};
+
+    const escapedSpacePrefix = /^\\(#{1,6}|>|[-*+]|\d+\.|[-*+]\s\[(?: |x|X)\])$/.exec(beforeCursor);
+    if (escapedSpacePrefix) {
+      applyEditorMarkdownShortcut(rangeFrom, rangeTo, (chain) => chain.insertContent(`${escapedSpacePrefix[1]} `).run());
+      setHint("Inserted literal Markdown marker.");
+      return true;
+    }
+
+    const headingShortcut = /^(#{1,6})$/.exec(beforeCursor);
+    if ((transformRules.heading ?? true) && headingShortcut) {
+      const level = headingShortcut[1].length;
+      applyHeadingShortcut(rangeFrom, rangeTo, level);
+      flashActiveEditorBlock();
+      setHint(`Heading ${level}.`);
+      return true;
+    }
+
+    if ((transformRules.taskList ?? true) && /^[-*+]\s\[(?: |x|X)\]$/.test(beforeCursor)) {
+      applyEditorMarkdownShortcut(rangeFrom, rangeTo, (chain) => chain.toggleTaskList().run());
+      flashActiveEditorBlock();
+      setHint("Task list. Backspace on empty item exits the list.");
+      return true;
+    }
+
+    if ((transformRules.blockquote ?? true) && beforeCursor === ">") {
+      applyEditorMarkdownShortcut(rangeFrom, rangeTo, (chain) => chain.toggleBlockquote().run());
+      flashActiveEditorBlock();
+      setHint("Blockquote.");
+      return true;
+    }
+
+    if ((transformRules.bulletList ?? true) && /^[-*+]$/.test(beforeCursor)) {
+      applyEditorMarkdownShortcut(rangeFrom, rangeTo, (chain) => chain.toggleBulletList().run());
+      flashActiveEditorBlock();
+      setHint("Bullet list.");
+      return true;
+    }
+
+    if ((transformRules.orderedList ?? true) && /^\d+\.$/.test(beforeCursor)) {
+      applyEditorMarkdownShortcut(rangeFrom, rangeTo, (chain) => chain.toggleOrderedList().run());
+      flashActiveEditorBlock();
+      setHint("Ordered list.");
+      return true;
+    }
+
+    void view;
+    return false;
+  }
+
   function isEditorSelectionInsideList(selection) {
     const names = [];
     for (let depth = selection.$from.depth; depth > 0; depth -= 1) {
@@ -2846,9 +3233,7 @@ export default function App() {
     }
 
     const beforeCursor = parent.textContent.slice(0, $from.parentOffset);
-    const afterCursor = parent.textContent.slice($from.parentOffset);
     const shortcutFrom = selection.from - beforeCursor.length;
-    const transformRules = preferencesRef.current.smartTransformRules || {};
 
     if (text === "`") {
       if (/`+$/.test(beforeCursor)) {
@@ -2886,32 +3271,7 @@ export default function App() {
       return false;
     }
 
-    const escapedSpacePrefix = /^\\(#{1,6}|>|[-*+]|\d+\.|[-*+]\s\[(?: |x|X)\])$/.exec(beforeCursor);
-    if (escapedSpacePrefix) {
-      applyEditorMarkdownShortcut(shortcutFrom, selection.from, (chain) =>
-        chain.insertContent(`${escapedSpacePrefix[1]} `).run()
-      );
-      setHint("Inserted literal Markdown marker.");
-      return true;
-    }
-
-    const headingShortcut = /^(#{1,6})$/.exec(beforeCursor);
-    if ((transformRules.heading ?? true) && headingShortcut) {
-      const level = headingShortcut[1].length;
-      applyHeadingShortcut(shortcutFrom, selection.from, level);
-      flashActiveEditorBlock();
-      setHint(`Heading ${level}.`);
-      return true;
-    }
-
-    if ((transformRules.taskList ?? true) && /^[-*+]\s\[(?: |x|X)\]$/.test(beforeCursor)) {
-      applyEditorMarkdownShortcut(shortcutFrom, selection.from, (chain) => chain.toggleTaskList().run());
-      flashActiveEditorBlock();
-      setHint("Task list. Backspace on empty item exits the list.");
-      return true;
-    }
-
-    return false;
+    return applyEditorParagraphSpaceShortcut(view, beforeCursor, shortcutFrom, selection.from);
   }
 
   function handleEditorSmartMarkdown(view, event) {
@@ -2944,37 +3304,13 @@ export default function App() {
     }
 
     const beforeCursor = parent.textContent.slice(0, $from.parentOffset);
-    const afterCursor = parent.textContent.slice($from.parentOffset);
     const shortcutFrom = selection.from - beforeCursor.length;
     const isSpaceInput = event.key === " " || event.key === "Spacebar" || event.code === "Space";
     const transformRules = preferencesRef.current.smartTransformRules || {};
 
     if (isSpaceInput) {
-      const escapedSpacePrefix = /^\\(#{1,6}|>|[-*+]|\d+\.|[-*+]\s\[(?: |x|X)\])$/.exec(beforeCursor);
-      if (escapedSpacePrefix) {
+      if (applyEditorParagraphSpaceShortcut(view, beforeCursor, shortcutFrom, selection.from)) {
         event.preventDefault();
-        applyEditorMarkdownShortcut(shortcutFrom, selection.from, (chain) =>
-          chain.insertContent(`${escapedSpacePrefix[1]} `).run()
-        );
-        setHint("Inserted literal Markdown marker.");
-        return true;
-      }
-
-      const headingShortcut = /^(#{1,6})$/.exec(beforeCursor);
-      if ((transformRules.heading ?? true) && headingShortcut) {
-        const level = headingShortcut[1].length;
-        event.preventDefault();
-        applyHeadingShortcut(shortcutFrom, selection.from, level);
-        flashActiveEditorBlock();
-        setHint(`Heading ${level}.`);
-        return true;
-      }
-
-      if ((transformRules.taskList ?? true) && /^[-*+]\s\[(?: |x|X)\]$/.test(beforeCursor)) {
-        event.preventDefault();
-        applyEditorMarkdownShortcut(shortcutFrom, selection.from, (chain) => chain.toggleTaskList().run());
-        flashActiveEditorBlock();
-        setHint("Task list. Backspace on empty item exits the list.");
         return true;
       }
     }
@@ -3012,16 +3348,24 @@ export default function App() {
         StarterKit.configure({
           heading: false,
           codeBlock: false,
+          bold: false,
+          italic: false,
+          strike: false,
+          code: false,
           link: false,
           underline: false
         }),
         Heading.configure({ levels: [1, 2, 3, 4, 5, 6] }),
+        TokenBold,
+        TokenItalic,
+        TokenStrike,
+        TokenCode,
         Underline,
         CodeBlockWithLanguage,
         Highlight,
         Subscript,
         Superscript,
-        Link.configure({ openOnClick: true, autolink: true, defaultProtocol: "https" }),
+        TokenLink.configure({ openOnClick: true, autolink: true, defaultProtocol: "https" }),
         MarkdownImage.configure({
           inline: false,
           allowBase64: true,
@@ -3034,7 +3378,7 @@ export default function App() {
         TableRow,
         TableHeaderWithAlignment,
         TableCellWithAlignment,
-        InlineMarkReveal,
+        MarkSyntaxEditing,
         CodeFenceEnterFallback
       ],
       content: renderMarkdownForEditor(markdownText, filePath, outline),

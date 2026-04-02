@@ -81,7 +81,7 @@ function escapeTableCell(content) {
   return normalized || " ";
 }
 
-function createMarkdownTurndown() {
+export function createMarkdownTurndown() {
   const turndown = new TurndownService({
     headingStyle: "atx",
     codeBlockStyle: "fenced",
