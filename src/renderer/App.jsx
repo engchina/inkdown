@@ -2777,6 +2777,7 @@ export default function App() {
   const pendingEditorCompositionSyncRef = useRef(false);
   const editorInstanceRef = useRef(null);
   const lastActiveEditingSurfaceRef = useRef("editor");
+  const filePathRef = useRef(filePath);
 
   const deferredMarkdown = useDeferredValue(markdownText);
   const matches = useMemo(() => findMatches(markdownText, findQuery), [markdownText, findQuery]);
@@ -2787,6 +2788,10 @@ export default function App() {
     () => flattenWorkspaceFiles(workspaceTree, preferences.workspaceRoot),
     [workspaceTree, preferences.workspaceRoot]
   );
+
+  useEffect(() => {
+    filePathRef.current = filePath;
+  }, [filePath]);
   const commandPaletteSuggestions = useMemo(() => {
     const normalizedQuery = String(commandPaletteQuery ?? "").trim();
     if (!normalizedQuery) {
@@ -3914,7 +3919,7 @@ export default function App() {
         MarkdownImage.configure({
           inline: false,
           allowBase64: true,
-          resolveAsset: (assetPath) => window.editorApi.resolveMarkdownAsset(filePath, assetPath)
+          resolveAsset: (assetPath) => window.editorApi.resolveMarkdownAsset(filePathRef.current, assetPath)
         }),
         TableOfContentsNode.configure({
           getOutline: () => outlineRef.current,
@@ -6286,3 +6291,4 @@ export default function App() {
     </div>
   );
 }
+

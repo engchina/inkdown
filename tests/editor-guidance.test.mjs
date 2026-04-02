@@ -81,10 +81,13 @@ test("selected editor images expose an inline editable markdown block", () => {
   assert.match(appSource, /className="editor-image-markdown-block"/);
   assert.match(appSource, /className=\{`editor-image-markdown-input\$\{draftError \? " invalid" : ""\}`\}/);
   assert.match(appSource, /className="editor-image-markdown-block"[\s\S]*<img/);
+  assert.match(appSource, /const filePathRef = useRef\(filePath\);/);
+  assert.match(appSource, /useEffect\(\(\) => \{\s*filePathRef\.current = filePath;\s*\}, \[filePath\]\);/);
   assert.match(appSource, /function applyMarkdown\(nextValue = draft\)/);
   assert.match(appSource, /updateAttributes\(nextAttrs\)/);
   assert.match(appSource, /selectedImage\?\.attrs\?\.alt \|\| alt/);
   assert.match(appSource, /title: selectedImage\?\.attrs\?\.title \|\| null/);
+  assert.match(appSource, /resolveAsset: \(assetPath\) => window\.editorApi\.resolveMarkdownAsset\(filePathRef\.current, assetPath\)/);
   assert.match(appSource, /setTextSelection\(linkDialogState\.linkRange\)[\s\S]*setLink\(\{ href, title: normalizedTitle \|\| null \}\)\.run\(\)/);
   assert.match(appSource, /setTextSelection\(linkDialogState\.linkRange\)[\s\S]*unsetLink\(\)[\s\S]*\.run\(\)/);
   assert.match(appSource, /const HeadingWithAnchors = Heading\.extend\(\{/);
