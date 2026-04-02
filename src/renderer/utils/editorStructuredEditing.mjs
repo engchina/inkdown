@@ -39,13 +39,14 @@ export function getDelayedHeadingTransform(line = "", caretAtEnd = false) {
     return null;
   }
 
-  const match = /^(#{1,6})\s+(.+\S.*)$/.exec(line);
+  const match = /^(#{1,6})\s+(.*\S.*|\S)\s*$/.exec(line);
   if (!match) {
     return null;
   }
 
   return {
     level: match[1].length,
-    title: match[2]
+    title: match[2].trimEnd()
   };
 }
+

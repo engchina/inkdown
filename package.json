@@ -8,12 +8,13 @@
   "scripts": {
     "dev": "concurrently -k \"npm:dev:web\" \"npm:dev:electron\"",
     "dev:debug": "concurrently -k \"npm:dev:web\" \"npm:dev:electron:debug\"",
+    "dev:live": "node scripts/dev-live.mjs",
     "dev:web": "vite",
     "dev:electron": "wait-on tcp:5173 && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .",
     "dev:electron:debug": "wait-on tcp:5173 && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5173 ELECTRON_ENABLE_LOGGING=true ELECTRON_ENABLE_STACK_DUMPING=true DEBUG=* NODE_OPTIONS=--trace-warnings electron .",
     "build:web": "vite build",
     "build": "npm run build:web",
-    "test": "node --test --test-concurrency=1 --test-isolation=none tests/source-editing-utils.test.mjs tests/editor-structured-editing.test.mjs tests/editing-surface.test.mjs tests/preview-sanitizer.test.mjs tests/preview-rendering.test.mjs tests/preview-links.test.mjs tests/preview-search.test.mjs tests/external-links.test.mjs tests/io-errors.test.mjs tests/workspace-tree.test.mjs tests/renderer-trust.test.mjs tests/csp-policy.test.mjs tests/toolbar.test.mjs tests/ui-density.test.mjs tests/dialog-consistency.test.mjs tests/pane-feedback.test.mjs tests/find-bar.test.mjs tests/find-context.test.mjs tests/pane-actions.test.mjs tests/source-context-actions.test.mjs tests/editor-context-actions.test.mjs tests/editor-guidance.test.mjs tests/editor-inline-mark-editing.test.mjs tests/editor-inline-render-timing.test.mjs tests/editor-markdown-token-fidelity.test.mjs tests/editor-preview-spacing.test.mjs tests/clipboard-markdown.test.mjs",
+    "test": "node --test --test-concurrency=1 --test-isolation=none tests/source-editing-utils.test.mjs tests/editor-structured-editing.test.mjs tests/editing-surface.test.mjs tests/preview-sanitizer.test.mjs tests/preview-rendering.test.mjs tests/preview-links.test.mjs tests/preview-search.test.mjs tests/external-links.test.mjs tests/io-errors.test.mjs tests/workspace-tree.test.mjs tests/renderer-trust.test.mjs tests/csp-policy.test.mjs tests/toolbar.test.mjs tests/ui-density.test.mjs tests/dialog-consistency.test.mjs tests/pane-feedback.test.mjs tests/find-bar.test.mjs tests/find-context.test.mjs tests/pane-actions.test.mjs tests/source-context-actions.test.mjs tests/editor-context-actions.test.mjs tests/dev-live-script.test.mjs tests/editor-guidance.test.mjs tests/editor-inline-mark-editing.test.mjs tests/editor-inline-render-timing.test.mjs tests/editor-markdown-token-fidelity.test.mjs tests/editor-preview-spacing.test.mjs tests/clipboard-markdown.test.mjs",
     "package": "npm run build:web && electron-builder",
     "package:win": "npm run build:web && electron-builder --win nsis --x64",
     "preview": "vite preview"
@@ -84,5 +85,4 @@
     }
   }
 }
-
 
