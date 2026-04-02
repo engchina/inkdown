@@ -35,12 +35,25 @@ test("preferences exposes theme cards and session summary for final-product sett
   assert.match(preferencesSource, /preferences-theme-grid/);
   assert.match(preferencesSource, /preferences-layout/);
   assert.match(preferencesSource, /preferences-card/);
+  assert.match(preferencesSource, /preferences-dialog-body/);
   assert.match(preferencesSource, /preferences-session-grid/);
   assert.match(preferencesSource, /preferences-theme-card/);
   assert.match(preferencesSource, /Warm paper canvas/);
+  assert.match(stylesSource, /\.preferences-dialog \{[\s\S]*max-height:\s*calc\(100vh - 48px\);/);
+  assert.match(stylesSource, /\.preferences-dialog \{[\s\S]*overflow:\s*hidden auto;/);
   assert.match(stylesSource, /\.preferences-layout \{/);
   assert.match(stylesSource, /\.preferences-card \{/);
+  assert.match(stylesSource, /\.preferences-dialog-body \{/);
   assert.match(stylesSource, /\.preferences-session-grid \{/);
   assert.match(stylesSource, /\.preferences-theme-grid \{/);
   assert.match(stylesSource, /\.preferences-theme-card \{/);
+  assert.match(stylesSource, /\.pref-row \{[\s\S]*grid-template-columns:\s*minmax\(88px, 100px\) minmax\(0, 1fr\) auto;/);
+  assert.match(preferencesSource, /pref-row-stacked/);
+  assert.match(stylesSource, /\.pref-row-stacked \{[\s\S]*grid-template-columns:\s*minmax\(0, 1fr\);/);
+  assert.match(stylesSource, /\.pref-inline-control \{[\s\S]*grid-template-columns:\s*minmax\(0, 1fr\) auto;/);
 });
+
+
+
+
+

@@ -2797,13 +2797,16 @@ select {
   z-index: 40;
   display: grid;
   place-items: center;
+  padding: 24px 16px;
   background: rgba(0, 0, 0, 0.4);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
+  overflow-y: auto;
 }
 
 .preferences-dialog {
   width: min(760px, calc(100vw - 32px));
+  max-height: calc(100vh - 48px);
   padding: 32px;
   border: 1px solid var(--border-strong);
   border-radius: 24px;
@@ -2812,6 +2815,8 @@ select {
   -webkit-backdrop-filter: blur(32px) saturate(180%);
   box-shadow: var(--shadow-xl), inset 0 1px 0 rgba(255, 255, 255, 0.1);
   transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  overflow: hidden auto;
+  align-self: start;
 }
 
 .link-dialog {
@@ -2861,6 +2866,12 @@ select {
   margin-bottom: 8px;
 }
 
+.preferences-dialog-body {
+  display: grid;
+  gap: 0;
+  min-width: 0;
+}
+
 .preferences-layout {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -2871,6 +2882,7 @@ select {
 .preferences-card {
   display: grid;
   gap: 12px;
+  min-width: 0;
   padding: 16px 18px;
   border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
   border-radius: 20px;
@@ -2888,6 +2900,7 @@ select {
 .preferences-card-title-row {
   display: grid;
   gap: 4px;
+  min-width: 0;
 }
 
 .preferences-card-title-row h3 {
@@ -2898,11 +2911,13 @@ select {
   color: var(--text-soft);
   font-size: 12px;
   line-height: 1.5;
+  overflow-wrap: anywhere;
 }
 
 .preferences-card-body {
   display: grid;
   gap: 2px;
+  min-width: 0;
 }
 
 .preferences-session-card {
@@ -3020,11 +3035,71 @@ select {
 
 .pref-row {
   display: grid;
-  grid-template-columns: 100px 1fr auto;
+  grid-template-columns: minmax(88px, 100px) minmax(0, 1fr) auto;
   gap: 14px;
   align-items: center;
+  min-width: 0;
   padding: 12px 0;
   color: var(--text);
+}
+
+.pref-row > span,
+.pref-row > strong,
+.pref-row > input[type="range"],
+.pref-row > select,
+.pref-row > input[type="text"] {
+  min-width: 0;
+}
+
+.pref-row > strong {
+  justify-self: end;
+  white-space: nowrap;
+}
+
+.pref-row-label {
+  display: block;
+  min-width: 0;
+}
+
+.pref-row-stacked {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  align-items: stretch;
+}
+
+.pref-inline-control {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  min-width: 0;
+}
+
+.pref-inline-control > strong,
+.pref-inline-control > input[type="range"] {
+  min-width: 0;
+}
+
+.pref-inline-control > strong {
+  justify-self: end;
+  white-space: nowrap;
+}
+
+.pref-row-stacked select {
+  width: 100%;
+  min-width: 0;
+}
+
+.pref-inline-control > input[type="range"] {
+  width: 100%;
+  max-width: 100%;
+}
+
+.pref-row select,
+.pref-row input[type="text"],
+.pref-row input[type="range"] {
+  width: 100%;
+  max-width: 100%;
 }
 
 .dialog-actions {
