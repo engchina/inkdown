@@ -1960,6 +1960,25 @@ function renderMarkdownForPreview(
 }
 
 function buildStandaloneHtml(title, bodyHtml, theme) {
+  const blockquoteBorderColor =
+    theme === "midnight"
+      ? "rgba(90, 150, 251, 0.32)"
+      : theme === "forest"
+        ? "rgba(13, 107, 94, 0.28)"
+        : "rgba(168, 75, 8, 0.28)";
+  const blockquoteBackground =
+    theme === "midnight"
+      ? "linear-gradient(90deg, rgba(26, 38, 62, 0.50) 0%, transparent 82%)"
+      : theme === "forest"
+        ? "linear-gradient(90deg, rgba(200, 246, 222, 0.35) 0%, transparent 82%)"
+        : "linear-gradient(90deg, rgba(253, 240, 196, 0.38) 0%, transparent 82%)";
+  const blockquoteTextColor =
+    theme === "midnight"
+      ? "#b4c4dc"
+      : theme === "forest"
+        ? "#053d2d"
+        : "#6b2e0a";
+
   return `<!doctype html>
 <html lang="en">
   <head>
@@ -2022,30 +2041,23 @@ function buildStandaloneHtml(title, bodyHtml, theme) {
       mark { padding: 0.08em 0.32em; border-radius: 0.36em; background: ${theme === "midnight" ? "#5a4300" : "#ffe08a"}; color: inherit; }
       sub, sup { font-size: 0.78em; }
       blockquote:not(.callout) {
-        min-height: 1.4em;
-        margin: 0.88em 0;
-        padding: 0.08em 0 0.08em 1em;
-        border-left: 2px solid ${
-          theme === "midnight"
-            ? "rgba(148, 163, 184, 0.42)"
-            : theme === "forest"
-              ? "rgba(5, 150, 105, 0.22)"
-              : "rgba(120, 128, 140, 0.34)"
-        };
-        border-radius: 0;
-        background: transparent;
-        color: ${theme === "midnight" ? "#b9c6d8" : theme === "forest" ? "#4c6853" : "#6b7280"};
-        font-size: 0.98em;
+        min-height: 1.6em;
+        margin: 1.3em 0;
+        padding: 0.55em 0 0.55em 1.1em;
+        border-left: 3px solid ${blockquoteBorderColor};
+        border-radius: 0 14px 14px 0;
+        background: ${blockquoteBackground};
+        color: ${blockquoteTextColor};
       }
       blockquote:not(.callout) > :first-child { margin-top: 0; }
       blockquote:not(.callout) > :last-child { margin-bottom: 0; }
-      blockquote:not(.callout) p { margin: 0.24em 0; }
+      blockquote:not(.callout) p { margin: 0.45em 0; }
       blockquote:not(.callout) blockquote:not(.callout) {
         min-height: 0;
-        margin: 0.45em 0 0.22em;
-        padding-left: 0.85em;
+        margin: 0.7em 0 0.35em;
+        padding-left: 0.9em;
         border-left-width: 2px;
-        border-radius: 0;
+        border-radius: 0 8px 8px 0;
         background: none;
       }
       table { width: 100%; margin: 0.95em 0; border-collapse: collapse; }
@@ -5751,12 +5763,4 @@ export default function App() {
     </div>
   );
 }
-
-
-
-
-
-
-
-
 
