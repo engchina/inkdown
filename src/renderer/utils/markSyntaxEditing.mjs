@@ -48,6 +48,35 @@ export function selectionTouchesMarkRange(range, selectionFrom, selectionTo = se
   return normalizedFrom <= range.to && normalizedTo >= range.from;
 }
 
+function mapPositionAfterRangeReplacement(range, pos, replacementSize) {
+  if (!range || !Number.isFinite(range.from) || !Number.isFinite(range.to) || !Number.isFinite(pos)) {
+    return pos;
+  }
+
+  const rangeSize = Math.max(0, range.to - range.from);
+  const normalizedReplacementSize = Math.max(0, Number(replacementSize) || 0);
+
+  if (pos <= range.from) {
+    return pos;
+  }
+  if (pos >= range.to) {
+    return pos - rangeSize + normalizedReplacementSize;
+  }
+  return range.from + normalizedReplacementSize;
+}
+
+export function mapSelectionAfterRangeReplacement(
+  range,
+  selectionAnchor,
+  selectionHead = selectionAnchor,
+  replacementSize = 0
+) {
+  return {
+    anchor: mapPositionAfterRangeReplacement(range, selectionAnchor, replacementSize),
+    head: mapPositionAfterRangeReplacement(range, selectionHead, replacementSize)
+  };
+}
+
 function selectionTouchesMarkRangeWithTolerance(range, selectionFrom, selectionTo = selectionFrom) {
   if (!range || !Number.isFinite(range.from) || !Number.isFinite(range.to)) {
     return false;

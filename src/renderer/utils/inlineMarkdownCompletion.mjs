@@ -46,8 +46,94 @@ function findTrailingCompletedMatch(value) {
   return null;
 }
 
+function getSymmetricDelimiterInfo(match) {
+  const text = String(match?.text || "");
+  switch (match?.type) {
+    case "boldItalic":
+      return text.startsWith("***") && text.endsWith("***")
+        ? { token: "***", char: "*" }
+        : text.startsWith("___") && text.endsWith("___")
+          ? { token: "___", char: "_" }
+          : null;
+    case "bold":
+      return text.startsWith("**") && text.endsWith("**")
+        ? { token: "**", char: "*" }
+        : text.startsWith("__") && text.endsWith("__")
+          ? { token: "__", char: "_" }
+          : null;
+    case "italic":
+      return text.startsWith("*") && text.endsWith("*")
+        ? { token: "*", char: "*" }
+        : text.startsWith("_") && text.endsWith("_")
+          ? { token: "_", char: "_" }
+          : null;
+    case "strike":
+      return text.startsWith("~~") && text.endsWith("~~") ? { token: "~~", char: "~" } : null;
+    case "highlight":
+      return text.startsWith("==") && text.endsWith("==") ? { token: "==", char: "=" } : null;
+    case "subscript":
+      return text.startsWith("~") && text.endsWith("~") ? { token: "~", char: "~" } : null;
+    case "superscript":
+      return text.startsWith("^") && text.endsWith("^") ? { token: "^", char: "^" } : null;
+    case "code": {
+      const delimiterMatch = /^(`+)/.exec(text);
+      return delimiterMatch && text.endsWith(delimiterMatch[1]) ? { token: delimiterMatch[1], char: "`" } : null;
+    }
+    default:
+      return null;
+  }
+}
+
+function isStructurallyValidCompletedMatch(match) {
+  if (!match?.text) {
+    return false;
+  }
+
+  if (match.type === "link") {
+    return true;
+  }
+
+  const delimiter = getSymmetricDelimiterInfo(match);
+  if (!delimiter) {
+    return false;
+  }
+
+  const inner = match.text.slice(delimiter.token.length, match.text.length - delimiter.token.length);
+  if (!inner || !/\S/.test(inner)) {
+    return false;
+  }
+
+  const firstInnerChar = inner[0];
+  const lastInnerChar = inner[inner.length - 1];
+  if (firstInnerChar === delimiter.char || lastInnerChar === delimiter.char) {
+    return false;
+  }
+
+  return true;
+}
+
+function isCleanBoundaryMatch(text, start, end, match) {
+  if (!match?.text) {
+    return false;
+  }
+
+  if (!isStructurallyValidCompletedMatch(match)) {
+    return false;
+  }
+
+  const delimiter = getSymmetricDelimiterInfo(match);
+  if (!delimiter) {
+    return true;
+  }
+
+  const before = text[start - 1] || "";
+  const after = text[end] || "";
+  return before !== delimiter.char && after !== delimiter.char;
+}
+
 export function getCompletedInlineMarkdownMatch(value) {
-  return findTrailingCompletedMatch(value);
+  const match = findTrailingCompletedMatch(value);
+  return isCleanBoundaryMatch(String(value || ""), match?.start ?? -1, match?.end ?? -1, match) ? match : null;
 }
 
 export function isWholeTextCompletedInlineMarkdown(value) {
@@ -85,6 +171,9 @@ export function getCompletedInlineMarkdownMatchAroundCursor(value, cursorOffset)
       const absoluteStart = start + match.start;
       const absoluteEnd = start + match.end;
       if (cursor < absoluteStart || cursor > absoluteEnd) {
+        continue;
+      }
+      if (!isCleanBoundaryMatch(text, absoluteStart, absoluteEnd, match)) {
         continue;
       }
 

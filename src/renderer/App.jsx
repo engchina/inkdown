@@ -89,7 +89,12 @@ import {
   replaceCurrentLiteralMatch
 } from "./utils/sourceEditing.mjs";
 import { getDelayedHeadingTransform, getDelayedParagraphTransform, getEmptyListEnterStrategy } from "./utils/editorStructuredEditing.mjs";
-import { findMarkRangeForSelection, getInlineMarkTarget, selectionTouchesMarkRange } from "./utils/markSyntaxEditing.mjs";
+import {
+  findMarkRangeForSelection,
+  getInlineMarkTarget,
+  mapSelectionAfterRangeReplacement,
+  selectionTouchesMarkRange
+} from "./utils/markSyntaxEditing.mjs";
 
 const editorMarked = new Marked({ gfm: true, breaks: true });
 const previewMarked = new Marked({ gfm: true, breaks: true });
@@ -1333,7 +1338,13 @@ function renderCompletedInlineRange(state, completedRange) {
   const markdown = state.doc.textBetween(completedRange.from, completedRange.to, "\n");
   const fragment = parseInlineMarkdownFragment(state.schema, markdown);
   const tr = state.tr.replaceWith(completedRange.from, completedRange.to, fragment);
-  tr.setSelection(TextSelection.create(tr.doc, completedRange.from + fragment.size));
+  const mappedSelection = mapSelectionAfterRangeReplacement(
+    completedRange,
+    state.selection.anchor,
+    state.selection.head,
+    fragment.size
+  );
+  tr.setSelection(TextSelection.create(tr.doc, mappedSelection.anchor, mappedSelection.head));
   tr.setMeta(markSyntaxEditingKey, { expandedRange: null, pendingInlineRange: null });
   return tr;
 }
