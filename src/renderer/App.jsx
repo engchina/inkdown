@@ -2,7 +2,7 @@ import React, { startTransition, useDeferredValue, useEffect, useId, useMemo, us
 import { Mark, mergeAttributes, Extension, getMarkRange } from "@tiptap/core";
 import Heading from "@tiptap/extension-heading";
 import { NodeSelection, Plugin, PluginKey, Selection, TextSelection } from "@tiptap/pm/state";
-import { DOMParser as ProseMirrorDOMParser } from "@tiptap/pm/model";
+import { DOMParser as ProseMirrorDOMParser, DOMSerializer as ProseMirrorDOMSerializer } from "@tiptap/pm/model";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import { CellSelection, TableMap } from "@tiptap/pm/tables";
 import { EditorContent, NodeViewContent, NodeViewWrapper, ReactNodeViewRenderer, useEditor } from "@tiptap/react";
@@ -1164,6 +1164,19 @@ function findCompletedInlineRangeAtSelection(state, selection) {
   };
 }
 
+function renderCompletedInlineRange(state, completedRange) {
+  if (!completedRange) {
+    return null;
+  }
+
+  const markdown = state.doc.textBetween(completedRange.from, completedRange.to, "\n");
+  const fragment = parseInlineMarkdownFragment(state.schema, markdown);
+  const tr = state.tr.replaceWith(completedRange.from, completedRange.to, fragment);
+  tr.setSelection(TextSelection.create(tr.doc, completedRange.from + fragment.size));
+  tr.setMeta(markSyntaxEditingKey, { expandedRange: null });
+  return tr;
+}
+
 const MarkSyntaxEditing = Extension.create({
   name: "markSyntaxEditing",
 
@@ -1255,12 +1268,7 @@ const MarkSyntaxEditing = Extension.create({
           if (transactions.some((tr) => tr.docChanged)) {
             const completedRange = findCompletedInlineRangeAtSelection(newState, sel);
             if (completedRange) {
-              return newState.tr.setMeta(markSyntaxEditingKey, {
-                expandedRange: {
-                  from: completedRange.from,
-                  to: completedRange.to
-                }
-              });
+              return renderCompletedInlineRange(newState, completedRange);
             }
           }
 
@@ -1507,6 +1515,26 @@ function getEditorSlashContext(instance) {
 
 function serializeEditorHtmlToMarkdown(html, existingRawFrontMatter = "") {
   return prependFrontMatter(existingRawFrontMatter, serializeEditorHtmlPreservingMarkdown(html));
+}
+
+function getSerializableEditorState(state) {
+  const { expandedRange } = markSyntaxEditingKey.getState(state) || {};
+  if (!expandedRange) {
+    return state;
+  }
+  return state.apply(collapseMarkSyntax(state, expandedRange));
+}
+
+function serializeEditorStateToHtml(state) {
+  const container = document.createElement("div");
+  const fragment = ProseMirrorDOMSerializer.fromSchema(state.schema).serializeFragment(state.doc.content);
+  container.appendChild(fragment);
+  return container.innerHTML;
+}
+
+function serializeEditorStateToMarkdown(state, existingRawFrontMatter = "") {
+  const serializableState = getSerializableEditorState(state);
+  return serializeEditorHtmlToMarkdown(serializeEditorStateToHtml(serializableState), existingRawFrontMatter);
 }
 
 function extractFootnotes(markdown) {
@@ -4845,7 +4873,7 @@ export default function App() {
 
   function syncMarkdownFromEditor(instance) {
     programmaticMarkdownSyncRef.current = true;
-    const nextMarkdown = serializeEditorHtmlToMarkdown(instance.getHTML(), extractYamlFrontMatter(markdownText).raw);
+    const nextMarkdown = serializeEditorStateToMarkdown(instance.state, extractYamlFrontMatter(markdownText).raw);
     lastEditorMarkdownRef.current = nextMarkdown;
     startTransition(() => {
       const nextOutline = extractOutlineFromMarkdown(nextMarkdown);

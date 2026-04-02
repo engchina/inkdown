@@ -51,10 +51,15 @@ test("shouldDeferInlineMarkdownRender only defers on closing-token input", () =>
   assert.equal(shouldDeferInlineMarkdownRender("abc", "x", ""), false);
 });
 
-test("editor inline completion is tracked inside the mark syntax plugin", () => {
+test("editor inline completion renders the completed markdown into inline marks", () => {
   assert.match(appSource, /function findCompletedInlineRangeAtSelection\(state, selection\)/);
   assert.match(appSource, /const match = getCompletedInlineMarkdownMatch\(beforeCursor\);/);
+  assert.match(appSource, /function renderCompletedInlineRange\(state, completedRange\)/);
+  assert.match(appSource, /const markdown = state\.doc\.textBetween\(completedRange\.from, completedRange\.to, "\\n"\);/);
+  assert.match(appSource, /const fragment = parseInlineMarkdownFragment\(state\.schema, markdown\);/);
+  assert.match(appSource, /state\.tr\.replaceWith\(completedRange\.from, completedRange\.to, fragment\)/);
+  assert.match(appSource, /tr\.setSelection\(TextSelection\.create\(tr\.doc, completedRange\.from \+ fragment\.size\)\);/);
   assert.match(appSource, /appendTransaction\(transactions, _oldState, newState\)/);
   assert.match(appSource, /const completedRange = findCompletedInlineRangeAtSelection\(newState, sel\);/);
-  assert.doesNotMatch(appSource, /deferNextEditorRenderRef/);
+  assert.match(appSource, /return renderCompletedInlineRange\(newState, completedRange\);/);
 });

@@ -72,3 +72,19 @@ test("editor markdown serializer keeps nested emphasis inside links", () => {
     assert.doesNotMatch(markdown, /\\\*/);
   });
 });
+
+test("editor markdown serializer preserves raw inline emphasis typed as plain text", () => {
+  withDom(() => {
+    const markdown = serializeEditorHtmlToMarkdown("<p>***abc***</p>");
+    assert.equal(markdown.trim(), "***abc***");
+    assert.doesNotMatch(markdown, /\\\*/);
+  });
+});
+
+test("editor markdown serializer preserves raw inline links typed as plain text", () => {
+  withDom(() => {
+    const markdown = serializeEditorHtmlToMarkdown("<p>[abc](https://example.com)</p>");
+    assert.equal(markdown.trim(), "[abc](https://example.com)");
+    assert.doesNotMatch(markdown, /\\\[/);
+  });
+});

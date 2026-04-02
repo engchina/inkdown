@@ -97,6 +97,7 @@ export function serializeEditorHtmlToMarkdown(html, turndown) {
   });
 
   const service = turndown || createMarkdownTurndown();
+  service.escape = (value) => String(value || "");
   const markdown = service.turndown(container.innerHTML);
   return replacePlaceholders(markdown, placeholderMap);
 }

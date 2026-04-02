@@ -88,6 +88,17 @@ test("editor keeps expanded inline syntax active while selection still touches t
   assert.match(appSource, /return expandMarkSyntax\(newState, group\.from, group\.to, sel\.anchor, sel\.head\)/);
 });
 
+test("editor markdown sync collapses expanded inline syntax in a temporary snapshot before serializing", () => {
+  assert.match(appSource, /DOMSerializer as ProseMirrorDOMSerializer/);
+  assert.match(appSource, /function getSerializableEditorState\(state\)/);
+  assert.match(appSource, /const \{ expandedRange \} = markSyntaxEditingKey\.getState\(state\) \|\| \{\};/);
+  assert.match(appSource, /return state\.apply\(collapseMarkSyntax\(state, expandedRange\)\);/);
+  assert.match(appSource, /function serializeEditorStateToHtml\(state\)/);
+  assert.match(appSource, /ProseMirrorDOMSerializer\.fromSchema\(state\.schema\)\.serializeFragment\(state\.doc\.content\)/);
+  assert.match(appSource, /function serializeEditorStateToMarkdown\(state, existingRawFrontMatter = ""\)/);
+  assert.match(appSource, /serializeEditorStateToMarkdown\(instance\.state, extractYamlFrontMatter\(markdownText\)\.raw\)/);
+});
+
 test("inline token extensions disable default input rules so closing markers do not auto-render immediately", () => {
   assert.match(appSource, /const TokenBold = Bold\.extend\(\{\s+addInputRules\(\) \{\s+return \[\];/s);
   assert.match(appSource, /const TokenItalic = Italic\.extend\(\{[\s\S]*?addInputRules\(\) \{\s+return \[\];/);
