@@ -1715,6 +1715,7 @@ select {
   border-radius: 0 14px 14px 0;
   background: linear-gradient(90deg, var(--quote-bg) 0%, transparent 82%);
   color: var(--quote);
+  font-weight: 500;
 }
 
 .editor-surface blockquote:not(.callout) > :first-child,
@@ -2518,6 +2519,7 @@ select {
   border-radius: 12px;
   background: var(--panel-soft);
   box-shadow: var(--shadow-sm);
+  font-weight: 500;
 }
 
 .callout::before {

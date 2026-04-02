@@ -52,6 +52,7 @@ import LinkDialog from "./components/LinkDialog";
 import { resolveEditingSurface } from "./utils/editingSurface.mjs";
 import { resolveOutlineNavigationSurface, getCenteredSourceScrollTop, getOutlineSourceSelectionRange } from "./utils/outlineNavigation.mjs";
 import { escapeHtml, sanitizePreviewContainer } from "./utils/previewSanitizer.mjs";
+import { preservePreviewLiteralWhitespace } from "./utils/previewWhitespace.mjs";
 import { activatePreviewLink, findPreviewAnchorTarget } from "./utils/previewLinks.mjs";
 import {
   convertClipboardHtmlToMarkdown,
@@ -1994,7 +1995,8 @@ function decorateRenderedHtml(container, outline, options = {}) {
     footnotes = null,
     currentFilePath = null,
     resolveAsset,
-    sanitizeOptions = {}
+    sanitizeOptions = {},
+    preserveLiteralWhitespace = false
   } = options;
 
   Array.from(container.querySelectorAll("h1, h2, h3, h4, h5, h6")).forEach((heading, index) => {
@@ -2034,6 +2036,10 @@ function decorateRenderedHtml(container, outline, options = {}) {
     ...sanitizeOptions,
     allowFileUrls: typeof resolveAsset === "function" && resolveAsset === window.editorApi.resolveMarkdownAssetForExport
   });
+
+  if (preserveLiteralWhitespace) {
+    preservePreviewLiteralWhitespace(container);
+  }
 
   return container.innerHTML;
 }
@@ -2167,7 +2173,8 @@ function renderMarkdownForPreview(
     footnotes: { definitions, order },
     currentFilePath,
     resolveAsset,
-    sanitizeOptions
+    sanitizeOptions,
+    preserveLiteralWhitespace: true
   });
 }
 
@@ -2260,6 +2267,7 @@ function buildStandaloneHtml(title, bodyHtml, theme) {
         border-radius: 0 14px 14px 0;
         background: ${blockquoteBackground};
         color: ${blockquoteTextColor};
+        font-weight: 500;
       }
       blockquote:not(.callout) > :first-child { margin-top: 0; }
       blockquote:not(.callout) > :last-child { margin-bottom: 0; }
@@ -2284,7 +2292,7 @@ function buildStandaloneHtml(title, bodyHtml, theme) {
       .toc-item.level-3 { padding-left: 24px; }
       .toc-item.level-4, .toc-item.level-5, .toc-item.level-6 { padding-left: 36px; }
       .footnotes-title { margin-bottom: 10px; font-size: 12px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: ${theme === "midnight" ? "#b8c7d9" : "#69553f"}; }
-      .callout { position: relative; margin: 0.9em 0; padding: 12px 15px 12px 18px; border: 1px solid rgba(160, 160, 160, 0.24); border-radius: 16px; background: rgba(255, 255, 255, 0.6); }
+      .callout { position: relative; margin: 0.9em 0; padding: 12px 15px 12px 18px; border: 1px solid rgba(160, 160, 160, 0.24); border-radius: 16px; background: rgba(255, 255, 255, 0.6); font-weight: 500; }
       .callout::before { content: ""; position: absolute; inset: 10px auto 10px 0; width: 4px; border-radius: 999px; background: #9a5a26; }
       .callout-title { margin-bottom: 6px; font-size: 13px; font-weight: 700; color: inherit; }
       .callout-note::before { background: #3b82f6; }
