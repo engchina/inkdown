@@ -1023,6 +1023,7 @@ function serializeInlineFragmentContent(content) {
     for (let index = activeMarks.length - 1; index >= shared; index -= 1) {
       markdown += getSerializableMarkTokens(activeMarks[index]).closeToken;
     }
+    positionMap[textOffset] = markdown.length;
     for (let index = shared; index < nextMarks.length; index += 1) {
       markdown += getSerializableMarkTokens(nextMarks[index]).openToken;
     }
@@ -1031,7 +1032,6 @@ function serializeInlineFragmentContent(content) {
 
     const text = node.text || "";
     for (const character of text) {
-      positionMap[textOffset] = markdown.length;
       markdown += character;
       textOffset += 1;
       positionMap[textOffset] = markdown.length;
@@ -1056,7 +1056,13 @@ function parseInlineMarkdownFragment(schema, markdown) {
   return ProseMirrorDOMParser.fromSchema(schema).parseSlice(container, { preserveWhitespace: "full" }).content;
 }
 
-function mapExpandedSelectionPosition(positionMap, groupFrom, docPos) {
+function mapExpandedSelectionPosition(positionMap, groupFrom, groupTo, markdownLength, docPos) {
+  if (docPos <= groupFrom) {
+    return groupFrom;
+  }
+  if (docPos >= groupTo) {
+    return groupFrom + markdownLength;
+  }
   const cursorOffset = Math.max(0, Math.min(docPos - groupFrom, positionMap.length - 1));
   return groupFrom + (positionMap[cursorOffset] ?? positionMap[positionMap.length - 1] ?? 0);
 }
@@ -1064,8 +1070,8 @@ function mapExpandedSelectionPosition(positionMap, groupFrom, docPos) {
 function expandMarkSyntax(state, groupFrom, groupTo, selectionAnchor, selectionHead = selectionAnchor) {
   const fragment = state.doc.slice(groupFrom, groupTo).content;
   const { markdown, positionMap } = serializeInlineFragmentContent(fragment);
-  const anchorPos = mapExpandedSelectionPosition(positionMap, groupFrom, selectionAnchor);
-  const headPos = mapExpandedSelectionPosition(positionMap, groupFrom, selectionHead);
+  const anchorPos = mapExpandedSelectionPosition(positionMap, groupFrom, groupTo, markdown.length, selectionAnchor);
+  const headPos = mapExpandedSelectionPosition(positionMap, groupFrom, groupTo, markdown.length, selectionHead);
   const tr = state.tr.replaceWith(groupFrom, groupTo, state.schema.text(markdown));
   tr.setSelection(TextSelection.create(tr.doc, anchorPos, headPos));
   tr.setMeta(markSyntaxEditingKey, {
@@ -1167,7 +1173,7 @@ const MarkSyntaxEditing = Extension.create({
               expandedRange: {
                 ...expandedRange,
                 from: tr.mapping.map(expandedRange.from, -1),
-                to: tr.mapping.map(expandedRange.to, 1),
+                to: tr.mapping.map(expandedRange.to, -1),
               },
             };
           },
@@ -1218,6 +1224,18 @@ const MarkSyntaxEditing = Extension.create({
           if (expandedRange) {
             if (!selectionTouchesExpandedRange(sel, expandedRange)) {
               return collapseMarkSyntax(newState, expandedRange);
+            }
+            if (transactions.some((tr) => tr.selectionSet) && !transactions.some((tr) => tr.docChanged)) {
+              const adjacentGroup = findMarkGroupForSelection(newState, sel);
+              if (adjacentGroup && (adjacentGroup.from < expandedRange.from || adjacentGroup.to > expandedRange.to)) {
+                return expandMarkSyntax(
+                  newState,
+                  Math.min(adjacentGroup.from, expandedRange.from),
+                  Math.max(adjacentGroup.to, expandedRange.to),
+                  sel.anchor,
+                  sel.head
+                );
+              }
             }
             return null;
           }

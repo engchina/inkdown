@@ -45,6 +45,20 @@ export function selectionTouchesMarkRange(range, selectionFrom, selectionTo = se
     return false;
   }
 
+  return normalizedFrom <= range.to && normalizedTo >= range.from;
+}
+
+function selectionTouchesMarkRangeWithTolerance(range, selectionFrom, selectionTo = selectionFrom) {
+  if (!range || !Number.isFinite(range.from) || !Number.isFinite(range.to)) {
+    return false;
+  }
+
+  const normalizedFrom = Math.min(selectionFrom, selectionTo);
+  const normalizedTo = Math.max(selectionFrom, selectionTo);
+  if (!Number.isFinite(normalizedFrom) || !Number.isFinite(normalizedTo)) {
+    return false;
+  }
+
   return normalizedFrom <= range.to + 1 && normalizedTo >= range.from - 1;
 }
 
@@ -83,5 +97,35 @@ export function findMarkRangeForSelection(markRanges, selectionFrom, selectionTo
 }
 
 export function findMarkRangeForClick(markRanges, pos, preferredMarkName = null) {
-  return findMarkRangeForSelection(markRanges, pos, pos, preferredMarkName);
+  if (!Array.isArray(markRanges) || !Number.isFinite(pos)) {
+    return null;
+  }
+
+  const normalizedRanges = markRanges.filter(
+    (range) => range && Number.isFinite(range.from) && Number.isFinite(range.to) && range.from <= range.to
+  );
+  if (!normalizedRanges.length) {
+    return null;
+  }
+
+  const candidateRanges = normalizedRanges.filter((range) => selectionTouchesMarkRangeWithTolerance(range, pos, pos));
+  if (!candidateRanges.length) {
+    return null;
+  }
+
+  if (preferredMarkName) {
+    const preferredMatch = candidateRanges.find((range) => range.markName === preferredMarkName);
+    if (preferredMatch) {
+      return preferredMatch;
+    }
+  }
+
+  return [...candidateRanges].sort((left, right) => {
+    const leftSpan = left.to - left.from;
+    const rightSpan = right.to - right.from;
+    if (leftSpan !== rightSpan) {
+      return leftSpan - rightSpan;
+    }
+    return left.from - right.from;
+  })[0];
 }
