@@ -66,7 +66,9 @@ import {
   buildToggledPrefixedSourceLines,
   buildToggledWrappedSourceSelection,
   buildExpandedMarkdownTableSelection,
+  getMarkdownLineContinuation,
   buildUpdatedMarkdownImageSelection,
+  buildMarkdownImageSyntax,
   buildUpdatedMarkdownLinkSelection,
   buildRemovedMarkdownImageSelection,
   buildWrappedSourceSelection,
@@ -77,7 +79,7 @@ import {
   replaceAllLiteralMatches,
   replaceCurrentLiteralMatch
 } from "./utils/sourceEditing.mjs";
-import { getEmptyListEnterStrategy } from "./utils/editorStructuredEditing.mjs";
+import { getDelayedHeadingTransform, getDelayedParagraphTransform, getEmptyListEnterStrategy } from "./utils/editorStructuredEditing.mjs";
 import { findMarkRangeForSelection, getInlineMarkTarget, selectionTouchesMarkRange } from "./utils/markSyntaxEditing.mjs";
 
 const editorMarked = new Marked({ gfm: true, breaks: true });
@@ -903,6 +905,11 @@ const TokenLink = Link.extend({
   addAttributes() {
     return {
       ...this.parent?.(),
+      title: {
+        default: null,
+        parseHTML: (element) => element.getAttribute("title"),
+        renderHTML: (attributes) => (attributes.title ? { title: attributes.title } : {})
+      },
       ...createTokenAttributeConfig("[", "]()")
     };
   }
@@ -1822,6 +1829,10 @@ function escapeMarkdownImageTitle(value) {
   return String(value || "").replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 }
 
+function unescapeMarkdownImageText(value) {
+  return String(value || "").replace(/\\(.)/g, "$1");
+}
+
 function formatMarkdownImageDestination(value) {
   const normalized = String(value || "").trim();
   if (!normalized) {
@@ -1840,7 +1851,7 @@ function formatMarkdownImageSnippet({ alt = "", url = "", title = "" } = {}) {
 
 function parseMarkdownImageSnippet(value) {
   const match =
-    /^!\[([^\]]*)\]\(\s*(<[^>\r\n]+>|(?:\\.|[^\\\s)])+)(?:\s+((?:"(?:\\.|[^"])*"|'(?:\\.|[^'])*'|\((?:\\.|[^)])*\))))?\s*\)$/.exec(
+    /^!\[((?:\\.|[^\\\]])*)\]\(\s*(<[^>\r\n]+>|(?:\\.|[^\\\s)])+)(?:\s+((?:"(?:\\.|[^"])*"|'(?:\\.|[^'])*'|\((?:\\.|[^)])*\))))?\s*\)$/.exec(
       String(value || "").trim()
     );
   if (!match) {
@@ -1849,9 +1860,9 @@ function parseMarkdownImageSnippet(value) {
 
   const rawSource = match[2] || "";
   return {
-    alt: match[1] || "",
+    alt: unescapeMarkdownImageText(match[1] || ""),
     url: rawSource.startsWith("<") && rawSource.endsWith(">") ? rawSource.slice(1, -1) : rawSource,
-    title: String(match[3] || "").trim().replace(/^["'(]+|["')]+$/g, "")
+    title: unescapeMarkdownImageText(String(match[3] || "").trim().replace(/^["'(]+|["')]+$/g, ""))
   };
 }
 
@@ -2679,7 +2690,7 @@ export default function App() {
   const sourceObjectContext = useMemo(() => {
     const link = findMarkdownLinkAtSelection(markdownText, sourceSelectionState.start, sourceSelectionState.end);
     if (link) {
-      return { kind: "link", label: "Link selected" };
+      return { kind: "link", label: "Link selected", canRemove: link.kind !== "bare" };
     }
 
     const image = findMarkdownImageAtSelection(markdownText, sourceSelectionState.start, sourceSelectionState.end);
@@ -3018,54 +3029,101 @@ export default function App() {
   }
 
   function applyEditorParagraphSpaceShortcut(view, beforeCursor, rangeFrom, rangeTo) {
-    const transformRules = preferencesRef.current.smartTransformRules || {};
-
     const escapedSpacePrefix = /^\\(#{1,6}|>|[-*+]|\d+\.|[-*+]\s\[(?: |x|X)\])$/.exec(beforeCursor);
     if (escapedSpacePrefix) {
-      applyEditorMarkdownShortcut(rangeFrom, rangeTo, (chain) => chain.insertContent(`${escapedSpacePrefix[1]} `).run());
+      const applied = applyEditorMarkdownShortcut(rangeFrom, rangeTo, (chain) => chain.insertContent(`${escapedSpacePrefix[1]} `).run());
+      if (!applied) {
+        return false;
+      }
       setHint("Inserted literal Markdown marker.");
-      return true;
-    }
-
-    const headingShortcut = /^(#{1,6})$/.exec(beforeCursor);
-    if ((transformRules.heading ?? true) && headingShortcut) {
-      const level = headingShortcut[1].length;
-      applyHeadingShortcut(rangeFrom, rangeTo, level);
-      flashActiveEditorBlock();
-      setHint(`Heading ${level}.`);
-      return true;
-    }
-
-    if ((transformRules.taskList ?? true) && /^[-*+]\s\[(?: |x|X)\]$/.test(beforeCursor)) {
-      applyEditorMarkdownShortcut(rangeFrom, rangeTo, (chain) => chain.toggleTaskList().run());
-      flashActiveEditorBlock();
-      setHint("Task list. Backspace on empty item exits the list.");
-      return true;
-    }
-
-    if ((transformRules.blockquote ?? true) && beforeCursor === ">") {
-      applyEditorMarkdownShortcut(rangeFrom, rangeTo, (chain) => chain.toggleBlockquote().run());
-      flashActiveEditorBlock();
-      setHint("Blockquote.");
-      return true;
-    }
-
-    if ((transformRules.bulletList ?? true) && /^[-*+]$/.test(beforeCursor)) {
-      applyEditorMarkdownShortcut(rangeFrom, rangeTo, (chain) => chain.toggleBulletList().run());
-      flashActiveEditorBlock();
-      setHint("Bullet list.");
-      return true;
-    }
-
-    if ((transformRules.orderedList ?? true) && /^\d+\.$/.test(beforeCursor)) {
-      applyEditorMarkdownShortcut(rangeFrom, rangeTo, (chain) => chain.toggleOrderedList().run());
-      flashActiveEditorBlock();
-      setHint("Ordered list.");
       return true;
     }
 
     void view;
     return false;
+  }
+
+  function applyEditorDelayedParagraphTransform(beforeCursor, rangeFrom, rangeTo, text) {
+    const transformRules = preferencesRef.current.smartTransformRules || {};
+    const shortcut = getDelayedParagraphTransform(beforeCursor, text);
+    if (!shortcut) {
+      return false;
+    }
+
+    const command =
+      shortcut.kind === "taskList"
+        ? (chain) => chain.toggleTaskList().insertContent(text).run()
+        : shortcut.kind === "blockquote"
+          ? (chain) => chain.toggleBlockquote().insertContent(text).run()
+          : shortcut.kind === "bulletList"
+            ? (chain) => chain.toggleBulletList().insertContent(text).run()
+            : (chain) => chain.toggleOrderedList().insertContent(text).run();
+
+    const enabled =
+      shortcut.kind === "taskList"
+        ? transformRules.taskList ?? true
+        : shortcut.kind === "blockquote"
+          ? transformRules.blockquote ?? true
+          : shortcut.kind === "bulletList"
+            ? transformRules.bulletList ?? true
+            : transformRules.orderedList ?? true;
+
+    if (!enabled) {
+      return false;
+    }
+
+    const applied = applyEditorMarkdownShortcut(rangeFrom, rangeTo, command);
+    if (!applied) {
+      return false;
+    }
+
+    flashActiveEditorBlock();
+    setHint(
+      shortcut.kind === "taskList"
+        ? "Task list. Backspace on empty item exits the list."
+        : shortcut.kind === "blockquote"
+          ? "Blockquote."
+          : shortcut.kind === "bulletList"
+            ? "Bullet list."
+            : "Ordered list."
+    );
+    return true;
+  }
+
+  function applyEditorDelayedHeadingTransform(view) {
+    const transformRules = preferencesRef.current.smartTransformRules || {};
+    if (!(transformRules.heading ?? true)) {
+      return false;
+    }
+
+    const selection = view.state.selection;
+    if (!selection.empty) {
+      return false;
+    }
+
+    const { $from } = selection;
+    const parent = $from.parent;
+    if (!parent?.isTextblock || parent.type.name !== "paragraph" || $from.parentOffset !== parent.textContent.length) {
+      return false;
+    }
+
+    const headingShortcut = getDelayedHeadingTransform(parent.textContent, true);
+    if (!headingShortcut) {
+      return false;
+    }
+
+    const rangeFrom = selection.from - parent.textContent.length;
+    const applied = applyEditorMarkdownShortcut(rangeFrom, selection.from, (chain) =>
+      chain.toggleHeading({ level: headingShortcut.level }).insertContent(headingShortcut.title).run()
+    );
+    if (!applied) {
+      return false;
+    }
+
+    flashActiveEditorBlock();
+    setHint(`Heading ${headingShortcut.level}.`);
+    insertParagraphAfterCurrentBlock(view);
+    return true;
   }
 
   function isEditorSelectionInsideList(selection) {
@@ -3290,11 +3348,15 @@ export default function App() {
       return true;
     }
 
-    if (text !== " " || parent.type.name !== "paragraph") {
+    if (parent.type.name !== "paragraph") {
       return false;
     }
 
-    return applyEditorParagraphSpaceShortcut(view, beforeCursor, shortcutFrom, selection.from);
+    if (text === " ") {
+      return applyEditorParagraphSpaceShortcut(view, beforeCursor, shortcutFrom, selection.from);
+    }
+
+    return applyEditorDelayedParagraphTransform(beforeCursor, shortcutFrom, selection.from, text);
   }
 
   function handleEditorSmartMarkdown(view, event) {
@@ -3337,6 +3399,12 @@ export default function App() {
         return true;
       }
     }
+
+    if (event.key === "Enter" && applyEditorDelayedHeadingTransform(view)) {
+      event.preventDefault();
+      return true;
+    }
+
     const escapedFenceMatch = /^\\((?:```|~~~)([A-Za-z0-9_-]+)?)$/.exec(beforeCursor);
     if (event.key === "Enter" && escapedFenceMatch) {
       event.preventDefault();
@@ -3627,10 +3695,12 @@ export default function App() {
   }, [activePane, editorObjectContext, findOpen, findQuery, matchIndex, matches.length, preferences.allowInsecureRemoteMedia, sourceObjectContext]);
   const toolbarContextActions = useMemo(() => {
     if (activePane === "source" && sourceObjectContext?.kind === "link") {
-      return [
-        { id: "edit-link", label: "Edit Link", onSelect: openLinkDialog },
-        { id: "remove-link", label: "Remove", onSelect: removeLinkAtSourceSelection, tone: "danger" }
-      ];
+      return sourceObjectContext.canRemove
+        ? [
+            { id: "edit-link", label: "Edit Link", onSelect: openLinkDialog },
+            { id: "remove-link", label: "Remove", onSelect: removeLinkAtSourceSelection, tone: "danger" }
+          ]
+        : [{ id: "edit-link", label: "Edit Link", onSelect: openLinkDialog }];
     }
 
     if (activePane === "source" && sourceObjectContext?.kind === "image") {
@@ -4413,7 +4483,7 @@ export default function App() {
       const existingImage = findMarkdownImageAtSelection(markdownText, selectionStart, selectionEnd);
       if (existingImage) {
         const update = buildUpdatedMarkdownImageSelection(markdownText, selectionStart, selectionEnd, {
-          alt: existingImage.alt || basenamePath(persisted.absolutePath) || "image",
+          alt: existingImage.alt,
           url: persisted.markdownPath,
           title: existingImage.title
         });
@@ -4430,20 +4500,26 @@ export default function App() {
 
   function insertMarkdownImage(markdownPath, absolutePath, dimensions = null) {
     const alt = basenamePath(absolutePath) || "image";
-    const markdownImage = `![${alt}](${markdownPath})`;
+    const markdownImage = buildMarkdownImageSyntax(alt, markdownPath);
     if (getActiveEditingSurface() === "source" && sourceRef.current) {
       insertIntoSource(markdownImage, { block: true });
       return;
     }
     if (editor) {
+      const selectedImage = editor.state.selection instanceof NodeSelection && editor.state.selection.node?.type?.name === "image"
+        ? editor.state.selection.node
+        : null;
       runEditorCommand(
         (chain) =>
           chain
             .setImage({
               src: window.editorApi.toAssetUrl(absolutePath),
-              alt,
+              alt: selectedImage?.attrs?.alt || alt,
+              title: selectedImage?.attrs?.title || null,
               markdownSource: markdownPath,
-              ...(dimensions ? { width: String(dimensions.width), height: String(dimensions.height) } : {})
+              ...(dimensions ? { width: String(dimensions.width), height: String(dimensions.height) } : {}),
+              ...(selectedImage?.attrs?.width && !dimensions ? { width: selectedImage.attrs.width } : {}),
+              ...(selectedImage?.attrs?.height && !dimensions ? { height: selectedImage.attrs.height } : {})
             })
             .run(),
         { preserveScroll: true }
@@ -4864,58 +4940,15 @@ export default function App() {
     const before = markdownText.slice(0, selectionStart);
     const after = markdownText.slice(selectionEnd);
 
-    const taskMatch = /^(\s*)[-*+]\s\[(?: |x|X)\]\s*(.*)$/.exec(line);
-    if (taskMatch) {
-      const content = taskMatch[2];
-      const prefix = `${taskMatch[1]}- [ ] `;
-      if (!content.trim()) {
-        const nextText = `${markdownText.slice(0, lineStart)}${taskMatch[1]}${markdownText.slice(lineEnd)}`;
-        applySourceTextUpdate(nextText, lineStart + taskMatch[1].length);
-        return true;
-      }
-      const insertion = `\n${prefix}`;
-      applySourceTextUpdate(`${before}${insertion}${after}`, selectionStart + insertion.length);
+    const continuation = getMarkdownLineContinuation(line);
+    if (continuation?.mode === "replace-line") {
+      const nextText = `${markdownText.slice(0, lineStart)}${continuation.text}${markdownText.slice(lineEnd)}`;
+      applySourceTextUpdate(nextText, lineStart + continuation.text.length);
       return true;
     }
 
-    const orderedMatch = /^(\s*)(\d+)\.\s+(.*)$/.exec(line);
-    if (orderedMatch) {
-      const content = orderedMatch[3];
-      if (!content.trim()) {
-        const nextText = `${markdownText.slice(0, lineStart)}${orderedMatch[1]}${markdownText.slice(lineEnd)}`;
-        applySourceTextUpdate(nextText, lineStart + orderedMatch[1].length);
-        return true;
-      }
-      const nextIndex = Number(orderedMatch[2]) + 1;
-      const insertion = `\n${orderedMatch[1]}${nextIndex}. `;
-      applySourceTextUpdate(`${before}${insertion}${after}`, selectionStart + insertion.length);
-      return true;
-    }
-
-    const bulletMatch = /^(\s*)[-*+]\s+(.*)$/.exec(line);
-    if (bulletMatch) {
-      const content = bulletMatch[2];
-      if (!content.trim()) {
-        const nextText = `${markdownText.slice(0, lineStart)}${bulletMatch[1]}${markdownText.slice(lineEnd)}`;
-        applySourceTextUpdate(nextText, lineStart + bulletMatch[1].length);
-        return true;
-      }
-      const insertion = `\n${bulletMatch[1]}- `;
-      applySourceTextUpdate(`${before}${insertion}${after}`, selectionStart + insertion.length);
-      return true;
-    }
-
-    const quoteMatch = /^(\s*(?:>\s*)+)(.*)$/.exec(line);
-    if (quoteMatch) {
-      const content = quoteMatch[2];
-      if (!content.trim()) {
-        const nextText = `${markdownText.slice(0, lineStart)}${markdownText.slice(lineEnd)}`;
-        applySourceTextUpdate(nextText, lineStart);
-        return true;
-      }
-      const normalizedPrefix = quoteMatch[1].replace(/\s*$/, " ");
-      const insertion = `\n${normalizedPrefix}`;
-      applySourceTextUpdate(`${before}${insertion}${after}`, selectionStart + insertion.length);
+    if (continuation?.mode === "insert") {
+      applySourceTextUpdate(`${before}${continuation.text}${after}`, selectionStart + continuation.text.length);
       return true;
     }
 
@@ -5095,9 +5128,11 @@ export default function App() {
         mode: "source",
         initialText: selectedText,
         initialUrl: existingLink?.url || "",
+        initialTitle: existingLink?.title || "",
         selectionStart: existingLink?.start ?? selectionStart,
         selectionEnd: existingLink?.end ?? selectionEnd,
-        canRemove: Boolean(existingLink)
+        linkKind: existingLink?.kind || null,
+        canRemove: Boolean(existingLink && existingLink.kind !== "bare")
       });
       return;
     }
@@ -5115,30 +5150,44 @@ export default function App() {
         ? ""
         : editor.state.doc.textBetween(from, to, "\n");
     const initialUrl = linkMark?.attrs?.href || "";
+    const initialTitle = linkMark?.attrs?.title || "";
     setLinkDialogState({
       mode: "editor",
       initialText: selectedText,
       initialUrl,
+      initialTitle,
       canRemove: Boolean(linkRange),
       linkRange
     });
   }
 
-  function applyLinkFromDialog({ text, url }) {
+  function applyLinkFromDialog({ text, url, title }) {
     const href = String(url || "").trim();
     const label = String(text || "").trim();
+    const normalizedTitle = String(title || "").trim();
     if (!href) {
       return;
     }
 
     if (linkDialogState?.mode === "source" && sourceRef.current) {
-      const update = buildLinkedSourceSelection(
-        markdownText,
-        linkDialogState.selectionStart,
-        linkDialogState.selectionEnd,
-        label,
-        href
-      );
+      const update = linkDialogState.linkKind
+        ? buildUpdatedMarkdownLinkSelection(markdownText, linkDialogState.selectionStart, linkDialogState.selectionEnd, {
+            text: label,
+            url: href,
+            title: normalizedTitle
+          })
+        : buildLinkedSourceSelection(
+            markdownText,
+            linkDialogState.selectionStart,
+            linkDialogState.selectionEnd,
+            label,
+            href,
+            "link text",
+            normalizedTitle
+          );
+      if (!update) {
+        return;
+      }
       applySourceTextUpdate(update.text, update.selectionStart, update.selectionEnd);
       setLinkDialogState(null);
       setStatus(`Inserted link to ${href}`);
@@ -5151,19 +5200,30 @@ export default function App() {
     }
 
     const selectedText = linkDialogState?.initialText || "";
+    const titleAttribute = normalizedTitle ? ` title="${escapeHtml(normalizedTitle)}"` : "";
     if (linkDialogState?.linkRange) {
       const nextText = label || selectedText || href;
-      runEditorCommand((chain) =>
-        chain
-          .insertContentAt(linkDialogState.linkRange, `<a href="${escapeHtml(href)}">${escapeHtml(nextText)}</a>`)
-          .run()
-      );
+      if (nextText === selectedText) {
+        runEditorCommand((chain) =>
+          chain
+            .setTextSelection(linkDialogState.linkRange)
+            .extendMarkRange("link")
+            .setLink({ href, title: normalizedTitle || null })
+            .run()
+        );
+      } else {
+        runEditorCommand((chain) =>
+          chain
+            .insertContentAt(linkDialogState.linkRange, `<a href="${escapeHtml(href)}"${titleAttribute}>${escapeHtml(nextText)}</a>`)
+            .run()
+        );
+      }
     } else if (selectedText && (!label || label === selectedText)) {
-      runEditorCommand((chain) => chain.extendMarkRange("link").setLink({ href }).run());
+      runEditorCommand((chain) => chain.extendMarkRange("link").setLink({ href, title: normalizedTitle || null }).run());
     } else {
       const linkText = label || selectedText || href;
       runEditorCommand((chain) =>
-        chain.insertContent(`<a href="${escapeHtml(href)}">${escapeHtml(linkText)}</a>`).run()
+        chain.insertContent(`<a href="${escapeHtml(href)}"${titleAttribute}>${escapeHtml(linkText)}</a>`).run()
       );
     }
     setLinkDialogState(null);
@@ -5176,21 +5236,23 @@ export default function App() {
     }
 
     if (linkDialogState.mode === "source") {
-      const replacement = linkDialogState.initialText || "";
-      applySourceTextUpdate(
-        `${markdownText.slice(0, linkDialogState.selectionStart)}${replacement}${markdownText.slice(linkDialogState.selectionEnd)}`,
-        linkDialogState.selectionStart,
-        linkDialogState.selectionStart + replacement.length
-      );
+      const update = buildRemovedMarkdownLinkSelection(markdownText, linkDialogState.selectionStart, linkDialogState.selectionEnd);
+      if (!update) {
+        return;
+      }
+      applySourceTextUpdate(update.text, update.selectionStart, update.selectionEnd);
       setLinkDialogState(null);
       setStatus("Removed link");
       return;
     }
 
     if (editor && linkDialogState.linkRange) {
-      const replacement = linkDialogState.initialText || "";
       runEditorCommand((chain) =>
-        chain.insertContentAt(linkDialogState.linkRange, escapeHtml(replacement)).run()
+        chain
+          .setTextSelection(linkDialogState.linkRange)
+          .extendMarkRange("link")
+          .unsetLink()
+          .run()
       );
     }
     setLinkDialogState(null);
@@ -5652,6 +5714,7 @@ export default function App() {
         open={Boolean(linkDialogState)}
         initialText={linkDialogState?.initialText || ""}
         initialUrl={linkDialogState?.initialUrl || ""}
+        initialTitle={linkDialogState?.initialTitle || ""}
         allowRemove={Boolean(linkDialogState?.canRemove)}
         onCancel={() => setLinkDialogState(null)}
         onRemove={removeLinkFromDialog}
@@ -5660,3 +5723,12 @@ export default function App() {
     </div>
   );
 }
+
+
+
+
+
+
+
+
+

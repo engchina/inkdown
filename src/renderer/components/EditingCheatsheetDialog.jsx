@@ -4,11 +4,11 @@ const sections = [
   {
     title: "Editor Transforms",
     items: [
-      "# + Space -> Heading",
-      "> + Space -> Blockquote",
-      "- / * + Space -> Bullet List",
-      "1. + Space -> Ordered List",
-      "- [ ] + Space -> Task List",
+      "# + Title + Enter -> Heading",
+      "> + Space + Content -> Blockquote",
+      "(-, *, or +) + Space + Content -> Bullet List",
+      "1. + Space + Content -> Ordered List",
+      "- [ ] + Space + Content -> Task List",
       "``` + Enter -> Code Block"
     ]
   },

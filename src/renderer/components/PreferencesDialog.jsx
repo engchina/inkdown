@@ -264,11 +264,11 @@ export default function PreferencesDialog({ open, preferences, onChange, onClose
         <section className="preferences-help">
           <h3>Smart Transform Rules</h3>
           <div className="preferences-help-grid">
-            <div><code>#</code> + Space {"->"} Heading</div>
-            <div><code>&gt;</code> + Space {"->"} Blockquote</div>
-            <div><code>-</code> / <code>*</code> + Space {"->"} Bullet List</div>
-            <div><code>1.</code> + Space {"->"} Ordered List</div>
-            <div><code>- [ ]</code> + Space {"->"} Task List</div>
+            <div><code>#</code> + Title + Enter {"->"} Heading</div>
+            <div><code>&gt;</code> + Space + Content {"->"} Blockquote</div>
+            <div><code>-</code> / <code>*</code> / <code>+</code> + Space + Content {"->"} Bullet List</div>
+            <div><code>1.</code> + Space + Content {"->"} Ordered List</div>
+            <div><code>- [ ]</code> + Space + Content {"->"} Task List</div>
             <div><code>```</code> + Enter {"->"} Code Block</div>
             <div><code>Esc</code> {"->"} Skip next transform</div>
             <div><code>\#</code> or <code>\```</code> {"->"} Literal Markdown</div>

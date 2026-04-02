@@ -36,7 +36,7 @@ export function buildWrappedSourceSelection(markdown, selectionStart, selectionE
   };
 }
 
-export function buildLinkedSourceSelection(markdown, selectionStart, selectionEnd, text, url, fallbackText = "link text") {
+export function buildLinkedSourceSelection(markdown, selectionStart, selectionEnd, text, url, fallbackText = "link text", title = "") {
   const source = String(markdown ?? "");
   const start = Math.max(0, Math.min(selectionStart ?? 0, source.length));
   const end = Math.max(start, Math.min(selectionEnd ?? start, source.length));
@@ -45,14 +45,16 @@ export function buildLinkedSourceSelection(markdown, selectionStart, selectionEn
   const after = source.slice(end);
   const label = String(text || "").trim() || selected || fallbackText;
   const href = String(url || "").trim();
-  const linkMarkdown = `[${label}](${href})`;
+  const normalizedTitle = String(title || "").trim();
+  const escapedLabel = escapeMarkdownLinkLabel(label);
+  const linkMarkdown = `[${escapedLabel}](${formatMarkdownDestination(href)}${formatMarkdownLinkTitle(normalizedTitle)})`;
   const nextText = `${before}${linkMarkdown}${after}`;
   const labelStart = before.length + 1;
 
   return {
     text: nextText,
     selectionStart: labelStart,
-    selectionEnd: labelStart + label.length
+    selectionEnd: labelStart + escapedLabel.length
   };
 }
 
@@ -65,36 +67,216 @@ function formatMarkdownDestination(value) {
   return /[\s()]/.test(normalized) ? `<${normalized}>` : normalized;
 }
 
+function escapeMarkdownLinkLabel(value) {
+  return String(value || "").replace(/\\/g, "\\\\").replace(/\[/g, "\\[").replace(/\]/g, "\\]");
+}
+
+function escapeMarkdownImageAlt(value) {
+  return String(value || "").replace(/\\/g, "\\\\").replace(/\[/g, "\\[").replace(/\]/g, "\\]");
+}
+
+function unescapeMarkdownText(value) {
+  return String(value || "").replace(/\\(.)/g, "$1");
+}
+
 function formatMarkdownImageTitle(value) {
   const normalized = String(value || "").trim();
-  return normalized ? ` "${normalized.replaceAll('"', '\\"')}"` : "";
+  return normalized ? ` "${normalized.replace(/\\/g, "\\\\").replaceAll('"', '\\"')}"` : "";
+}
+
+function formatMarkdownLinkTitle(value) {
+  const normalized = String(value || "").trim();
+  return normalized ? ` "${normalized.replace(/\\/g, "\\\\").replaceAll('"', '\\"')}"` : "";
+}
+
+function selectionTouchesRange(start, end, rangeStart, rangeEnd) {
+  const overlaps = start <= rangeEnd && end >= rangeStart;
+  const cursorInside = start === end && start >= rangeStart && start <= rangeEnd;
+  return overlaps || cursorInside;
+}
+
+function normalizeMarkdownReferenceLabel(value) {
+  return unescapeMarkdownText(value).trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+function buildMarkdownReferenceDefinition(label, url, title = "") {
+  return `[${escapeMarkdownLinkLabel(label)}]: ${formatMarkdownDestination(url)}${formatMarkdownLinkTitle(title)}`;
+}
+
+function buildMarkdownReferenceUsage(text, referenceLabel, implicit = false) {
+  const escapedText = escapeMarkdownLinkLabel(text);
+  if (implicit) {
+    return `[${escapedText}][]`;
+  }
+  return `[${escapedText}][${escapeMarkdownLinkLabel(referenceLabel)}]`;
+}
+
+function buildMarkdownAutolink(url) {
+  return `<${String(url || "").trim()}>`;
+}
+
+function trimBareUrlCandidate(value) {
+  let candidate = String(value || "");
+  while (candidate) {
+    const last = candidate.at(-1);
+    if (/[.,;:!?]/.test(last)) {
+      candidate = candidate.slice(0, -1);
+      continue;
+    }
+    if (last === ")") {
+      const opens = (candidate.match(/\(/g) || []).length;
+      const closes = (candidate.match(/\)/g) || []).length;
+      if (closes > opens) {
+        candidate = candidate.slice(0, -1);
+        continue;
+      }
+    }
+    break;
+  }
+  return candidate;
+}
+
+function findMarkdownReferenceDefinitions(source) {
+  const definitions = [];
+  const definitionPattern =
+    /^ {0,3}\[((?:\\.|[^\\\]])+)\]:[ \t]*(<[^>\r\n]+>|(?:\\.|[^\\\s)])+)(?:[ \t]+((?:"(?:\\.|[^"])*"|'(?:\\.|[^'])*'|\((?:\\.|[^)])*\))))?[ \t]*$/gm;
+
+  for (const match of source.matchAll(definitionPattern)) {
+    const start = match.index ?? 0;
+    const end = start + match[0].length;
+    const rawLabel = match[1] || "";
+    const rawSource = match[2] || "";
+    const title = unescapeMarkdownText(String(match[3] || "").trim().replace(/^["'(]+|["')]+$/g, ""));
+    const url = rawSource.startsWith("<") && rawSource.endsWith(">") ? rawSource.slice(1, -1) : rawSource;
+    definitions.push({
+      start,
+      end,
+      label: unescapeMarkdownText(rawLabel),
+      rawLabel,
+      normalizedLabel: normalizeMarkdownReferenceLabel(rawLabel),
+      url,
+      title
+    });
+  }
+
+  return definitions;
 }
 
 export function findMarkdownLinkAtSelection(markdown, selectionStart, selectionEnd) {
   const source = String(markdown ?? "");
   const start = Math.max(0, Math.min(selectionStart ?? 0, source.length));
   const end = Math.max(start, Math.min(selectionEnd ?? start, source.length));
-  const linkPattern = /\[([^\]]+)\]\(([^)\r\n]+)\)/g;
+  const inlineLinkPattern =
+    /\[((?:\\.|[^\\\]])+)\]\(\s*(<[^>\r\n]+>|(?:\\.|[^\\\s)])+)(?:\s+((?:"(?:\\.|[^"])*"|'(?:\\.|[^'])*'|\((?:\\.|[^)])*\))))?\s*\)/g;
 
-  for (const match of source.matchAll(linkPattern)) {
+  for (const match of source.matchAll(inlineLinkPattern)) {
     const matchStart = match.index ?? 0;
     const matchEnd = matchStart + match[0].length;
-    const overlaps = start <= matchEnd && end >= matchStart;
-    const cursorInside = start === end && start >= matchStart && start <= matchEnd;
-    if (!overlaps && !cursorInside) {
+    if (!selectionTouchesRange(start, end, matchStart, matchEnd)) {
       continue;
     }
 
-    const label = match[1];
-    const url = match[2];
+    const rawLabel = match[1] || "";
+    const label = unescapeMarkdownText(rawLabel);
+    const rawSource = match[2] || "";
+    const title = unescapeMarkdownText(String(match[3] || "").trim().replace(/^["'(]+|["')]+$/g, ""));
+    const url = rawSource.startsWith("<") && rawSource.endsWith(">") ? rawSource.slice(1, -1) : rawSource;
     const labelStart = matchStart + 1;
     return {
+      kind: "inline",
       start: matchStart,
       end: matchEnd,
       text: label,
       url,
+      title,
       textStart: labelStart,
-      textEnd: labelStart + label.length
+      textEnd: labelStart + rawLabel.length
+    };
+  }
+
+  const autolinkPattern = /<(https?:\/\/[^>\r\n]+)>/gi;
+
+  for (const match of source.matchAll(autolinkPattern)) {
+    const matchStart = match.index ?? 0;
+    const matchEnd = matchStart + match[0].length;
+    if (!selectionTouchesRange(start, end, matchStart, matchEnd)) {
+      continue;
+    }
+
+    const url = match[1] || "";
+    return {
+      kind: "autolink",
+      start: matchStart,
+      end: matchEnd,
+      text: url,
+      url,
+      title: "",
+      textStart: matchStart + 1,
+      textEnd: matchEnd - 1
+    };
+  }
+
+
+  const bareUrlPattern = /https?:\/\/[^\s<>"']+/gi;
+
+  for (const match of source.matchAll(bareUrlPattern)) {
+    const matchStart = match.index ?? 0;
+    const rawCandidate = match[0] || "";
+    const url = trimBareUrlCandidate(rawCandidate);
+    if (!url) {
+      continue;
+    }
+    const matchEnd = matchStart + url.length;
+    if (!selectionTouchesRange(start, end, matchStart, matchEnd)) {
+      continue;
+    }
+
+    return {
+      kind: "bare",
+      start: matchStart,
+      end: matchEnd,
+      text: url,
+      url,
+      title: "",
+      textStart: matchStart,
+      textEnd: matchEnd
+    };
+  }
+  const definitions = findMarkdownReferenceDefinitions(source);
+  const referenceLinkPattern = /\[((?:\\.|[^\\\]])+)\]\[((?:\\.|[^\\\]])*)\]/g;
+
+  for (const match of source.matchAll(referenceLinkPattern)) {
+    const matchStart = match.index ?? 0;
+    const matchEnd = matchStart + match[0].length;
+    if (!selectionTouchesRange(start, end, matchStart, matchEnd)) {
+      continue;
+    }
+
+    const rawLabel = match[1] || "";
+    const label = unescapeMarkdownText(rawLabel);
+    const rawReferenceLabel = match[2] || "";
+    const implicitReference = rawReferenceLabel.length === 0;
+    const normalizedReference = normalizeMarkdownReferenceLabel(rawReferenceLabel || rawLabel);
+    const definition = definitions.find((item) => item.normalizedLabel === normalizedReference);
+    if (!definition) {
+      continue;
+    }
+
+    const labelStart = matchStart + 1;
+    return {
+      kind: "reference",
+      start: matchStart,
+      end: matchEnd,
+      text: label,
+      url: definition.url,
+      title: definition.title,
+      textStart: labelStart,
+      textEnd: labelStart + rawLabel.length,
+      referenceLabel: implicitReference ? definition.label : unescapeMarkdownText(rawReferenceLabel),
+      implicitReference,
+      definitionStart: definition.start,
+      definitionEnd: definition.end,
+      definitionLabel: definition.label
     };
   }
 
@@ -110,15 +292,72 @@ export function buildUpdatedMarkdownLinkSelection(markdown, selectionStart, sele
 
   const text = String(options.text ?? match.text ?? "").trim() || match.text;
   const url = String(options.url ?? match.url ?? "").trim() || match.url;
-  const linkMarkdown = `[${text}](${url})`;
+  const title = options.title === undefined ? match.title ?? "" : String(options.title ?? "").trim();
+
+  if (match.kind === "reference") {
+    const usageMarkdown = buildMarkdownReferenceUsage(text, match.referenceLabel || match.definitionLabel || text, match.implicitReference && text === match.text);
+    const definitionMarkdown = buildMarkdownReferenceDefinition(match.definitionLabel || match.referenceLabel || text, url, title);
+    const nextText =
+      `${source.slice(0, match.start)}${usageMarkdown}${source.slice(match.end, match.definitionStart)}${definitionMarkdown}${source.slice(match.definitionEnd)}`;
+    const textStart = match.start + 1;
+    const escapedText = escapeMarkdownLinkLabel(text);
+    return {
+      text: nextText,
+      selectionStart: textStart,
+      selectionEnd: textStart + escapedText.length
+    };
+  }
+
+  const escapedText = escapeMarkdownLinkLabel(text);
+  const preserveAutolink = match.kind === "autolink" && !title && text === match.text;
+  const preserveBareUrl = match.kind === "bare" && !title && text === match.text;
+  const linkMarkdown = preserveAutolink
+    ? buildMarkdownAutolink(url)
+    : preserveBareUrl
+      ? url
+    : `[${escapedText}](${formatMarkdownDestination(url)}${formatMarkdownLinkTitle(title)})`;
   const nextText = `${source.slice(0, match.start)}${linkMarkdown}${source.slice(match.end)}`;
-  const textStart = match.start + 1;
+  const textStart = preserveBareUrl ? match.start : match.start + 1;
 
   return {
     text: nextText,
     selectionStart: textStart,
-    selectionEnd: textStart + text.length
+    selectionEnd: preserveAutolink || preserveBareUrl ? textStart + url.length : textStart + escapedText.length
   };
+}
+
+function hasOtherMarkdownReferenceUsage(source, match) {
+  const referenceLinkPattern = /\[((?:\\.|[^\\\]])+)\]\[((?:\\.|[^\\\]])*)\]/g;
+  const targetLabel = normalizeMarkdownReferenceLabel(match.definitionLabel || match.referenceLabel || match.text);
+
+  for (const usage of source.matchAll(referenceLinkPattern)) {
+    const usageStart = usage.index ?? 0;
+    const usageEnd = usageStart + usage[0].length;
+    if (usageStart === match.start && usageEnd === match.end) {
+      continue;
+    }
+    const rawLabel = usage[1] || "";
+    const rawReferenceLabel = usage[2] || "";
+    const normalizedReference = normalizeMarkdownReferenceLabel(rawReferenceLabel || rawLabel);
+    if (normalizedReference === targetLabel) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function expandMarkdownDefinitionRemovalRange(source, start, end) {
+  let rangeStart = start;
+  let rangeEnd = end;
+
+  if (rangeStart >= 2 && source.slice(rangeStart - 2, rangeStart) === "\n\n") {
+    rangeStart -= 2;
+  } else if (source.slice(rangeEnd, rangeEnd + 2) === "\n\n") {
+    rangeEnd += 2;
+  }
+
+  return { start: rangeStart, end: rangeEnd };
 }
 
 export function buildRemovedMarkdownLinkSelection(markdown, selectionStart, selectionEnd) {
@@ -129,20 +368,36 @@ export function buildRemovedMarkdownLinkSelection(markdown, selectionStart, sele
   }
 
   const replacement = match.text || "";
-  const nextText = `${source.slice(0, match.start)}${replacement}${source.slice(match.end)}`;
+  const nextTextBase = `${source.slice(0, match.start)}${replacement}${source.slice(match.end)}`;
+  const selectionStartNext = match.start;
+  const selectionEndNext = match.start + replacement.length;
+
+  if (match.kind !== "reference" || hasOtherMarkdownReferenceUsage(source, match)) {
+    return {
+      text: nextTextBase,
+      selectionStart: selectionStartNext,
+      selectionEnd: selectionEndNext
+    };
+  }
+
+  const definitionRange = expandMarkdownDefinitionRemovalRange(nextTextBase, match.definitionStart - (match.end - match.start) + replacement.length, match.definitionEnd - (match.end - match.start) + replacement.length);
+  const nextText = `${nextTextBase.slice(0, definitionRange.start)}${nextTextBase.slice(definitionRange.end)}`;
   return {
     text: nextText,
-    selectionStart: match.start,
-    selectionEnd: match.start + replacement.length
+    selectionStart: selectionStartNext,
+    selectionEnd: selectionEndNext
   };
 }
 
+export function buildMarkdownImageSyntax(alt, url, title = "") {
+  return `![${escapeMarkdownImageAlt(alt)}](${formatMarkdownDestination(url)}${formatMarkdownImageTitle(title)})`;
+}
 export function findMarkdownImageAtSelection(markdown, selectionStart, selectionEnd) {
   const source = String(markdown ?? "");
   const start = Math.max(0, Math.min(selectionStart ?? 0, source.length));
   const end = Math.max(start, Math.min(selectionEnd ?? start, source.length));
   const imagePattern =
-    /!\[([^\]]*)\]\(\s*(<[^>\r\n]+>|(?:\\.|[^\\\s)])+)(?:\s+((?:"(?:\\.|[^"])*"|'(?:\\.|[^'])*'|\((?:\\.|[^)])*\))))?\s*\)/g;
+    /!\[((?:\\.|[^\\\]])*)\]\(\s*(<[^>\r\n]+>|(?:\\.|[^\\\s)])+)(?:\s+((?:"(?:\\.|[^"])*"|'(?:\\.|[^'])*'|\((?:\\.|[^)])*\))))?\s*\)/g;
 
   for (const match of source.matchAll(imagePattern)) {
     const matchStart = match.index ?? 0;
@@ -153,9 +408,10 @@ export function findMarkdownImageAtSelection(markdown, selectionStart, selection
       continue;
     }
 
-    const alt = match[1] || "";
+    const rawAlt = match[1] || "";
+    const alt = unescapeMarkdownText(rawAlt);
     const rawSource = match[2] || "";
-    const title = String(match[3] || "").trim().replace(/^["'(]+|["')]+$/g, "");
+    const title = unescapeMarkdownText(String(match[3] || "").trim().replace(/^["'(]+|["')]+$/g, ""));
     const url = rawSource.startsWith("<") && rawSource.endsWith(">") ? rawSource.slice(1, -1) : rawSource;
 
     return {
@@ -180,14 +436,14 @@ export function buildUpdatedMarkdownImageSelection(markdown, selectionStart, sel
   const alt = String(options.alt ?? match.alt ?? "");
   const url = String(options.url ?? match.url ?? "");
   const title = String(options.title ?? match.title ?? "");
-  const imageMarkdown = `![${alt}](${formatMarkdownDestination(url)}${formatMarkdownImageTitle(title)})`;
+  const imageMarkdown = buildMarkdownImageSyntax(alt, url, title);
   const nextText = `${source.slice(0, match.start)}${imageMarkdown}${source.slice(match.end)}`;
   const altStart = match.start + 2;
 
   return {
     text: nextText,
     selectionStart: altStart,
-    selectionEnd: altStart + alt.length
+    selectionEnd: altStart + escapeMarkdownImageAlt(alt).length
   };
 }
 
@@ -360,6 +616,44 @@ export function buildPrefixedSourceLines(markdown, selectionStart, selectionEnd,
   };
 }
 
+export function getMarkdownLineContinuation(line = "") {
+  const sourceLine = String(line ?? "");
+
+  const taskMatch = /^(\s*)([-*+])\s\[(?: |x|X)\]\s*(.*)$/.exec(sourceLine);
+  if (taskMatch) {
+    const [, indent, marker, content] = taskMatch;
+    return !content.trim()
+      ? { kind: "taskList", mode: "replace-line", text: indent }
+      : { kind: "taskList", mode: "insert", text: `\n${indent}${marker} [ ] ` };
+  }
+
+  const orderedMatch = /^(\s*)(\d+)\.\s+(.*)$/.exec(sourceLine);
+  if (orderedMatch) {
+    const [, indent, indexText, content] = orderedMatch;
+    return !content.trim()
+      ? { kind: "orderedList", mode: "replace-line", text: indent }
+      : { kind: "orderedList", mode: "insert", text: `\n${indent}${Number(indexText) + 1}. ` };
+  }
+
+  const bulletMatch = /^(\s*)([-*+])\s+(.*)$/.exec(sourceLine);
+  if (bulletMatch) {
+    const [, indent, marker, content] = bulletMatch;
+    return !content.trim()
+      ? { kind: "bulletList", mode: "replace-line", text: indent }
+      : { kind: "bulletList", mode: "insert", text: `\n${indent}${marker} ` };
+  }
+
+  const quoteMatch = /^(\s*(?:>\s*)+)(.*)$/.exec(sourceLine);
+  if (quoteMatch) {
+    const [, prefix, content] = quoteMatch;
+    return !content.trim()
+      ? { kind: "blockquote", mode: "replace-line", text: "" }
+      : { kind: "blockquote", mode: "insert", text: `\n${prefix.replace(/\s*$/, " ")}` };
+  }
+
+  return null;
+}
+
 export function buildToggledPrefixedSourceLines(markdown, selectionStart, selectionEnd, prefix, options = {}) {
   const text = String(markdown ?? "");
   const start = Math.max(0, Math.min(selectionStart ?? 0, text.length));
@@ -457,3 +751,8 @@ export function replaceAllLiteralMatches(markdown, query, replaceValue) {
     replacedCount
   };
 }
+
+
+
+
+

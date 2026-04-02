@@ -9,6 +9,11 @@ const stylesSource = await fs.readFile(new URL("../src/renderer/styles/app.css",
 
 test("primary dialogs share dialog header copy structure", () => {
   assert.match(linkDialogSource, /dialog-header-copy/);
+  assert.match(linkDialogSource, /initialTitle = ""/);
+  assert.match(linkDialogSource, /<span>Title<\/span>/);
+  assert.match(linkDialogSource, /Optional title/);
+  assert.match(linkDialogSource, /type="text"/);
+  assert.match(linkDialogSource, /https:\/\/example\.com or #section/);
   assert.match(preferencesSource, /dialog-header-copy/);
   assert.match(stylesSource, /\.dialog-header-copy \{/);
   assert.match(stylesSource, /\.dialog-caption \{/);

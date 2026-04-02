@@ -9,3 +9,43 @@ export function getEmptyListEnterStrategy(state = {}) {
 
   return "ignore";
 }
+
+export function getDelayedParagraphTransform(beforeCursor = "", insertedText = "") {
+  if (!/\S/.test(insertedText)) {
+    return null;
+  }
+
+  if (/^[-*+]\s\[(?: |x|X)\]\s$/.test(beforeCursor)) {
+    return { kind: "taskList" };
+  }
+
+  if (/^>\s$/.test(beforeCursor)) {
+    return { kind: "blockquote" };
+  }
+
+  if (/^[-*+]\s$/.test(beforeCursor)) {
+    return { kind: "bulletList" };
+  }
+
+  if (/^\d+\.\s$/.test(beforeCursor)) {
+    return { kind: "orderedList" };
+  }
+
+  return null;
+}
+
+export function getDelayedHeadingTransform(line = "", caretAtEnd = false) {
+  if (!caretAtEnd) {
+    return null;
+  }
+
+  const match = /^(#{1,6})\s+(.+\S.*)$/.exec(line);
+  if (!match) {
+    return null;
+  }
+
+  return {
+    level: match[1].length,
+    title: match[2]
+  };
+}

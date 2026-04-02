@@ -76,6 +76,51 @@ function formatMarkdownImageSource(value) {
   return /[\s()]/.test(normalized) ? `<${normalized}>` : normalized;
 }
 
+function isLikelyImageUrl(value) {
+  const normalized = String(value || "").trim();
+  if (!normalized) {
+    return false;
+  }
+  if (/^data:image\//i.test(normalized)) {
+    return true;
+  }
+  return /\.(?:avif|bmp|gif|ico|jpe?g|png|svg|webp)(?:$|[?#])/i.test(normalized);
+}
+
+function getLinkedImageOverrideSource(node) {
+  const parent = node.parentElement;
+  if (!parent || parent.nodeName !== "A") {
+    return "";
+  }
+
+  const meaningfulChildren = Array.from(parent.childNodes).filter((child) => {
+    if (child.nodeType === 3) {
+      return String(child.textContent || "").trim();
+    }
+    return child.nodeType === 1;
+  });
+  if (meaningfulChildren.length !== 1 || meaningfulChildren[0] !== node) {
+    return "";
+  }
+
+  const href = parent.getAttribute("href");
+  return isLikelyImageUrl(href) ? href : "";
+}
+
+function serializeMarkdownImage(node, { inline = false } = {}) {
+  const source = formatMarkdownImageSource(
+    getLinkedImageOverrideSource(node) || node.getAttribute("data-md-src") || node.getAttribute("src")
+  );
+  if (!source) {
+    return "";
+  }
+
+  const alt = escapeMarkdownImageAlt(node.getAttribute("alt"));
+  const title = node.getAttribute("title");
+  const markdown = `![${alt}](${source}${title ? ` "${escapeMarkdownTitle(title)}"` : ""})`;
+  return inline ? markdown : `\n\n${markdown}\n\n`;
+}
+
 function escapeTableCell(content) {
   const normalized = String(content || "").replace(/\r?\n/g, "<br>").replace(/\|/g, "\\|").trim();
   return normalized || " ";
@@ -156,13 +201,7 @@ export function createMarkdownTurndown() {
       return node.nodeName === "IMG";
     },
     replacement(content, node) {
-      const source = formatMarkdownImageSource(node.getAttribute("data-md-src") || node.getAttribute("src"));
-      if (!source) {
-        return "";
-      }
-      const alt = escapeMarkdownImageAlt(node.getAttribute("alt"));
-      const title = node.getAttribute("title");
-      return `\n\n![${alt}](${source}${title ? ` "${escapeMarkdownTitle(title)}"` : ""})\n\n`;
+      return serializeMarkdownImage(node, { inline: node.parentElement?.nodeName === "A" });
     }
   });
 

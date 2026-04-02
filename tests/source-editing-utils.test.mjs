@@ -3,12 +3,15 @@ import assert from "node:assert/strict";
 import {
   buildExpandedMarkdownTableSelection,
   buildLinkedSourceSelection,
+  buildRemovedMarkdownLinkSelection,
   buildRemovedMarkdownImageSelection,
   buildSourceInsertion,
   buildPrefixedSourceLines,
+  getMarkdownLineContinuation,
   buildToggledPrefixedSourceLines,
   buildToggledWrappedSourceSelection,
   buildUpdatedMarkdownImageSelection,
+  buildMarkdownImageSyntax,
   buildUpdatedMarkdownLinkSelection,
   buildWrappedSourceSelection,
   findLiteralMatches,
@@ -47,6 +50,12 @@ test("buildLinkedSourceSelection uses the selected text as the default label", (
   assert.equal(result.selectionEnd, 12);
 });
 
+test("buildLinkedSourceSelection supports optional link titles", () => {
+  const result = buildLinkedSourceSelection("", 0, 0, "Guide", "https://example.com", "link text", "Reference");
+  assert.equal(result.text, '[Guide](https://example.com "Reference")');
+  assert.equal(result.selectionStart, 1);
+  assert.equal(result.selectionEnd, 6);
+});
 test("buildLinkedSourceSelection uses provided text when there is no selection", () => {
   const result = buildLinkedSourceSelection("Hello", 5, 5, "Inkdown", "https://example.com");
   assert.equal(result.text, "Hello[Inkdown](https://example.com)");
@@ -54,15 +63,62 @@ test("buildLinkedSourceSelection uses provided text when there is no selection",
   assert.equal(result.selectionEnd, 13);
 });
 
+test("buildLinkedSourceSelection escapes markdown-sensitive link labels", () => {
+  const result = buildLinkedSourceSelection("", 0, 0, "Docs [v2]\\draft", "https://example.com/docs");
+  assert.equal(result.text, "[Docs \\[v2\\]\\\\draft](https://example.com/docs)");
+  assert.equal(result.selectionStart, 1);
+  assert.equal(result.selectionEnd, 19);
+});
+
+test("buildUpdatedMarkdownLinkSelection escapes markdown-sensitive labels and title backslashes", () => {
+  const result = buildUpdatedMarkdownLinkSelection("[Docs](https://example.com)", 2, 2, {
+    text: "Docs [v2]\\draft",
+    title: "Ref\\Docs"
+  });
+  assert.equal(result.text, "[Docs \\[v2\\]\\\\draft](https://example.com \"Ref\\\\Docs\")");
+  assert.equal(result.selectionStart, 1);
+  assert.equal(result.selectionEnd, 19);
+});
+
 test("findMarkdownLinkAtSelection returns link context for a cursor inside markdown link", () => {
   const result = findMarkdownLinkAtSelection("Hello [Inkdown](https://example.com) world", 10, 10);
   assert.deepEqual(result, {
+    kind: "inline",
     start: 6,
     end: 36,
     text: "Inkdown",
     url: "https://example.com",
+    title: "",
     textStart: 7,
     textEnd: 14
+  });
+});
+
+test("findMarkdownLinkAtSelection parses optional titles and angle-bracket destinations", () => {
+  const result = findMarkdownLinkAtSelection('See [Guide](<https://example.com/docs guide> "Reference") now', 8, 8);
+  assert.deepEqual(result, {
+    kind: "inline",
+    start: 4,
+    end: 57,
+    text: "Guide",
+    url: "https://example.com/docs guide",
+    title: "Reference",
+    textStart: 5,
+    textEnd: 10
+  });
+});
+
+test("findMarkdownLinkAtSelection unescapes escaped markdown labels and titles", () => {
+  const result = findMarkdownLinkAtSelection('See [Docs \\[v2\\]\\\\draft](https://example.com "Ref\\\\Docs") now', 8, 8);
+  assert.deepEqual(result, {
+    kind: "inline",
+    start: 4,
+    end: 57,
+    text: 'Docs [v2]\\draft',
+    url: "https://example.com",
+    title: 'Ref\\Docs',
+    textStart: 5,
+    textEnd: 23
   });
 });
 
@@ -73,6 +129,177 @@ test("buildUpdatedMarkdownLinkSelection updates the current link target in place
   assert.equal(result.text, "Hello [Inkdown](https://inkdown.app) world");
   assert.equal(result.selectionStart, 7);
   assert.equal(result.selectionEnd, 14);
+});
+
+test("buildUpdatedMarkdownLinkSelection preserves existing titles and formats spaced urls", () => {
+  const result = buildUpdatedMarkdownLinkSelection('Hello [Inkdown](<https://example.com/docs guide> "Reference") world', 10, 10, {
+    url: "https://inkdown.app/docs guide"
+  });
+  assert.equal(result.text, 'Hello [Inkdown](<https://inkdown.app/docs guide> "Reference") world');
+  assert.equal(result.selectionStart, 7);
+  assert.equal(result.selectionEnd, 14);
+});
+
+
+test("findMarkdownLinkAtSelection recognizes angle-bracket autolinks", () => {
+  const result = findMarkdownLinkAtSelection("See <https://example.com/docs> now", 8, 8);
+  assert.deepEqual(result, {
+    kind: "autolink",
+    start: 4,
+    end: 30,
+    text: "https://example.com/docs",
+    url: "https://example.com/docs",
+    title: "",
+    textStart: 5,
+    textEnd: 29
+  });
+});
+
+test("buildUpdatedMarkdownLinkSelection preserves autolink syntax when only the url changes", () => {
+  const result = buildUpdatedMarkdownLinkSelection("See <https://example.com/docs> now", 8, 8, {
+    url: "https://inkdown.app/guide"
+  });
+  assert.equal(result.text, "See <https://inkdown.app/guide> now");
+  assert.equal(result.selectionStart, 5);
+  assert.equal(result.selectionEnd, 30);
+});
+
+test("buildUpdatedMarkdownLinkSelection converts autolinks to labeled links when text changes", () => {
+  const result = buildUpdatedMarkdownLinkSelection("See <https://example.com/docs> now", 8, 8, {
+    text: "Guide",
+    url: "https://inkdown.app/guide"
+  });
+  assert.equal(result.text, "See [Guide](https://inkdown.app/guide) now");
+  assert.equal(result.selectionStart, 5);
+  assert.equal(result.selectionEnd, 10);
+});
+
+
+test("findMarkdownLinkAtSelection recognizes bare urls and trims trailing punctuation", () => {
+  const result = findMarkdownLinkAtSelection("See https://example.com/docs). now", 10, 10);
+  assert.deepEqual(result, {
+    kind: "bare",
+    start: 4,
+    end: 28,
+    text: "https://example.com/docs",
+    url: "https://example.com/docs",
+    title: "",
+    textStart: 4,
+    textEnd: 28
+  });
+});
+
+test("buildUpdatedMarkdownLinkSelection preserves bare url syntax when only the url changes", () => {
+  const result = buildUpdatedMarkdownLinkSelection("See https://example.com/docs now", 10, 10, {
+    url: "https://inkdown.app/guide"
+  });
+  assert.equal(result.text, "See https://inkdown.app/guide now");
+  assert.equal(result.selectionStart, 4);
+  assert.equal(result.selectionEnd, 29);
+});
+
+test("buildUpdatedMarkdownLinkSelection converts bare urls to labeled links when text changes", () => {
+  const result = buildUpdatedMarkdownLinkSelection("See https://example.com/docs now", 10, 10, {
+    text: "Guide",
+    url: "https://inkdown.app/guide"
+  });
+  assert.equal(result.text, "See [Guide](https://inkdown.app/guide) now");
+  assert.equal(result.selectionStart, 5);
+  assert.equal(result.selectionEnd, 10);
+});
+
+test("findMarkdownLinkAtSelection resolves reference-style links through definitions", () => {
+  const result = findMarkdownLinkAtSelection('[Guide][docs]\n\n[docs]: https://example.com/docs "Reference"', 3, 3);
+  assert.deepEqual(result, {
+    kind: "reference",
+    start: 0,
+    end: 13,
+    text: "Guide",
+    url: "https://example.com/docs",
+    title: "Reference",
+    textStart: 1,
+    textEnd: 6,
+    referenceLabel: "docs",
+    implicitReference: false,
+    definitionStart: 15,
+    definitionEnd: 59,
+    definitionLabel: "docs"
+  });
+});
+
+test("findMarkdownLinkAtSelection resolves implicit reference links through definitions", () => {
+  const result = findMarkdownLinkAtSelection('[Guide][]\n\n[Guide]: https://example.com/docs', 3, 3);
+  assert.deepEqual(result, {
+    kind: "reference",
+    start: 0,
+    end: 9,
+    text: "Guide",
+    url: "https://example.com/docs",
+    title: "",
+    textStart: 1,
+    textEnd: 6,
+    referenceLabel: "Guide",
+    implicitReference: true,
+    definitionStart: 11,
+    definitionEnd: 44,
+    definitionLabel: "Guide"
+  });
+});
+
+test("buildUpdatedMarkdownLinkSelection updates reference definitions in place", () => {
+  const result = buildUpdatedMarkdownLinkSelection('[Guide][docs]\n\n[docs]: https://example.com/docs "Reference"', 3, 3, {
+    url: "https://inkdown.app/guide",
+    title: "Updated"
+  });
+  assert.equal(result.text, '[Guide][docs]\n\n[docs]: https://inkdown.app/guide "Updated"');
+  assert.equal(result.selectionStart, 1);
+  assert.equal(result.selectionEnd, 6);
+});
+
+test("buildRemovedMarkdownLinkSelection removes orphaned reference definitions", () => {
+  const result = buildRemovedMarkdownLinkSelection('[Guide][docs]\n\n[docs]: https://example.com/docs "Reference"', 3, 3);
+  assert.equal(result.text, 'Guide');
+  assert.equal(result.selectionStart, 0);
+  assert.equal(result.selectionEnd, 5);
+});
+
+test("buildRemovedMarkdownLinkSelection keeps shared reference definitions when still used", () => {
+  const result = buildRemovedMarkdownLinkSelection('[Guide][docs]\n\nAlso [More][docs]\n\n[docs]: https://example.com/docs "Reference"', 3, 3);
+  assert.equal(result.text, 'Guide\n\nAlso [More][docs]\n\n[docs]: https://example.com/docs "Reference"');
+  assert.equal(result.selectionStart, 0);
+  assert.equal(result.selectionEnd, 5);
+});
+
+test("buildMarkdownImageSyntax wraps spaced image destinations in angle brackets", () => {
+  assert.equal(buildMarkdownImageSyntax("Diagram", "./images/final image (wide).png", "Wide"), '![Diagram](<./images/final image (wide).png> "Wide")');
+});
+
+test("buildMarkdownImageSyntax escapes alt text and title backslashes", () => {
+  assert.equal(
+    buildMarkdownImageSyntax("Diagram [v2]\\draft", "./images/final image.png", "Wide\\Shot"),
+    '![Diagram \\[v2\\]\\\\draft](<./images/final image.png> "Wide\\\\Shot")'
+  );
+});
+
+test("buildUpdatedMarkdownImageSelection keeps source selection aligned to escaped alt text", () => {
+  const result = buildUpdatedMarkdownImageSelection("![Image](./images/final.png)", 3, 3, {
+    alt: "Diagram [v2]\\draft",
+    title: "Wide\\Shot"
+  });
+  assert.equal(result.text, '![Diagram \\[v2\\]\\\\draft](./images/final.png "Wide\\\\Shot")');
+  assert.equal(result.selectionStart, 2);
+  assert.equal(result.selectionEnd, 23);
+});
+
+test("findMarkdownImageAtSelection unescapes escaped alt text and titles", () => {
+  const result = findMarkdownImageAtSelection('See ![Diagram \\[v2\\]\\\\draft](./images/final.png "Wide\\\\Shot") now', 8, 8);
+  assert.deepEqual(result, {
+    start: 4,
+    end: 61,
+    alt: 'Diagram [v2]\\draft',
+    url: "./images/final.png",
+    title: 'Wide\\Shot'
+  });
 });
 
 test("findMarkdownImageAtSelection returns image context for a cursor inside markdown image", () => {
@@ -147,6 +374,32 @@ test("buildPrefixedSourceLines renumbers selected lines from one", () => {
   assert.equal(result.text, "1. first\n2. second");
   assert.equal(result.selectionStart, 0);
   assert.equal(result.selectionEnd, 18);
+});
+
+test("getMarkdownLineContinuation preserves bullet markers when continuing source lists", () => {
+  assert.deepEqual(getMarkdownLineContinuation("* item"), {
+    kind: "bulletList",
+    mode: "insert",
+    text: "\n* "
+  });
+  assert.deepEqual(getMarkdownLineContinuation("+ item"), {
+    kind: "bulletList",
+    mode: "insert",
+    text: "\n+ "
+  });
+});
+
+test("getMarkdownLineContinuation preserves task markers and exits empty items cleanly", () => {
+  assert.deepEqual(getMarkdownLineContinuation("+ [x] done"), {
+    kind: "taskList",
+    mode: "insert",
+    text: "\n+ [ ] "
+  });
+  assert.deepEqual(getMarkdownLineContinuation("  * [ ] "), {
+    kind: "taskList",
+    mode: "replace-line",
+    text: "  "
+  });
 });
 
 test("buildToggledPrefixedSourceLines removes an existing heading prefix on repeated apply", () => {
@@ -229,3 +482,8 @@ test("buildToggledPrefixedSourceLines normalizes headings without a space before
   assert.equal(result.selectionStart, 0);
   assert.equal(result.selectionEnd, 7);
 });
+
+
+
+
+

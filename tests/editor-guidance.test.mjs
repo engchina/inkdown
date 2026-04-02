@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
+import { getDelayedHeadingTransform } from "../src/renderer/utils/editorStructuredEditing.mjs";
 
 const appSource = await fs.readFile(new URL("../src/renderer/App.jsx", import.meta.url), "utf8");
 const stylesSource = await fs.readFile(new URL("../src/renderer/styles/app.css", import.meta.url), "utf8");
@@ -25,9 +26,13 @@ test("styles keep shared toolbar emphasis states", () => {
 });
 
 test("smart heading transform and slash commands support heading levels four through six", () => {
-  assert.match(appSource, /function applyEditorParagraphSpaceShortcut\(view, beforeCursor, rangeFrom, rangeTo\)/);
-  assert.match(appSource, /const headingShortcut = \/\^\(#\{1,6\}\)\$\/\.exec\(beforeCursor\)/);
-  assert.match(appSource, /applyHeadingShortcut\(rangeFrom, rangeTo, level\)/);
+  assert.match(appSource, /function applyEditorDelayedHeadingTransform\(view\)/);
+  assert.match(appSource, /getDelayedHeadingTransform\(parent\.textContent, true\)/);
+  assert.match(appSource, /toggleHeading\(\{ level: headingShortcut\.level \}\)\.insertContent\(headingShortcut\.title\)\.run\(\)/);
+  assert.deepEqual(getDelayedHeadingTransform("#### Title", true), { level: 4, title: "Title" });
+  assert.deepEqual(getDelayedHeadingTransform("##### Title", true), { level: 5, title: "Title" });
+  assert.deepEqual(getDelayedHeadingTransform("###### Title", true), { level: 6, title: "Title" });
+  assert.equal(getDelayedHeadingTransform("## Title", false), null);
   assert.match(appSource, /id: "heading-4"/);
   assert.match(appSource, /id: "heading-5"/);
   assert.match(appSource, /id: "heading-6"/);
@@ -42,12 +47,22 @@ test("smart heading transform and slash commands support heading levels four thr
 test("selected editor images expose an inline editable markdown block", () => {
   assert.match(appSource, /function formatMarkdownImageSnippet\(\{ alt = "", url = "", title = "" \} = \{\}\)/);
   assert.match(appSource, /function parseMarkdownImageSnippet\(value\)/);
+  assert.match(appSource, /function unescapeMarkdownImageText\(value\)/);
+  assert.match(appSource, /\(\(\?:\\\\\.|\[\^\\\\\\\]\]\)\*\)/);
+  assert.match(appSource, /alt: unescapeMarkdownImageText\(match\[1\] \|\| ""\)/);
+  assert.match(appSource, /title: unescapeMarkdownImageText\(String\(match\[3\] \|\| ""\)\.trim\(\)\.replace/);
   assert.match(appSource, /function ImageNodeView\(\{ editor, extension, getPos, node, selected, updateAttributes \}\)/);
   assert.match(appSource, /return ReactNodeViewRenderer\(ImageNodeView\)/);
+  assert.match(appSource, /parseHTML: \(element\) => element\.getAttribute\("title"\)/);
+  assert.match(appSource, /renderHTML: \(attributes\) => \(attributes\.title \? \{ title: attributes\.title \} : \{\}\)/);
   assert.match(appSource, /className=\{`editor-image-node\$\{shown \? " is-selected" : ""\}`\}/);
   assert.match(appSource, /className="editor-image-markdown-block"/);
   assert.match(appSource, /className=\{`editor-image-markdown-input\$\{draftError \? " invalid" : ""\}`\}/);
   assert.match(appSource, /className="editor-image-markdown-block"[\s\S]*<img/);
   assert.match(appSource, /function applyMarkdown\(nextValue = draft\)/);
   assert.match(appSource, /updateAttributes\(nextAttrs\)/);
+  assert.match(appSource, /selectedImage\?\.attrs\?\.alt \|\| alt/);
+  assert.match(appSource, /title: selectedImage\?\.attrs\?\.title \|\| null/);
+  assert.match(appSource, /setTextSelection\(linkDialogState\.linkRange\)[\s\S]*setLink\(\{ href, title: normalizedTitle \|\| null \}\)\.run\(\)/);
+  assert.match(appSource, /setTextSelection\(linkDialogState\.linkRange\)[\s\S]*unsetLink\(\)[\s\S]*\.run\(\)/);
 });
