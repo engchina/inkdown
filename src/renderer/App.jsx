@@ -846,6 +846,11 @@ const TokenBold = Bold.extend({
 });
 
 const TokenItalic = Italic.extend({
+  addKeyboardShortcuts() {
+    return {
+      "Mod-i": () => this.editor.commands.toggleItalic()
+    };
+  },
   addInputRules() {
     return [];
   },

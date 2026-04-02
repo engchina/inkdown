@@ -10,6 +10,7 @@ import {
 } from "../src/renderer/utils/markSyntaxEditing.mjs";
 
 const appSource = await fs.readFile(new URL("../src/renderer/App.jsx", import.meta.url), "utf8");
+const mainSource = await fs.readFile(new URL("../src/main/main.js", import.meta.url), "utf8");
 const stylesSource = await fs.readFile(new URL("../src/renderer/styles/app.css", import.meta.url), "utf8");
 
 test("inline mark clicks resolve to the nearest supported mark element", () => {
@@ -89,7 +90,15 @@ test("editor keeps expanded inline syntax active while selection still touches t
 
 test("inline token extensions disable default input rules so closing markers do not auto-render immediately", () => {
   assert.match(appSource, /const TokenBold = Bold\.extend\(\{\s+addInputRules\(\) \{\s+return \[\];/s);
-  assert.match(appSource, /const TokenItalic = Italic\.extend\(\{\s+addInputRules\(\) \{\s+return \[\];/s);
+  assert.match(appSource, /const TokenItalic = Italic\.extend\(\{[\s\S]*?addInputRules\(\) \{\s+return \[\];/);
   assert.match(appSource, /const TokenStrike = Strike\.extend\(\{\s+addInputRules\(\) \{\s+return \[\];/s);
   assert.match(appSource, /const TokenCode = Code\.extend\(\{\s+addInputRules\(\) \{\s+return \[\];/s);
+});
+
+
+test("italic shortcut override keeps Ctrl+Shift+I free for developer tools", () => {
+  assert.match(appSource, /const TokenItalic = Italic\.extend\(\{\s+addKeyboardShortcuts\(\) \{\s+return \{\s+"Mod-i": \(\) => this\.editor\.commands\.toggleItalic\(\)/s);
+  assert.doesNotMatch(appSource, /"Mod-I": \(\) => this\.editor\.commands\.toggleItalic\(\)/);
+  assert.match(mainSource, /label: "Image",\s+accelerator: "CmdOrCtrl\+Alt\+I"/s);
+  assert.match(mainSource, /role: "toggleDevTools", label: "Developer Tools", accelerator: "CmdOrCtrl\+Shift\+I"/);
 });

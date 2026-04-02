@@ -670,7 +670,7 @@ function rebuildMenu(window) {
         },
         {
           label: "Image",
-          accelerator: "CmdOrCtrl+Shift+I",
+          accelerator: "CmdOrCtrl+Alt+I",
           click: () => emitMenuAction(window, { type: "insert-image" })
         }
       ]
@@ -742,7 +742,7 @@ function rebuildMenu(window) {
         { role: "zoomOut", label: "Zoom Out" },
         { type: "separator" },
         { role: "reload", label: "Reload" },
-        { role: "toggleDevTools", label: "Developer Tools" }
+        { role: "toggleDevTools", label: "Developer Tools", accelerator: "CmdOrCtrl+Shift+I" }
       ]
     },
     {
