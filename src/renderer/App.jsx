@@ -5,6 +5,7 @@ import { NodeSelection, Plugin, PluginKey, Selection, TextSelection } from "@tip
 import { DOMParser as ProseMirrorDOMParser, DOMSerializer as ProseMirrorDOMSerializer } from "@tiptap/pm/model";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import { CellSelection, TableMap } from "@tiptap/pm/tables";
+import { liftTarget } from "@tiptap/pm/transform";
 import { EditorContent, NodeViewContent, NodeViewWrapper, ReactNodeViewRenderer, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Bold from "@tiptap/extension-bold";
@@ -98,6 +99,7 @@ import {
 
 const editorMarked = new Marked({ gfm: true, breaks: true });
 const previewMarked = new Marked({ gfm: true, breaks: true });
+const OUTLINE_SYNC_EVENT = "inkdown:outline-sync";
 
 previewMarked.use(
   markedKatex({
@@ -780,7 +782,11 @@ function TableOfContentsNodeView({ editor, extension, getPos, node, selected }) 
 
     sync();
     editor.on("transaction", sync);
-    return () => editor.off("transaction", sync);
+    window.addEventListener(OUTLINE_SYNC_EVENT, sync);
+    return () => {
+      editor.off("transaction", sync);
+      window.removeEventListener(OUTLINE_SYNC_EVENT, sync);
+    };
   }, [editor, extension]);
 
   function deleteTableOfContentsNode() {
@@ -2405,6 +2411,37 @@ function buildParagraphNode(schema, text) {
   return schema.nodes.paragraph.create(null, text ? schema.text(text) : null);
 }
 
+function normalizeCurrentEmptyTextblockToParagraph(view) {
+  const { state, dispatch } = view;
+  const { selection, schema } = state;
+  if (!selection.empty || !selection.$from.parent.type.isTextblock) {
+    return false;
+  }
+
+  const blockFrom = selection.$from.before();
+  const blockTo = selection.$from.after();
+  let tr = state.tr;
+  const currentBlock = selection.$from.parent;
+  if (!selection.$from.blockRange(selection.$to)) {
+    return false;
+  }
+
+  if (currentBlock.type.name !== "paragraph") {
+    tr = tr.setNodeMarkup(blockFrom, schema.nodes.paragraph);
+  }
+
+  const liftedRange = tr.doc.resolve(tr.mapping.map(blockFrom)).blockRange(tr.doc.resolve(tr.mapping.map(blockTo)));
+  const target = liftedRange ? liftTarget(liftedRange) : null;
+  if (target !== null && target !== undefined) {
+    tr = tr.lift(liftedRange, target);
+  }
+
+  const paragraphPos = tr.mapping.map(blockFrom);
+  tr = tr.setSelection(TextSelection.create(tr.doc, paragraphPos + 1)).scrollIntoView();
+  dispatch(tr);
+  return true;
+}
+
 function findMatches(markdown, query) {
   return findLiteralMatches(markdown, query);
 }
@@ -3653,22 +3690,19 @@ export default function App() {
     }
 
     if (event.key === "Backspace" && cursorAtStart) {
-      if (state.inHeading) {
+      if (emptyTextblock && state.inHeading) {
         event.preventDefault();
-        runEditorCommand((chain) => chain.setParagraph().run());
-        return true;
+        return normalizeCurrentEmptyTextblockToParagraph(view);
       }
 
-      if (state.inBlockquote) {
+      if (emptyTextblock && state.inBlockquote) {
         event.preventDefault();
-        runEditorCommand((chain) => chain.toggleBlockquote().run());
-        return true;
+        return normalizeCurrentEmptyTextblockToParagraph(view);
       }
 
       if (emptyTextblock && state.inCodeBlock) {
         event.preventDefault();
-        runEditorCommand((chain) => chain.clearNodes().setParagraph().run());
-        return true;
+        return normalizeCurrentEmptyTextblockToParagraph(view);
       }
     }
 
@@ -5386,15 +5420,21 @@ export default function App() {
     setStatus(`Replaced all ${result.replacedCount} matches`);
   }
 
+  function syncOutlineState(nextOutline) {
+    outlineRef.current = nextOutline;
+    setOutline(nextOutline);
+    setActiveOutlineId((current) => (current && nextOutline.some((item) => item.id === current) ? current : null));
+    window.dispatchEvent(new CustomEvent(OUTLINE_SYNC_EVENT));
+  }
+
   function syncMarkdownFromEditor(instance) {
     programmaticMarkdownSyncRef.current = true;
     const nextMarkdown = serializeEditorStateToMarkdown(instance.state, extractYamlFrontMatter(markdownText).raw);
     lastEditorMarkdownRef.current = nextMarkdown;
+    const nextOutline = extractOutlineFromMarkdown(nextMarkdown);
+    syncOutlineState(nextOutline);
     startTransition(() => {
-      const nextOutline = extractOutlineFromMarkdown(nextMarkdown);
-      outlineRef.current = nextOutline;
       setMarkdownText(nextMarkdown);
-      setOutline(nextOutline);
     });
     setIsDirty(true);
   }
@@ -5516,7 +5556,7 @@ export default function App() {
       return false;
     }
 
-    const markerMatch = /^(\s*)(?:[-*+]\s|\d+\.\s|[-*+]\s\[(?: |x|X)\]\s|(?:>\s*)+)$/u.exec(line);
+    const markerMatch = /^(\s*)(?:#{1,6}\s?|[-*+]\s|\d+\.\s|[-*+]\s\[(?: |x|X)\]\s|(?:>\s*)+)$/u.exec(line);
     if (!markerMatch) {
       return false;
     }
@@ -6246,4 +6286,3 @@ export default function App() {
     </div>
   );
 }
-

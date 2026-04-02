@@ -17,6 +17,20 @@ test("non-list blocks ignore the empty-list Enter strategy", () => {
   assert.equal(getEmptyListEnterStrategy({}), "ignore");
 });
 
+test("source Backspace also clears empty heading markers in one step", () => {
+  assert.match(appSource, /const markerMatch = \/\^\(\\s\*\)\(\?:#\{1,6\}\\s\?\|\[-\*\+\]\\s\|\\d\+\\.\\s\|\[-\*\+\]\\s\\\[\(\?: \|x\|X\)\\\]\\s\|\(\?:>\\s\*\)\+\)\$\/u\.exec\(line\);/);
+});
+test("empty headings, blockquotes, and code blocks normalize to paragraphs on Backspace", () => {
+  assert.match(appSource, /function normalizeCurrentEmptyTextblockToParagraph\(view\)/);
+  assert.match(appSource, /tr = tr\.setNodeMarkup\(blockFrom, schema\.nodes\.paragraph\);/);
+  assert.match(appSource, /const target = liftedRange \? liftTarget\(liftedRange\) : null;/);
+  assert.match(appSource, /tr = tr\.lift\(liftedRange, target\);/);
+  assert.match(appSource, /tr = tr\.setSelection\(TextSelection\.create\(tr\.doc, paragraphPos \+ 1\)\)\.scrollIntoView\(\);/);
+  assert.match(appSource, /if \(event\.key === "Backspace" && cursorAtStart\) \{[\s\S]*?if \(emptyTextblock && state\.inHeading\) \{[\s\S]*?return normalizeCurrentEmptyTextblockToParagraph\(view\);/);
+  assert.match(appSource, /if \(emptyTextblock && state\.inBlockquote\) \{[\s\S]*?return normalizeCurrentEmptyTextblockToParagraph\(view\);/);
+  assert.match(appSource, /if \(emptyTextblock && state\.inCodeBlock\) \{[\s\S]*?return normalizeCurrentEmptyTextblockToParagraph\(view\);/);
+});
+
 test("paragraph space shortcuts only consume escaped literal markers", () => {
   assert.match(appSource, /function applyEditorParagraphSpaceShortcut\(view, beforeCursor, rangeFrom, rangeTo\)/);
   assert.match(appSource, /const escapedSpacePrefix = \/\^\\\\\(#\{1,6\}\|>\|\[-\*\+\]\|\\d\+\\\.\|\[-\*\+\]\\s\\\[\(\?: \|x\|X\)\\\]\)\$\/\.exec\(beforeCursor\)/);

@@ -101,6 +101,7 @@ test("table of contents tokens render as dedicated editor nodes", () => {
   assert.equal(isTableOfContentsToken("[toc]"), true);
   assert.equal(isTableOfContentsToken("  [ToC]  "), true);
   assert.equal(isTableOfContentsToken("[TOC] later"), false);
+  assert.match(appSource, /const OUTLINE_SYNC_EVENT = "inkdown:outline-sync";/);
   assert.match(appSource, /const TableOfContentsNode = TiptapNode\.create\(/);
   assert.match(appSource, /name: "tableOfContents"/);
   assert.match(appSource, /atom: true/);
@@ -109,6 +110,8 @@ test("table of contents tokens render as dedicated editor nodes", () => {
   assert.match(appSource, /data-toc-target=\{`#\$\{item\.domId\}`\}/);
   assert.match(appSource, /aria-label=\{`Jump to \$\{item\.text\}`\}/);
   assert.match(appSource, /onSelectItem\?\.\(item\)/);
+  assert.match(appSource, /window\.addEventListener\(OUTLINE_SYNC_EVENT, sync\);/);
+  assert.match(appSource, /window\.removeEventListener\(OUTLINE_SYNC_EVENT, sync\);/);
   assert.match(appSource, /if \(parent\.type\.name === "paragraph" && \$from\.depth === 1\)/);
   assert.match(appSource, /if \(isTableOfContentsToken\(nextText\)\)/);
   assert.match(appSource, /view\.state\.schema\.nodes\.tableOfContents/);
@@ -127,5 +130,7 @@ test("table of contents tokens render as dedicated editor nodes", () => {
   assert.match(appSource, /headings\.push\(\{ id: `heading-\$\{slug\}`, domId: slug, pos, text, level: node\.attrs\.level \}\);/);
   assert.doesNotMatch(appSource, /editor\?\.chain\(\)\.focus\(editorHeading\.pos\)\.run\(\)/);
   assert.match(appSource, /return `<nav class="table-of-contents" data-toc-token="true">/);
+  assert.match(appSource, /function syncOutlineState\(nextOutline\) \{[\s\S]*?window\.dispatchEvent\(new CustomEvent\(OUTLINE_SYNC_EVENT\)\);[\s\S]*?\}/);
+  assert.match(appSource, /const nextOutline = extractOutlineFromMarkdown\(nextMarkdown\);\s+syncOutlineState\(nextOutline\);\s+startTransition\(\(\) => \{\s+setMarkdownText\(nextMarkdown\);/s);
 });
 
