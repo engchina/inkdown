@@ -1,8 +1,18 @@
 import React, { useEffect, useState } from "react";
 
-export default function LinkDialog({ open, initialText = "", initialUrl = "", allowRemove = false, onCancel, onRemove, onSubmit }) {
+export default function LinkDialog({
+  open,
+  initialText = "",
+  initialUrl = "",
+  initialTitle = "",
+  allowRemove = false,
+  onCancel,
+  onRemove,
+  onSubmit
+}) {
   const [text, setText] = useState(initialText);
   const [url, setUrl] = useState(initialUrl);
+  const [title, setTitle] = useState(initialTitle);
 
   useEffect(() => {
     if (!open) {
@@ -10,7 +20,8 @@ export default function LinkDialog({ open, initialText = "", initialUrl = "", al
     }
     setText(initialText);
     setUrl(initialUrl);
-  }, [initialText, initialUrl, open]);
+    setTitle(initialTitle);
+  }, [initialText, initialTitle, initialUrl, open]);
 
   if (!open) {
     return null;
@@ -52,15 +63,37 @@ export default function LinkDialog({ open, initialText = "", initialUrl = "", al
           <span>URL</span>
           <input
             className="find-input"
-            type="url"
+            type="text"
             value={url}
-            placeholder="https://example.com"
+            placeholder="https://example.com or #section"
             autoFocus
             onChange={(event) => setUrl(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === "Enter" && canSubmit) {
                 event.preventDefault();
-                onSubmit({ text, url });
+                onSubmit({ text, url, title });
+                return;
+              }
+              if (event.key === "Escape") {
+                event.preventDefault();
+                onCancel();
+              }
+            }}
+          />
+        </label>
+
+        <label className="pref-row">
+          <span>Title</span>
+          <input
+            className="find-input"
+            type="text"
+            value={title}
+            placeholder="Optional title"
+            onChange={(event) => setTitle(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && canSubmit) {
+                event.preventDefault();
+                onSubmit({ text, url, title });
                 return;
               }
               if (event.key === "Escape") {
@@ -80,7 +113,7 @@ export default function LinkDialog({ open, initialText = "", initialUrl = "", al
           <button className="tool-button" type="button" onClick={onCancel}>
             Cancel
           </button>
-          <button className="tool-button tool-button-primary" type="button" disabled={!canSubmit} onClick={() => onSubmit({ text, url })}>
+          <button className="tool-button tool-button-primary" type="button" disabled={!canSubmit} onClick={() => onSubmit({ text, url, title })}>
             Apply Link
           </button>
         </div>
@@ -88,3 +121,4 @@ export default function LinkDialog({ open, initialText = "", initialUrl = "", al
     </div>
   );
 }
+

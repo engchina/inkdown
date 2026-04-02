@@ -66,6 +66,18 @@ If the answer is "no" or "not sure," the work likely needs another iteration.
 - Follow Typora Markdown Reference behavior as the default Markdown contract for Inkdown unless Inkdown has a clearly better, documented reason not to.
 - Treat GitHub Flavored Markdown as the baseline syntax model, while preserving explicitly documented Typora-compatible extensions where Inkdown supports them.
 
+## Web Clipboard Fidelity
+
+- Treat copy-paste from web articles as a core Markdown workflow, not as best-effort rich-text handling.
+- When clipboard data includes both `text/html` and `text/plain`, preserve Markdown structure from the HTML payload whenever it contains article structure, links, images, lists, headings, tables, blockquotes, or other meaningful formatting.
+- Do not let generic multiline plain text detection preempt structured HTML conversion. Plain text should only win when it is clearly intentional Markdown source.
+- Converting web HTML to Markdown must preserve canonical Markdown tokens for headings, lists, task lists, links, images, code fences, tables, blockquotes, and other supported syntax.
+- Image handling for pasted web content must preserve the original remote source URL by default whenever the clipboard exposes it through `src` or common canonical/original image attributes.
+- Relative links and image URLs from pasted web content must resolve against the clipboard page base when available so saved local documents remain readable.
+- Web paste behavior must stay consistent across WYSIWYG, source, preview, export, and serialization paths. Users must not see structure in one surface and lose it in another.
+- Clipboard HTML detection, HTML-to-Markdown conversion, remote image preservation, relative URL resolution, and Markdown/plain-text precedence rules require regression tests.
+- Preload or renderer asset-path helpers used by paste, preview, or export flows must not rely on Node URL helpers that are unavailable or unstable in the target runtime context. Prefer self-contained path/url conversion logic with regression coverage.
+
 ### Block Elements
 
 - Paragraphs should separate with blank lines in source, while a single `Return` in the rich editor should create the next paragraph in a predictable way.

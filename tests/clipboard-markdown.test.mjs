@@ -98,6 +98,23 @@ test("convertClipboardHtmlToMarkdown resolves relative links and images against 
   });
 });
 
+test("convertClipboardHtmlToMarkdown keeps clickable web images as linked markdown images", () => {
+  withDom(() => {
+    const href =
+      "https://qiita-user-contents.imgix.net/https%3A%2F%2Fqiita-image-store.s3.ap-northeast-1.amazonaws.com%2F0%2F3963468%2F2bdbcd04-ec6d-4399-be9a-7e7138c94e38.png?ixlib=rb-4.0.0&auto=format&gif-q=60&q=75&s=cbde874b5afd136fda68ae0e0923a332";
+    const markdown = convertClipboardHtmlToMarkdown(`
+      <a href="${href}">
+        <img
+          alt="image.png"
+          src="https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/3963468/2bdbcd04-ec6d-4399-be9a-7e7138c94e38.png"
+        />
+      </a>
+    `);
+
+    assert.equal(markdown, `[![image.png](${href})](${href})`);
+  });
+});
+
 test("markdown-looking pasted text is handled before HTML conversion", () => {
   const markdownSnippetIndex = appSource.indexOf("if (pastedText && editorFocused && looksLikeMarkdownSnippet(pastedText)) {");
   const structuredHtmlIndex = appSource.indexOf("if (hasStructuredClipboardHtml(pastedHtml, pastedText)) {");
