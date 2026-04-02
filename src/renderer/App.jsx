@@ -50,7 +50,9 @@ import TableSelectionHandles from "./components/TableSelectionHandles";
 import EditingCheatsheetDialog from "./components/EditingCheatsheetDialog";
 import LinkDialog from "./components/LinkDialog";
 import { resolveEditingSurface } from "./utils/editingSurface.mjs";
+import { resolveOutlineNavigationSurface, getCenteredSourceScrollTop, getOutlineSourceSelectionRange } from "./utils/outlineNavigation.mjs";
 import { escapeHtml, sanitizePreviewContainer } from "./utils/previewSanitizer.mjs";
+import { findPreviewAnchorTarget } from "./utils/previewLinks.mjs";
 import {
   convertClipboardHtmlToMarkdown,
   hasStructuredClipboardHtml,
@@ -2203,15 +2205,6 @@ function renderSourceHighlights(markdown, matches, currentIndex) {
   return segments;
 }
 
-function getLineStartIndex(markdown, lineNumber) {
-  const lines = String(markdown || "").split(/\r?\n/);
-  let offset = 0;
-  for (let index = 0; index < lineNumber; index += 1) {
-    offset += lines[index].length + 1;
-  }
-  return offset;
-}
-
 function getActiveEditorBlock(editor) {
   if (!hasMountedEditorView(editor)) {
     return null;
@@ -2269,6 +2262,41 @@ function getEditorScrollContainer(editor) {
     return null;
   }
   return editor.view.dom.closest(".editor-pane");
+}
+
+function getEditorBlockElementAtPos(editor, pos) {
+  if (!hasMountedEditorView(editor) || typeof pos !== "number") {
+    return null;
+  }
+
+  try {
+    const view = editor.view;
+    const root = view.dom;
+    let node = view.nodeDOM(pos);
+    if (!(node instanceof HTMLElement)) {
+      return null;
+    }
+
+    while (node && node.parentElement !== root) {
+      node = node.parentElement;
+    }
+
+    return node?.parentElement === root ? node : null;
+  } catch {
+    return null;
+  }
+}
+
+function flashOutlineTarget(target) {
+  if (!(target instanceof HTMLElement)) {
+    return;
+  }
+
+  target.classList.remove("preview-anchor-target");
+  window.requestAnimationFrame(() => {
+    target.classList.add("preview-anchor-target");
+  });
+  window.setTimeout(() => target.classList.remove("preview-anchor-target"), 1200);
 }
 
 function restoreScrollPosition(container, scrollTop, scrollLeft) {
@@ -2414,6 +2442,7 @@ export default function App() {
   const sourceRef = useRef(null);
   const sourcePaneRef = useRef(null);
   const sourceEditorShellRef = useRef(null);
+  const previewPaneRef = useRef(null);
   const sourceHighlightRef = useRef(null);
   const programmaticEditorSyncRef = useRef(false);
   const programmaticMarkdownSyncRef = useRef(false);
@@ -4722,18 +4751,54 @@ export default function App() {
 
   function jumpToOutline(item, index) {
     setActiveOutlineId(item.id);
-    if (!["editor", "split"].includes(preferences.viewMode) && sourceRef.current) {
-      const offset = getLineStartIndex(markdownText, item.line);
-      sourceRef.current.focus();
-      sourceRef.current.setSelectionRange(offset, offset + item.text.length);
-      if (sourcePaneRef.current) {
-        sourcePaneRef.current.scrollTop = Math.max(0, item.line - 3) * 24;
+    const navigationSurface = resolveOutlineNavigationSurface(preferences.viewMode);
+
+    if (navigationSurface === "preview") {
+      const previewTarget = findPreviewAnchorTarget(previewPaneRef.current, `#${item.domId}`);
+      if (previewTarget) {
+        markPreviewAsActive();
+        previewTarget.scrollIntoView({ block: "center", inline: "nearest", behavior: "smooth" });
+        flashOutlineTarget(previewTarget);
       }
       return;
     }
+
+    if (navigationSurface === "source" && sourceRef.current) {
+      const selectionRange = getOutlineSourceSelectionRange(markdownText, item.line, item.text.length);
+      const sourceMetrics = window.getComputedStyle(sourceRef.current);
+      const lineHeight = Number.parseFloat(sourceMetrics.lineHeight) || 24;
+      const paddingTop = Number.parseFloat(sourceMetrics.paddingTop) || 0;
+
+      markSourceAsActive();
+      sourceRef.current.focus();
+      sourceRef.current.setSelectionRange(selectionRange.start, selectionRange.end);
+      if (sourcePaneRef.current) {
+        const targetTop = getCenteredSourceScrollTop(item.line, {
+          lineHeight,
+          paddingTop,
+          containerHeight: sourcePaneRef.current.clientHeight
+        });
+        sourcePaneRef.current.scrollTo({ top: targetTop, behavior: "smooth" });
+      }
+      if (preferences.viewMode === "split") {
+        const previewTarget = findPreviewAnchorTarget(previewPaneRef.current, `#${item.domId}`);
+        if (previewTarget) {
+          previewTarget.scrollIntoView({ block: "center", inline: "nearest", behavior: "smooth" });
+          flashOutlineTarget(previewTarget);
+        }
+      }
+      return;
+    }
+
     const editorHeading = editorHeadingsRef.current[index];
     if (editorHeading) {
+      markEditorAsActive();
       editor?.chain().focus(editorHeading.pos).run();
+      const headingElement = getEditorBlockElementAtPos(editor, editorHeading.pos);
+      if (headingElement) {
+        headingElement.scrollIntoView({ block: "center", inline: "nearest", behavior: "smooth" });
+        flashOutlineTarget(headingElement);
+      }
     }
   }
 
@@ -5691,7 +5756,11 @@ export default function App() {
           ) : null}
 
           {showPreview ? (
-            <section className={`side-pane preview-pane${activePane === "preview" ? " pane-active" : ""}`} onMouseDown={markPreviewAsActive}>
+            <section
+              ref={previewPaneRef}
+              className={`side-pane preview-pane${activePane === "preview" ? " pane-active" : ""}`}
+              onMouseDown={markPreviewAsActive}
+            >
               <MarkdownPreview
                 html={previewHtml}
                 theme={preferences.theme}
