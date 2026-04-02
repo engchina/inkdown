@@ -36,6 +36,133 @@ export function buildWrappedSourceSelection(markdown, selectionStart, selectionE
   };
 }
 
+export function buildSourceAutoPairEdit(markdown, selectionStart, selectionEnd, key, modifiers = {}) {
+  const text = String(markdown ?? "");
+  const start = Math.max(0, Math.min(selectionStart ?? 0, text.length));
+  const end = Math.max(start, Math.min(selectionEnd ?? start, text.length));
+  const normalizedKey = String(key ?? "");
+  if (
+    modifiers.ctrlKey ||
+    modifiers.metaKey ||
+    modifiers.altKey ||
+    normalizedKey.length !== 1
+  ) {
+    return null;
+  }
+
+  const repeatableDelimiters = new Set(["*", "_", "~", "`"]);
+  const countAdjacentDelimiters = (value, index, step) => {
+    let count = 0;
+    let cursor = index;
+    while (cursor >= 0 && cursor < text.length && text[cursor] === value) {
+      count += 1;
+      cursor += step;
+    }
+    return count;
+  };
+
+  if (start === end && text[end] === normalizedKey && repeatableDelimiters.has(normalizedKey)) {
+    const leftCount = countAdjacentDelimiters(normalizedKey, start - 1, -1);
+    const rightCount = countAdjacentDelimiters(normalizedKey, end, 1);
+    const runStart = start - leftCount;
+    const runEnd = end + rightCount;
+    const boundaryBefore = runStart === 0 || /\s/.test(text[runStart - 1] || "");
+    const boundaryAfter = runEnd === text.length || /\s/.test(text[runEnd] || "");
+    if (leftCount > 0 && leftCount === rightCount && boundaryBefore && boundaryAfter) {
+      return {
+        kind: "pair",
+        text: `${text.slice(0, start)}${normalizedKey}${normalizedKey}${text.slice(end)}`,
+        selectionStart: start + 1,
+        selectionEnd: start + 1
+      };
+    }
+    return {
+      kind: "skip",
+      selectionStart: end + 1,
+      selectionEnd: end + 1
+    };
+  }
+
+  const skipClosers = new Set([")", "]", "}", "\"", "'", "^"]);
+  if (start === end && text[end] === normalizedKey && skipClosers.has(normalizedKey)) {
+    return {
+      kind: "skip",
+      selectionStart: end + 1,
+      selectionEnd: end + 1
+    };
+  }
+
+  const pairMap = {
+    "*": "*",
+    "_": "_",
+    "~": "~",
+    "`": "`",
+    "\"": "\"",
+    "'": "'",
+    "(": ")",
+    "[": "]",
+    "{": "}",
+    "^": "^"
+  };
+
+  const closing = pairMap[normalizedKey];
+  if (!closing) {
+    return null;
+  }
+
+  const before = text.slice(0, start);
+  const selected = text.slice(start, end);
+  const after = text.slice(end);
+  const nextChar = text[end] || "";
+  const collapsesToSameToken = closing === normalizedKey;
+  const isCollapsedSelection = start === end;
+
+  // If the caret is already sitting before the auto-inserted closing token,
+  // consume the keypress and advance instead of duplicating it.
+  if (isCollapsedSelection && nextChar === closing) {
+    return {
+      kind: "skip",
+      selectionStart: end + 1,
+      selectionEnd: end + 1
+    };
+  }
+
+  const allowAutoPair =
+    normalizedKey !== "`" &&
+    (start !== end || !nextChar || /\s|[)\]}>.,!?]/.test(nextChar));
+
+  if (!allowAutoPair) {
+    if (normalizedKey === "`" && start !== end) {
+      return {
+        kind: "wrap",
+        text: `${before}\`${selected}\`${after}`,
+        selectionStart: start + 1,
+        selectionEnd: end + 1
+      };
+    }
+    if (collapsesToSameToken) {
+      return null;
+    }
+    return null;
+  }
+
+  if (!isCollapsedSelection) {
+    return {
+      kind: "wrap",
+      text: `${before}${normalizedKey}${selected}${closing}${after}`,
+      selectionStart: start + 1,
+      selectionEnd: end + 1
+    };
+  }
+
+  return {
+    kind: "pair",
+    text: `${before}${normalizedKey}${closing}${after}`,
+    selectionStart: start + 1,
+    selectionEnd: start + 1
+  };
+}
+
 export function buildLinkedSourceSelection(markdown, selectionStart, selectionEnd, text, url, fallbackText = "link text", title = "") {
   const source = String(markdown ?? "");
   const start = Math.max(0, Math.min(selectionStart ?? 0, source.length));

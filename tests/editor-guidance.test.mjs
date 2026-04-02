@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import { getDelayedHeadingTransform } from "../src/renderer/utils/editorStructuredEditing.mjs";
+import { isTableOfContentsToken } from "../src/renderer/utils/tableOfContents.mjs";
 
 const appSource = await fs.readFile(new URL("../src/renderer/App.jsx", import.meta.url), "utf8");
 const stylesSource = await fs.readFile(new URL("../src/renderer/styles/app.css", import.meta.url), "utf8");
@@ -14,6 +15,8 @@ test("editor context still describes current block and routes through toolbar st
   assert.match(appSource, /label: editorObjectContext\?\.label \|\| "Paragraph"/);
   assert.match(appSource, /selection instanceof NodeSelection && selection\.node\?\.type\?\.name === "image"/);
   assert.match(appSource, /kind: "image", label: "Image"/);
+  assert.match(appSource, /selection instanceof NodeSelection && selection\.node\?\.type\?\.name === "tableOfContents"/);
+  assert.match(appSource, /kind: "toc", label: "Table of contents"/);
 });
 
 test("styles keep shared toolbar emphasis states", () => {
@@ -23,6 +26,11 @@ test("styles keep shared toolbar emphasis states", () => {
   assert.match(stylesSource, /\.editor-image-markdown-block \{/);
   assert.match(stylesSource, /overflow: hidden;/);
   assert.match(stylesSource, /resize: none;/);
+  assert.match(stylesSource, /\.toc-node-toolbar \{/);
+  assert.match(stylesSource, /\.toc-delete-button \{/);
+  assert.match(stylesSource, /\.editor-toc-node \.toc-item \{/);
+  assert.match(stylesSource, /color: var\(--accent\);/);
+  assert.match(stylesSource, /\.editor-toc-node \.toc-item:hover \{/);
 });
 
 test("smart heading transform and slash commands support heading levels four through six", () => {
@@ -65,4 +73,38 @@ test("selected editor images expose an inline editable markdown block", () => {
   assert.match(appSource, /title: selectedImage\?\.attrs\?\.title \|\| null/);
   assert.match(appSource, /setTextSelection\(linkDialogState\.linkRange\)[\s\S]*setLink\(\{ href, title: normalizedTitle \|\| null \}\)\.run\(\)/);
   assert.match(appSource, /setTextSelection\(linkDialogState\.linkRange\)[\s\S]*unsetLink\(\)[\s\S]*\.run\(\)/);
+  assert.match(appSource, /const HeadingWithAnchors = Heading\.extend\(\{/);
+  assert.match(appSource, /parseHTML: \(element\) => element\.getAttribute\("id"\)/);
+  assert.match(appSource, /renderHTML: \(attributes\) => \(attributes\.id \? \{ id: attributes\.id \} : \{\}\)/);
+  assert.match(appSource, /HeadingWithAnchors\.configure\(\{ levels: \[1, 2, 3, 4, 5, 6\] \}\)/);
+  assert.match(appSource, /TokenLink\.configure\(\{ openOnClick: false, autolink: true, defaultProtocol: "https" \}\)/);
+  assert.match(appSource, /void activatePreviewLink\(target, view\.dom, \{/);
+  assert.match(appSource, /openExternal: \(targetUrl\) => window\.editorApi\.openExternal\(targetUrl\)/);
+});
+
+test("table of contents tokens render as dedicated editor nodes", () => {
+  assert.equal(isTableOfContentsToken("[TOC]"), true);
+  assert.equal(isTableOfContentsToken("[toc]"), true);
+  assert.equal(isTableOfContentsToken("  [ToC]  "), true);
+  assert.equal(isTableOfContentsToken("[TOC] later"), false);
+  assert.match(appSource, /const TableOfContentsNode = TiptapNode\.create\(/);
+  assert.match(appSource, /name: "tableOfContents"/);
+  assert.match(appSource, /atom: true/);
+  assert.match(appSource, /contentEditable=\{false\}/);
+  assert.match(appSource, /<nav className="table-of-contents" data-toc-token="true">/);
+  assert.match(appSource, /data-toc-target=\{`#\$\{item\.domId\}`\}/);
+  assert.match(appSource, /aria-label=\{`Jump to \$\{item\.text\}`\}/);
+  assert.match(appSource, /onSelectItem\?\.\(item\)/);
+  assert.match(appSource, /if \(parent\.type\.name === "paragraph" && \$from\.depth === 1\)/);
+  assert.match(appSource, /if \(isTableOfContentsToken\(nextText\)\)/);
+  assert.match(appSource, /view\.state\.schema\.nodes\.tableOfContents/);
+  assert.match(appSource, /TableOfContentsNode\.configure\(\{\s*getOutline: \(\) => outlineRef\.current,\s*onSelectItem: \(item\) => jumpToEditorHeadingFromToc\(item\)/s);
+  assert.match(appSource, /function jumpToEditorHeadingFromToc\(item\)/);
+  assert.match(appSource, /function scrollEditorHeadingIntoView\(item, position\)/);
+  assert.match(appSource, /function activateEditorLinkTarget\(href\)/);
+  assert.match(appSource, /void activateEditorLinkTarget\(href\);/);
+  assert.match(appSource, /return activatePreviewLink\(anchorLike, editorRoot, \{/);
+  assert.match(appSource, /scrollEditorHeadingIntoView\(item, editorHeading\.pos\);/);
+  assert.doesNotMatch(appSource, /editor\?\.chain\(\)\.focus\(editorHeading\.pos\)\.run\(\)/);
+  assert.match(appSource, /return `<nav class="table-of-contents" data-toc-token="true">/);
 });

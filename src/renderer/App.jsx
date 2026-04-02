@@ -1,5 +1,5 @@
 import React, { startTransition, useDeferredValue, useEffect, useId, useMemo, useRef, useState } from "react";
-import { Mark, mergeAttributes, Extension, getMarkRange } from "@tiptap/core";
+import { Mark, Node as TiptapNode, mergeAttributes, Extension, getMarkRange } from "@tiptap/core";
 import Heading from "@tiptap/extension-heading";
 import { NodeSelection, Plugin, PluginKey, Selection, TextSelection } from "@tiptap/pm/state";
 import { DOMParser as ProseMirrorDOMParser, DOMSerializer as ProseMirrorDOMSerializer } from "@tiptap/pm/model";
@@ -52,7 +52,7 @@ import LinkDialog from "./components/LinkDialog";
 import { resolveEditingSurface } from "./utils/editingSurface.mjs";
 import { resolveOutlineNavigationSurface, getCenteredSourceScrollTop, getOutlineSourceSelectionRange } from "./utils/outlineNavigation.mjs";
 import { escapeHtml, sanitizePreviewContainer } from "./utils/previewSanitizer.mjs";
-import { findPreviewAnchorTarget } from "./utils/previewLinks.mjs";
+import { activatePreviewLink, findPreviewAnchorTarget } from "./utils/previewLinks.mjs";
 import {
   convertClipboardHtmlToMarkdown,
   hasStructuredClipboardHtml,
@@ -60,11 +60,17 @@ import {
 } from "./utils/clipboardMarkdown.mjs";
 import { serializeEditorHtmlToMarkdown as serializeEditorHtmlPreservingMarkdown } from "./utils/editorMarkdownSerializer.mjs";
 import { annotateInlineMarkdownTokens } from "./utils/inlineMarkdownTokens.mjs";
-import { getCompletedInlineMarkdownMatch } from "./utils/inlineMarkdownCompletion.mjs";
+import {
+  getCompletedInlineMarkdownMatch,
+  getCompletedInlineMarkdownMatchAroundCursor,
+  isWholeTextCompletedInlineMarkdown
+} from "./utils/inlineMarkdownCompletion.mjs";
+import { isTableOfContentsToken } from "./utils/tableOfContents.mjs";
 import {
   buildRemovedMarkdownLinkSelection,
   buildLinkedSourceSelection,
   buildSourceInsertion,
+  buildSourceAutoPairEdit,
   buildToggledPrefixedSourceLines,
   buildToggledWrappedSourceSelection,
   buildExpandedMarkdownTableSelection,
@@ -737,6 +743,155 @@ const CodeBlockWithLanguage = CodeBlock.extend({
   }
 });
 
+const HeadingWithAnchors = Heading.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      id: {
+        default: null,
+        parseHTML: (element) => element.getAttribute("id"),
+        renderHTML: (attributes) => (attributes.id ? { id: attributes.id } : {})
+      },
+      headingId: {
+        default: null,
+        parseHTML: (element) => element.getAttribute("data-heading-id"),
+        renderHTML: (attributes) => (attributes.headingId ? { "data-heading-id": attributes.headingId } : {})
+      }
+    };
+  }
+});
+
+function TableOfContentsNodeView({ editor, extension, getPos, node, selected }) {
+  const [items, setItems] = useState(() => (typeof extension.options.getOutline === "function" ? extension.options.getOutline() : []));
+
+  useEffect(() => {
+    const sync = () => {
+      setItems(typeof extension.options.getOutline === "function" ? extension.options.getOutline() : []);
+    };
+
+    sync();
+    editor.on("transaction", sync);
+    return () => editor.off("transaction", sync);
+  }, [editor, extension]);
+
+  function deleteTableOfContentsNode() {
+    const position = typeof getPos === "function" ? getPos() : null;
+    if (typeof position !== "number") {
+      return;
+    }
+
+    const { state, view } = editor;
+    const paragraphType = state.schema.nodes.paragraph;
+    let tr = state.tr.delete(position, position + node.nodeSize);
+    let nextSelection =
+      Selection.findFrom(tr.doc.resolve(Math.min(position, tr.doc.content.size)), -1, true) ||
+      Selection.findFrom(tr.doc.resolve(Math.min(position, tr.doc.content.size)), 1, true);
+
+    if (!nextSelection && paragraphType) {
+      tr = tr.insert(Math.min(position, tr.doc.content.size), paragraphType.create());
+      nextSelection = Selection.findFrom(tr.doc.resolve(Math.min(position + 1, tr.doc.content.size)), 1, true);
+    }
+
+    if (nextSelection) {
+      tr = tr.setSelection(nextSelection);
+    }
+
+    view.dispatch(tr.scrollIntoView());
+    view.focus();
+  }
+
+  return (
+    <NodeViewWrapper className={`editor-toc-node${selected ? " is-selected" : ""}`} data-toc-token="true" contentEditable={false}>
+      <div className="toc-node-toolbar" contentEditable={false}>
+        <button
+          className="tool-button tool-button-ghost toc-delete-button"
+          type="button"
+          aria-label="Delete table of contents"
+          title="Delete table of contents"
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            deleteTableOfContentsNode();
+          }}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
+            <path
+              d="M9 3h6l1 2h4v2H4V5h4l1-2Zm1 7h2v7h-2v-7Zm4 0h2v7h-2v-7ZM7 10h2v7H7v-7Zm-1 11a2 2 0 0 1-2-2V8h16v11a2 2 0 0 1-2 2H6Z"
+              fill="currentColor"
+            />
+          </svg>
+        </button>
+      </div>
+      <nav className="table-of-contents" data-toc-token="true">
+        <div className="toc-title">Table of Contents</div>
+        {items.length > 0 ? (
+          items.map((item) => (
+            <button
+              key={item.id}
+              className={`toc-item level-${item.level}`}
+              type="button"
+              data-toc-target={`#${item.domId}`}
+              aria-label={`Jump to ${item.text}`}
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                extension.options.onSelectItem?.(item);
+              }}
+            >
+              {item.text}
+            </button>
+          ))
+        ) : (
+          <div className="toc-empty">No headings available.</div>
+        )}
+      </nav>
+    </NodeViewWrapper>
+  );
+}
+
+const TableOfContentsNode = TiptapNode.create({
+  name: "tableOfContents",
+  group: "block",
+  atom: true,
+  selectable: true,
+  isolating: true,
+  addOptions() {
+    return {
+      getOutline: () => [],
+      onSelectItem: null
+    };
+  },
+  parseHTML() {
+    return [{ tag: 'div.table-of-contents[data-toc-token="true"]' }, { tag: "nav.table-of-contents" }];
+  },
+  renderHTML({ HTMLAttributes }) {
+    return [
+      "div",
+      mergeAttributes(HTMLAttributes, { class: "table-of-contents", "data-toc-token": "true" }),
+      ["div", { class: "toc-title" }, "Table of Contents"],
+      ["div", { class: "toc-empty" }, "No headings available."]
+    ];
+  },
+  addNodeView() {
+    return ReactNodeViewRenderer(TableOfContentsNodeView);
+  },
+  addKeyboardShortcuts() {
+    const deleteIfSelected = () => {
+      const { selection } = this.editor.state;
+      if (!(selection instanceof NodeSelection) || selection.node?.type !== this.type) {
+        return false;
+      }
+      return this.editor.commands.deleteSelection();
+    };
+
+    return {
+      Backspace: deleteIfSelected,
+      Delete: deleteIfSelected
+    };
+  }
+});
+
 const TableHeaderWithAlignment = TableHeader.extend({
   addAttributes() {
     return {
@@ -1099,7 +1254,7 @@ function collapseMarkSyntax(state, expandedRange) {
   const markdown = state.doc.textBetween(from, to, "\n");
   const fragment = parseInlineMarkdownFragment(state.schema, markdown);
   const tr = state.tr.replaceWith(from, to, fragment);
-  tr.setMeta(markSyntaxEditingKey, { expandedRange: null });
+  tr.setMeta(markSyntaxEditingKey, { expandedRange: null, pendingInlineRange: null });
   return tr;
 }
 
@@ -1153,8 +1308,11 @@ function findCompletedInlineRangeAtSelection(state, selection) {
     return null;
   }
 
-  const beforeCursor = textblock.parent.textContent.slice(0, selection.$from.parentOffset);
-  const match = getCompletedInlineMarkdownMatch(beforeCursor);
+  const text = textblock.parent.textContent || "";
+  const beforeCursor = text.slice(0, selection.$from.parentOffset);
+  const match =
+    getCompletedInlineMarkdownMatch(beforeCursor) ||
+    getCompletedInlineMarkdownMatchAroundCursor(text, selection.$from.parentOffset);
   if (!match) {
     return null;
   }
@@ -1175,8 +1333,17 @@ function renderCompletedInlineRange(state, completedRange) {
   const fragment = parseInlineMarkdownFragment(state.schema, markdown);
   const tr = state.tr.replaceWith(completedRange.from, completedRange.to, fragment);
   tr.setSelection(TextSelection.create(tr.doc, completedRange.from + fragment.size));
-  tr.setMeta(markSyntaxEditingKey, { expandedRange: null });
+  tr.setMeta(markSyntaxEditingKey, { expandedRange: null, pendingInlineRange: null });
   return tr;
+}
+
+function isPendingInlineRangeStillCompleted(state, pendingInlineRange) {
+  if (!pendingInlineRange) {
+    return false;
+  }
+
+  const markdown = state.doc.textBetween(pendingInlineRange.from, pendingInlineRange.to, "\n");
+  return isWholeTextCompletedInlineMarkdown(markdown);
 }
 
 const MarkSyntaxEditing = Extension.create({
@@ -1189,19 +1356,33 @@ const MarkSyntaxEditing = Extension.create({
 
         state: {
           init() {
-            return { expandedRange: null };
+            return { expandedRange: null, pendingInlineRange: null };
           },
           apply(tr, pluginState) {
             const meta = tr.getMeta(markSyntaxEditingKey);
-            if (meta !== undefined) return { expandedRange: meta.expandedRange };
-            if (!pluginState.expandedRange) return pluginState;
-            const { expandedRange } = pluginState;
+            if (meta !== undefined) {
+              return {
+                expandedRange: meta.expandedRange,
+                pendingInlineRange: meta.pendingInlineRange
+              };
+            }
+            if (!pluginState.expandedRange && !pluginState.pendingInlineRange) return pluginState;
+            const { expandedRange, pendingInlineRange } = pluginState;
             return {
-              expandedRange: {
-                ...expandedRange,
-                from: tr.mapping.map(expandedRange.from, -1),
-                to: tr.mapping.map(expandedRange.to, -1),
-              },
+              expandedRange: expandedRange
+                ? {
+                    ...expandedRange,
+                    from: tr.mapping.map(expandedRange.from, -1),
+                    to: tr.mapping.map(expandedRange.to, -1)
+                  }
+                : null,
+              pendingInlineRange: pendingInlineRange
+                ? {
+                    ...pendingInlineRange,
+                    from: tr.mapping.map(pendingInlineRange.from, -1),
+                    to: tr.mapping.map(pendingInlineRange.to, -1)
+                  }
+                : null
             };
           },
         },
@@ -1245,7 +1426,7 @@ const MarkSyntaxEditing = Extension.create({
             return null;
           }
 
-          const { expandedRange } = markSyntaxEditingKey.getState(newState);
+          const { expandedRange, pendingInlineRange } = markSyntaxEditingKey.getState(newState);
           const sel = newState.selection;
 
           if (expandedRange) {
@@ -1267,10 +1448,40 @@ const MarkSyntaxEditing = Extension.create({
             return null;
           }
 
+          if (pendingInlineRange) {
+            if (!isPendingInlineRangeStillCompleted(newState, pendingInlineRange)) {
+              if (transactions.some((tr) => tr.docChanged)) {
+                const completedRange = findCompletedInlineRangeAtSelection(newState, sel);
+                if (completedRange && selectionTouchesMarkRange(completedRange, sel.from, sel.to)) {
+                  const tr = newState.tr;
+                  tr.setMeta(markSyntaxEditingKey, { expandedRange: null, pendingInlineRange: completedRange });
+                  return tr;
+                }
+              }
+              const tr = newState.tr;
+              tr.setMeta(markSyntaxEditingKey, { expandedRange: null, pendingInlineRange: null });
+              return tr;
+            }
+            if (!selectionTouchesMarkRange(pendingInlineRange, sel.from, sel.to)) {
+              if (transactions.some((tr) => tr.docChanged)) {
+                const completedRange = findCompletedInlineRangeAtSelection(newState, sel);
+                if (completedRange && selectionTouchesMarkRange(completedRange, sel.from, sel.to)) {
+                  const tr = newState.tr;
+                  tr.setMeta(markSyntaxEditingKey, { expandedRange: null, pendingInlineRange: completedRange });
+                  return tr;
+                }
+              }
+              return renderCompletedInlineRange(newState, pendingInlineRange);
+            }
+            return null;
+          }
+
           if (transactions.some((tr) => tr.docChanged)) {
             const completedRange = findCompletedInlineRangeAtSelection(newState, sel);
             if (completedRange) {
-              return renderCompletedInlineRange(newState, completedRange);
+              const tr = newState.tr;
+              tr.setMeta(markSyntaxEditingKey, { expandedRange: null, pendingInlineRange: completedRange });
+              return tr;
             }
           }
 
@@ -1699,13 +1910,12 @@ function extractOutlineFromMarkdown(markdown) {
 }
 
 function buildTableOfContentsHtml(outline) {
-  if (!outline.length) {
-    return '<div class="toc-empty">No headings available.</div>';
-  }
-  const items = outline
-    .map((item) => `<a class="toc-item level-${item.level}" href="#${escapeHtml(item.domId)}">${escapeHtml(item.text)}</a>`)
-    .join("");
-  return `<nav class="table-of-contents"><div class="toc-title">Table of Contents</div>${items}</nav>`;
+  const items = outline.length
+    ? outline
+        .map((item) => `<a class="toc-item level-${item.level}" href="#${escapeHtml(item.domId)}">${escapeHtml(item.text)}</a>`)
+        .join("")
+    : '<div class="toc-empty">No headings available.</div>';
+  return `<nav class="table-of-contents" data-toc-token="true"><div class="toc-title">Table of Contents</div>${items}</nav>`;
 }
 
 function resolveImageSources(html, currentFilePath, resolveAsset) {
@@ -1797,7 +2007,7 @@ function decorateRenderedHtml(container, outline, options = {}) {
   });
 
   container.querySelectorAll("p").forEach((paragraph) => {
-    if (paragraph.textContent?.trim().toUpperCase() === "[TOC]") {
+    if (isTableOfContentsToken(paragraph.textContent)) {
       paragraph.outerHTML = buildTableOfContentsHtml(outline);
     }
   });
@@ -2449,6 +2659,7 @@ export default function App() {
   const lastEditorMarkdownRef = useRef(initialMarkdown);
   const prevBlockTypeRef = useRef("paragraph");
   const editorHeadingsRef = useRef([]);
+  const outlineRef = useRef(extractOutlineFromMarkdown(initialMarkdown));
   const statusTimerRef = useRef(null);
   const preferencesRef = useRef(defaultPreferences);
   const slashMenuStateRef = useRef({ open: false, query: "", top: 0, left: 0 });
@@ -3383,7 +3594,40 @@ export default function App() {
     }
 
     const beforeCursor = parent.textContent.slice(0, $from.parentOffset);
+    const afterCursor = parent.textContent.slice($from.parentOffset);
     const shortcutFrom = selection.from - beforeCursor.length;
+
+    if (parent.type.name === "paragraph" && $from.depth === 1) {
+      const nextText = `${beforeCursor}${text}${afterCursor}`;
+      if (isTableOfContentsToken(nextText)) {
+        const tableOfContentsType = view.state.schema.nodes.tableOfContents;
+        const paragraphType = view.state.schema.nodes.paragraph;
+        if (!tableOfContentsType) {
+          return false;
+        }
+
+        const paragraphStart = $from.before();
+        const paragraphEnd = paragraphStart + parent.nodeSize;
+        const tr = view.state.tr.replaceWith(paragraphStart, paragraphEnd, tableOfContentsType.create());
+        const tocPos = tr.mapping.map(paragraphStart);
+        const tocNode = tr.doc.nodeAt(tocPos);
+        const nextCursorPos = tocPos + (tocNode?.nodeSize || 1);
+        let nextSelection = Selection.findFrom(tr.doc.resolve(Math.min(nextCursorPos, tr.doc.content.size)), 1, true);
+
+        if (!nextSelection && paragraphType) {
+          tr.insert(nextCursorPos, paragraphType.create());
+          nextSelection = Selection.findFrom(tr.doc.resolve(Math.min(nextCursorPos + 1, tr.doc.content.size)), 1, true);
+        }
+
+        if (nextSelection) {
+          tr.setSelection(nextSelection);
+        }
+
+        view.dispatch(tr.scrollIntoView());
+        setHint("Table of contents.");
+        return true;
+      }
+    }
 
     if (text === "`") {
       if (/`+$/.test(beforeCursor)) {
@@ -3515,7 +3759,7 @@ export default function App() {
           link: false,
           underline: false
         }),
-        Heading.configure({ levels: [1, 2, 3, 4, 5, 6] }),
+        HeadingWithAnchors.configure({ levels: [1, 2, 3, 4, 5, 6] }),
         TokenBold,
         TokenItalic,
         TokenStrike,
@@ -3525,11 +3769,15 @@ export default function App() {
         Highlight,
         Subscript,
         Superscript,
-        TokenLink.configure({ openOnClick: true, autolink: true, defaultProtocol: "https" }),
+        TokenLink.configure({ openOnClick: false, autolink: true, defaultProtocol: "https" }),
         MarkdownImage.configure({
           inline: false,
           allowBase64: true,
           resolveAsset: (assetPath) => window.editorApi.resolveMarkdownAsset(filePath, assetPath)
+        }),
+        TableOfContentsNode.configure({
+          getOutline: () => outlineRef.current,
+          onSelectItem: (item) => jumpToEditorHeadingFromToc(item)
         }),
         Placeholder.configure({ placeholder: "Start writing and edit Markdown directly in the document, just like Typora." }),
         TaskList,
@@ -3571,6 +3819,27 @@ export default function App() {
           cut(view, event) {
             markEditorAsActive();
             return handleEditorClipboardEvent(view, event, true);
+          },
+          click(view, event) {
+            markEditorAsActive();
+            const target = event.target instanceof Element ? event.target.closest('a[href]') : null;
+            if (!(target instanceof HTMLAnchorElement) || !view.dom.contains(target)) {
+              return false;
+            }
+
+            event.preventDefault();
+            event.stopPropagation();
+            const href = target.getAttribute("href") || "";
+            const outlineItem = href.startsWith("#") ? (outlineRef.current || []).find((item) => `#${item.domId}` === href) : null;
+            if (outlineItem) {
+              setActiveOutlineId(outlineItem.id);
+            }
+
+            void activatePreviewLink(target, view.dom, {
+              openExternal: (targetUrl) => window.editorApi.openExternal(targetUrl),
+              windowObject: window
+            });
+            return true;
           },
           keydown: (view, event) => {
             markEditorAsActive();
@@ -3714,6 +3983,9 @@ export default function App() {
     }
     if (selection instanceof NodeSelection && selection.node?.type?.name === "image") {
       return { kind: "image", label: "Image" };
+    }
+    if (selection instanceof NodeSelection && selection.node?.type?.name === "tableOfContents") {
+      return { kind: "toc", label: "Table of contents" };
     }
 
     const blockState = isEditorSelectionInsideList(selection);
@@ -3896,6 +4168,7 @@ export default function App() {
         return false;
       }
       const nextOutline = extractOutlineFromMarkdown(markdownText);
+      outlineRef.current = nextOutline;
       const html = renderMarkdownForEditor(markdownText, filePath, nextOutline);
       programmaticEditorSyncRef.current = true;
       editor.commands.setContent(html, false, { preserveWhitespace: "full" });
@@ -3925,7 +4198,9 @@ export default function App() {
   }, [editor, preferences.focusMode, preferences.typewriterMode]);
 
   useEffect(() => {
-    setOutline(extractOutlineFromMarkdown(markdownText));
+    const nextOutline = extractOutlineFromMarkdown(markdownText);
+    outlineRef.current = nextOutline;
+    setOutline(nextOutline);
   }, [markdownText]);
 
   useEffect(() => {
@@ -4360,6 +4635,7 @@ export default function App() {
     programmaticEditorSyncRef.current = false;
     setFilePath(nextFilePath);
     setMarkdownText(nextMarkdown);
+    outlineRef.current = nextOutline;
     setOutline(nextOutline);
     setActiveOutlineId(nextOutline[0]?.id ?? null);
     setDocumentSessionKey((current) => current + 1);
@@ -4792,14 +5068,52 @@ export default function App() {
 
     const editorHeading = editorHeadingsRef.current[index];
     if (editorHeading) {
-      markEditorAsActive();
-      editor?.chain().focus(editorHeading.pos).run();
-      const headingElement = getEditorBlockElementAtPos(editor, editorHeading.pos);
-      if (headingElement) {
-        headingElement.scrollIntoView({ block: "center", inline: "nearest", behavior: "smooth" });
-        flashOutlineTarget(headingElement);
-      }
+      scrollEditorHeadingIntoView(item, editorHeading.pos);
     }
+  }
+
+  function jumpToEditorHeadingFromToc(item) {
+    const outlineItems = outlineRef.current || [];
+    const index = outlineItems.findIndex((current) => current.id === item.id);
+    if (index < 0) {
+      return;
+    }
+
+    const editorHeading = editorHeadingsRef.current[index];
+    if (!editorHeading) {
+      return;
+    }
+
+    scrollEditorHeadingIntoView(item, editorHeading.pos);
+  }
+
+  function scrollEditorHeadingIntoView(item, position) {
+    setActiveOutlineId(item.id);
+    markEditorAsActive();
+    const headingElement = getEditorBlockElementAtPos(editorInstanceRef.current, position);
+    const href = item?.domId ? `#${item.domId}` : headingElement?.id ? `#${headingElement.id}` : "";
+    if (!href) {
+      return;
+    }
+    void activateEditorLinkTarget(href);
+  }
+
+  function activateEditorLinkTarget(href) {
+    const editorRoot = editorInstanceRef.current?.view?.dom;
+    if (!editorRoot || !href) {
+      return Promise.resolve({ kind: "missing" });
+    }
+
+    const anchorLike = {
+      getAttribute(name) {
+        return name === "href" ? href : null;
+      }
+    };
+
+    return activatePreviewLink(anchorLike, editorRoot, {
+      openExternal: (targetUrl) => window.editorApi.openExternal(targetUrl),
+      windowObject: window
+    });
   }
 
   function openFindReplace() {
@@ -4954,6 +5268,7 @@ export default function App() {
     lastEditorMarkdownRef.current = nextMarkdown;
     startTransition(() => {
       const nextOutline = extractOutlineFromMarkdown(nextMarkdown);
+      outlineRef.current = nextOutline;
       setMarkdownText(nextMarkdown);
       setOutline(nextOutline);
     });
@@ -5089,53 +5404,28 @@ export default function App() {
 
   function handleSourceAutoPair(event) {
     const textarea = sourceRef.current;
-    if (!textarea || event.ctrlKey || event.metaKey || event.altKey || event.key.length !== 1) {
+    if (!textarea) {
       return false;
     }
 
-    const pairMap = {
-      "*": "*",
-      "_": "_",
-      "~": "~",
-      "`": "`",
-      "\"": "\"",
-      "'": "'",
-      "(": ")",
-      "[": "]",
-      "{": "}",
-      "^": "^"
-    };
-
-    const closing = pairMap[event.key];
-    if (!closing) {
-      return false;
-    }
-
+    const currentText = textarea.value ?? markdownText;
     const selectionStart = textarea.selectionStart ?? 0;
     const selectionEnd = textarea.selectionEnd ?? selectionStart;
-    const before = markdownText.slice(0, selectionStart);
-    const selected = markdownText.slice(selectionStart, selectionEnd);
-    const after = markdownText.slice(selectionEnd);
-    const nextChar = markdownText[selectionEnd] || "";
-    const allowAutoPair =
-      event.key !== "`" && (selectionStart !== selectionEnd || !nextChar || /\s|[)\]}>.,!?]/.test(nextChar));
-
-    if (!allowAutoPair) {
-      if (event.key === "`" && selectionStart !== selectionEnd) {
-        event.preventDefault();
-        applySourceTextUpdate(`${before}\`${selected}\`${after}`, selectionStart + 1, selectionEnd + 1);
-        return true;
-      }
+    const update = buildSourceAutoPairEdit(currentText, selectionStart, selectionEnd, event.key, {
+      ctrlKey: event.ctrlKey,
+      metaKey: event.metaKey,
+      altKey: event.altKey
+    });
+    if (!update) {
       return false;
     }
 
     event.preventDefault();
-    if (selectionStart !== selectionEnd) {
-      applySourceTextUpdate(`${before}${event.key}${selected}${closing}${after}`, selectionStart + 1, selectionEnd + 1);
+    if (update.kind === "skip") {
+      applySourceTextUpdate(currentText, update.selectionStart, update.selectionEnd);
       return true;
     }
-
-    applySourceTextUpdate(`${before}${event.key}${closing}${after}`, selectionStart + 1);
+    applySourceTextUpdate(update.text, update.selectionStart, update.selectionEnd);
     return true;
   }
 
@@ -5832,4 +6122,5 @@ export default function App() {
     </div>
   );
 }
+
 

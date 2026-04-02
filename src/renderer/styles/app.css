@@ -2419,6 +2419,34 @@ select {
   text-decoration: none;
 }
 
+.editor-toc-node .toc-item {
+  appearance: none;
+  -webkit-appearance: none;
+  display: block;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  padding-top: 0.08em;
+  padding-right: 0;
+  padding-bottom: 0.08em;
+  font: inherit;
+  line-height: inherit;
+  color: var(--accent);
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+  box-sizing: border-box;
+}
+
+.editor-toc-node .toc-item:hover {
+  text-decoration: underline;
+}
+
+.editor-toc-node .toc-item:focus-visible {
+  outline: none;
+  text-decoration: underline;
+}
+
 .toc-item.level-2 {
   padding-left: 12px;
 }
@@ -2431,6 +2459,47 @@ select {
 .toc-item.level-5,
 .toc-item.level-6 {
   padding-left: 36px;
+}
+
+.toc-empty {
+  color: var(--text-soft);
+}
+
+.editor-toc-node {
+  position: relative;
+  cursor: default;
+  user-select: none;
+}
+
+.editor-toc-node.is-selected,
+.editor-surface .table-of-contents.ProseMirror-selectednode {
+  outline: 3px solid color-mix(in srgb, var(--accent) 44%, transparent);
+  outline-offset: 4px;
+}
+
+.toc-node-toolbar {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 2;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s ease;
+}
+
+.editor-toc-node:hover .toc-node-toolbar,
+.editor-toc-node.is-selected .toc-node-toolbar,
+.editor-surface .editor-toc-node:focus-within .toc-node-toolbar {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.toc-delete-button {
+  min-width: 32px;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 999px;
 }
 
 .footnotes-title {
