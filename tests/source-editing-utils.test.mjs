@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  buildSourceAutoPairEdit,
   buildExpandedMarkdownTableSelection,
   buildLinkedSourceSelection,
   buildRemovedMarkdownLinkSelection,
@@ -43,6 +44,119 @@ test("buildWrappedSourceSelection selects placeholder text when there was no sel
   assert.equal(result.selectionEnd, 10);
 });
 
+
+test("buildSourceAutoPairEdit skips a closing bracket that is already present", () => {
+  const result = buildSourceAutoPairEdit("[]", 1, 1, "]");
+  assert.deepEqual(result, {
+    kind: "skip",
+    selectionStart: 2,
+    selectionEnd: 2
+  });
+});
+
+test("buildSourceAutoPairEdit skips an existing closing brace instead of duplicating it", () => {
+  const result = buildSourceAutoPairEdit("{}", 1, 1, "}");
+  assert.deepEqual(result, {
+    kind: "skip",
+    selectionStart: 2,
+    selectionEnd: 2
+  });
+});
+
+test("buildSourceAutoPairEdit skips symmetric closing quotes and expands repeatable backticks", () => {
+  assert.deepEqual(buildSourceAutoPairEdit('""', 1, 1, '"'), {
+    kind: "skip",
+    selectionStart: 2,
+    selectionEnd: 2
+  });
+  assert.deepEqual(buildSourceAutoPairEdit("''", 1, 1, "'"), {
+    kind: "skip",
+    selectionStart: 2,
+    selectionEnd: 2
+  });
+  assert.deepEqual(buildSourceAutoPairEdit("``", 1, 1, "`"), {
+    kind: "pair",
+    text: "````",
+    selectionStart: 2,
+    selectionEnd: 2
+  });
+});
+
+test("buildSourceAutoPairEdit expands repeatable markdown delimiters instead of collapsing them", () => {
+  assert.deepEqual(buildSourceAutoPairEdit("**", 1, 1, "*"), {
+    kind: "pair",
+    text: "****",
+    selectionStart: 2,
+    selectionEnd: 2
+  });
+  assert.deepEqual(buildSourceAutoPairEdit("__", 1, 1, "_"), {
+    kind: "pair",
+    text: "____",
+    selectionStart: 2,
+    selectionEnd: 2
+  });
+  assert.deepEqual(buildSourceAutoPairEdit("~~", 1, 1, "~"), {
+    kind: "pair",
+    text: "~~~~",
+    selectionStart: 2,
+    selectionEnd: 2
+  });
+});
+
+test("buildSourceAutoPairEdit still skips a repeatable delimiter when it is acting as the closing token", () => {
+  assert.deepEqual(buildSourceAutoPairEdit("*abc*", 4, 4, "*"), {
+    kind: "skip",
+    selectionStart: 5,
+    selectionEnd: 5
+  });
+  assert.deepEqual(buildSourceAutoPairEdit("``abc``", 5, 5, "`"), {
+    kind: "skip",
+    selectionStart: 6,
+    selectionEnd: 6
+  });
+});
+
+test("buildSourceAutoPairEdit still inserts paired delimiters when there is no closing token to skip", () => {
+  const result = buildSourceAutoPairEdit("", 0, 0, "[");
+  assert.deepEqual(result, {
+    kind: "pair",
+    text: "[]",
+    selectionStart: 1,
+    selectionEnd: 1
+  });
+});
+
+test("buildSourceAutoPairEdit preserves bold and triple-emphasis when typing the full literal sequence", () => {
+  function applyKeys(sequence) {
+    let text = "";
+    let selectionStart = 0;
+    let selectionEnd = 0;
+
+    for (const key of sequence) {
+      const update = buildSourceAutoPairEdit(text, selectionStart, selectionEnd, key, {});
+      if (update?.kind === "skip") {
+        selectionStart = update.selectionStart;
+        selectionEnd = update.selectionEnd;
+        continue;
+      }
+      if (update?.text !== undefined) {
+        text = update.text;
+        selectionStart = update.selectionStart;
+        selectionEnd = update.selectionEnd;
+        continue;
+      }
+      text = `${text.slice(0, selectionStart)}${key}${text.slice(selectionEnd)}`;
+      selectionStart += key.length;
+      selectionEnd = selectionStart;
+    }
+
+    return text;
+  }
+
+  assert.equal(applyKeys("**abc**"), "**abc**");
+  assert.equal(applyKeys("***abc***"), "***abc***");
+  assert.equal(applyKeys("___abc___"), "___abc___");
+});
 test("buildLinkedSourceSelection uses the selected text as the default label", () => {
   const result = buildLinkedSourceSelection("Hello world", 6, 11, "", "https://example.com");
   assert.equal(result.text, "Hello [world](https://example.com)");
@@ -482,6 +596,10 @@ test("buildToggledPrefixedSourceLines normalizes headings without a space before
   assert.equal(result.selectionStart, 0);
   assert.equal(result.selectionEnd, 7);
 });
+
+
+
+
 
 
 
