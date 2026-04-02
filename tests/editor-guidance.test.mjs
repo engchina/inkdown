@@ -11,6 +11,11 @@ test("editor context still describes current block and routes through toolbar st
   assert.match(appSource, /const editorObjectContext = useMemo/);
   assert.match(appSource, /const toolbarContext = useMemo/);
   assert.match(appSource, /pane: "Editor"/);
+  assert.match(appSource, /function keepActiveEditorBlockInViewport\(editor\)/);
+  assert.match(appSource, /function scheduleEditorEnterViewportAdjustment\(editor\)/);
+  assert.match(appSource, /const bottomGap = Math\.max\(120, Math\.min\(containerRect\.height \* 0\.34, 280\)\);/);
+  assert.match(appSource, /const topGap = Math\.max\(56, Math\.min\(containerRect\.height \* 0\.18, 140\)\);/);
+  assert.match(appSource, /if \(event\.key === "Enter" && !event\.shiftKey\) \{[\s\S]*?scheduleEditorEnterViewportAdjustment\(editorInstanceRef\.current \|\| \{ view, state: view\.state \}\);/);
   assert.match(appSource, /kind: editorObjectContext\?\.kind \|\| "paragraph"/);
   assert.match(appSource, /label: editorObjectContext\?\.label \|\| "Paragraph"/);
   assert.match(appSource, /selection instanceof NodeSelection && selection\.node\?\.type\?\.name === "image"/);
@@ -35,11 +40,20 @@ test("styles keep shared toolbar emphasis states", () => {
 
 test("smart heading transform and slash commands support heading levels four through six", () => {
   assert.match(appSource, /function applyEditorDelayedHeadingTransform\(view\)/);
+  assert.match(appSource, /const HeadingWithAnchors = Heading\.extend\(\{\s*addInputRules\(\) \{\s*return \[\];\s*\},/s);
   assert.match(appSource, /getDelayedHeadingTransform\(parent\.textContent, true\)/);
-  assert.match(appSource, /toggleHeading\(\{ level: headingShortcut\.level \}\)\.insertContent\(headingShortcut\.title\)\.run\(\)/);
+  assert.match(appSource, /const headingType = view\.state\.schema\.nodes\.heading;/);
+  assert.match(appSource, /const paragraphType = view\.state\.schema\.nodes\.paragraph;/);
+  assert.match(appSource, /let tr = view\.state\.tr\.replaceWith\(blockFrom, blockTo, headingNode\);/);
+  assert.match(appSource, /tr = tr\.insert\(paragraphPos, paragraphType\.create\(\)\);/);
+  assert.match(appSource, /if \(event\.key === "Enter" && applyEditorDelayedHeadingTransform\(view\)\) \{/);
+  assert.match(appSource, /function insertParagraphBeforeCurrentBlock\(view\)/);
+  assert.match(appSource, /if \(cursorAtStart\) \{[\s\S]*?insertParagraphBeforeCurrentBlock\(view\)/);
   assert.deepEqual(getDelayedHeadingTransform("#### Title", true), { level: 4, title: "Title" });
   assert.deepEqual(getDelayedHeadingTransform("##### Title", true), { level: 5, title: "Title" });
   assert.deepEqual(getDelayedHeadingTransform("###### Title", true), { level: 6, title: "Title" });
+  assert.deepEqual(getDelayedHeadingTransform("# a", true), { level: 1, title: "a" });
+  assert.deepEqual(getDelayedHeadingTransform("## a   ", true), { level: 2, title: "a" });
   assert.equal(getDelayedHeadingTransform("## Title", false), null);
   assert.match(appSource, /id: "heading-4"/);
   assert.match(appSource, /id: "heading-5"/);
@@ -101,10 +115,17 @@ test("table of contents tokens render as dedicated editor nodes", () => {
   assert.match(appSource, /TableOfContentsNode\.configure\(\{\s*getOutline: \(\) => outlineRef\.current,\s*onSelectItem: \(item\) => jumpToEditorHeadingFromToc\(item\)/s);
   assert.match(appSource, /function jumpToEditorHeadingFromToc\(item\)/);
   assert.match(appSource, /function scrollEditorHeadingIntoView\(item, position\)/);
+  assert.match(appSource, /const nextSelection = Selection\.near\(editor\.state\.doc\.resolve\(selectionPos\), 1\);/);
+  assert.match(appSource, /editor\.view\.dispatch\(tr\.scrollIntoView\(\)\);/);
+  assert.match(appSource, /headingElement\.scrollIntoView\(\{ block: "center", inline: "nearest", behavior: "smooth" \}\);/);
   assert.match(appSource, /function activateEditorLinkTarget\(href\)/);
   assert.match(appSource, /void activateEditorLinkTarget\(href\);/);
   assert.match(appSource, /return activatePreviewLink\(anchorLike, editorRoot, \{/);
   assert.match(appSource, /scrollEditorHeadingIntoView\(item, editorHeading\.pos\);/);
+  assert.match(appSource, /return \{ id: `heading-\$\{slug\}`, domId: slug, level: match\[1\]\.length, line: index, text \};/);
+  assert.match(appSource, /const slugCounts = new Map\(\);/);
+  assert.match(appSource, /headings\.push\(\{ id: `heading-\$\{slug\}`, domId: slug, pos, text, level: node\.attrs\.level \}\);/);
   assert.doesNotMatch(appSource, /editor\?\.chain\(\)\.focus\(editorHeading\.pos\)\.run\(\)/);
   assert.match(appSource, /return `<nav class="table-of-contents" data-toc-token="true">/);
 });
+

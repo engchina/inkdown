@@ -750,6 +750,9 @@ const CodeBlockWithLanguage = CodeBlock.extend({
 });
 
 const HeadingWithAnchors = Heading.extend({
+  addInputRules() {
+    return [];
+  },
   addAttributes() {
     return {
       ...this.parent?.(),
@@ -839,6 +842,10 @@ function TableOfContentsNodeView({ editor, extension, getPos, node, selected }) 
               type="button"
               data-toc-target={`#${item.domId}`}
               aria-label={`Jump to ${item.text}`}
+              onMouseDown={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+              }}
               onClick={(event) => {
                 event.preventDefault();
                 event.stopPropagation();
@@ -1916,7 +1923,7 @@ function extractOutlineFromMarkdown(markdown) {
       }
       const text = match[2].trim() || "Untitled";
       const slug = slugifyHeading(text, slugCounts);
-      return { id: `heading-${slug}-${index}`, domId: slug, level: match[1].length, line: index, text };
+      return { id: `heading-${slug}`, domId: slug, level: match[1].length, line: index, text };
     })
     .filter(Boolean);
 }
@@ -2322,9 +2329,12 @@ function buildStandaloneHtml(title, bodyHtml, theme) {
 
 function buildEditorHeadingPositions(editor) {
   const headings = [];
+  const slugCounts = new Map();
   editor.state.doc.descendants((node, pos) => {
     if (node.type.name === "heading") {
-      headings.push({ pos, text: node.textContent || "Untitled", level: node.attrs.level });
+      const text = node.textContent || "Untitled";
+      const slug = slugifyHeading(text, slugCounts);
+      headings.push({ id: `heading-${slug}`, domId: slug, pos, text, level: node.attrs.level });
     }
   });
   return headings;
@@ -2534,6 +2544,45 @@ function restoreScrollPosition(container, scrollTop, scrollLeft) {
   }
   container.scrollTop = scrollTop;
   container.scrollLeft = scrollLeft;
+}
+
+function keepActiveEditorBlockInViewport(editor) {
+  const container = getEditorScrollContainer(editor);
+  const activeBlock = getActiveEditorBlock(editor);
+  if (!(container instanceof HTMLElement) || !(activeBlock instanceof HTMLElement)) {
+    return;
+  }
+
+  const containerRect = container.getBoundingClientRect();
+  const blockRect = activeBlock.getBoundingClientRect();
+  const bottomGap = Math.max(120, Math.min(containerRect.height * 0.34, 280));
+  const topGap = Math.max(56, Math.min(containerRect.height * 0.18, 140));
+  const minVisibleTop = containerRect.top + topGap;
+  const maxVisibleBottom = containerRect.bottom - bottomGap;
+
+  if (blockRect.bottom > maxVisibleBottom) {
+    container.scrollTop += blockRect.bottom - maxVisibleBottom;
+    return;
+  }
+
+  if (blockRect.top < minVisibleTop) {
+    container.scrollTop += blockRect.top - minVisibleTop;
+  }
+}
+
+function scheduleEditorEnterViewportAdjustment(editor) {
+  if (!hasMountedEditorView(editor)) {
+    return;
+  }
+
+  window.requestAnimationFrame(() => {
+    window.requestAnimationFrame(() => {
+      if (!hasMountedEditorView(editor)) {
+        return;
+      }
+      keepActiveEditorBlockInViewport(editor);
+    });
+  });
 }
 
 function isNodeWithin(target, container) {
@@ -3411,17 +3460,29 @@ export default function App() {
       return false;
     }
 
-    const rangeFrom = selection.from - parent.textContent.length;
-    const applied = applyEditorMarkdownShortcut(rangeFrom, selection.from, (chain) =>
-      chain.toggleHeading({ level: headingShortcut.level }).insertContent(headingShortcut.title).run()
-    );
-    if (!applied) {
+    const headingType = view.state.schema.nodes.heading;
+    const paragraphType = view.state.schema.nodes.paragraph;
+    if (!headingType || !paragraphType) {
       return false;
     }
 
+    const blockFrom = $from.before();
+    const blockTo = $from.after();
+    const headingNode = headingType.create(
+      { level: headingShortcut.level },
+      headingShortcut.title ? view.state.schema.text(headingShortcut.title) : undefined
+    );
+
+    let tr = view.state.tr.replaceWith(blockFrom, blockTo, headingNode);
+    const headingStart = tr.mapping.map(blockFrom);
+    const headingSize = tr.doc.nodeAt(headingStart)?.nodeSize || headingNode.nodeSize;
+    const paragraphPos = headingStart + headingSize;
+    tr = tr.insert(paragraphPos, paragraphType.create());
+    tr = tr.setSelection(TextSelection.create(tr.doc, paragraphPos + 1));
+    view.dispatch(tr.scrollIntoView());
+
     flashActiveEditorBlock();
     setHint(`Heading ${headingShortcut.level}.`);
-    insertParagraphAfterCurrentBlock(view);
     return true;
   }
 
@@ -3465,6 +3526,25 @@ export default function App() {
     }
 
     const insertPos = selection.$from.after();
+    const tr = state.tr.insert(insertPos, paragraphType.create());
+    tr.setSelection(TextSelection.create(tr.doc, insertPos + 1));
+    dispatch(tr.scrollIntoView());
+    return true;
+  }
+
+  function insertParagraphBeforeCurrentBlock(view) {
+    const { state, dispatch } = view;
+    const { selection, schema } = state;
+    if (!selection.empty) {
+      return false;
+    }
+
+    const paragraphType = schema.nodes.paragraph;
+    if (!paragraphType) {
+      return false;
+    }
+
+    const insertPos = selection.$from.before();
     const tr = state.tr.insert(insertPos, paragraphType.create());
     tr.setSelection(TextSelection.create(tr.doc, insertPos + 1));
     dispatch(tr.scrollIntoView());
@@ -3542,6 +3622,14 @@ export default function App() {
         event.preventDefault();
         return true;
       }
+      if (cursorAtStart) {
+        if (!insertParagraphBeforeCurrentBlock(view)) {
+          return false;
+        }
+        event.preventDefault();
+        return true;
+      }
+
       if (!insertParagraphAfterCurrentBlock(view)) {
         return false;
       }
@@ -3891,6 +3979,9 @@ export default function App() {
               }
             }
 
+            if (event.key === "Enter" && !event.shiftKey) {
+              scheduleEditorEnterViewportAdjustment(editorInstanceRef.current || { view, state: view.state });
+            }
             return handleEditorSmartMarkdown(view, event);
           },
           mousedown(view, event) {
@@ -5085,20 +5176,17 @@ export default function App() {
       return;
     }
 
-    const editorHeading = editorHeadingsRef.current[index];
+    const editorHeading = editorHeadingsRef.current.find((current) => current.id === item.id) || editorHeadingsRef.current[index];
     if (editorHeading) {
       scrollEditorHeadingIntoView(item, editorHeading.pos);
     }
   }
 
   function jumpToEditorHeadingFromToc(item) {
-    const outlineItems = outlineRef.current || [];
-    const index = outlineItems.findIndex((current) => current.id === item.id);
-    if (index < 0) {
-      return;
-    }
-
-    const editorHeading = editorHeadingsRef.current[index];
+    const editorHeading =
+      editorHeadingsRef.current.find((current) => current.id === item.id) ||
+      editorHeadingsRef.current.find((current) => current.domId === item.domId) ||
+      editorHeadingsRef.current.find((current) => current.text === item.text && current.level === item.level);
     if (!editorHeading) {
       return;
     }
@@ -5109,8 +5197,25 @@ export default function App() {
   function scrollEditorHeadingIntoView(item, position) {
     setActiveOutlineId(item.id);
     markEditorAsActive();
-    const headingElement = getEditorBlockElementAtPos(editorInstanceRef.current, position);
-    const href = item?.domId ? `#${item.domId}` : headingElement?.id ? `#${headingElement.id}` : "";
+    const editor = editorInstanceRef.current;
+    if (!editor || typeof position !== "number") {
+      return;
+    }
+
+    const selectionPos = Math.min(Math.max(position + 1, 0), editor.state.doc.content.size);
+    const nextSelection = Selection.near(editor.state.doc.resolve(selectionPos), 1);
+    const tr = editor.state.tr.setSelection(nextSelection);
+    editor.view.dispatch(tr.scrollIntoView());
+    editor.view.focus();
+
+    const headingElement = getEditorBlockElementAtPos(editor, position);
+    if (headingElement) {
+      headingElement.scrollIntoView({ block: "center", inline: "nearest", behavior: "smooth" });
+      flashOutlineTarget(headingElement);
+      return;
+    }
+
+    const href = item?.domId ? `#${item.domId}` : "";
     if (!href) {
       return;
     }
@@ -6141,5 +6246,4 @@ export default function App() {
     </div>
   );
 }
-
 

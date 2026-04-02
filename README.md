@@ -30,6 +30,12 @@ npm install
 npm run dev
 ```
 
+For automatic Electron restarts when you edit `src/main` or `src/preload`, use:
+
+```bash
+npm run dev:live
+```
+
 If you are debugging Electron in Windows PowerShell, do not use Unix-style environment variable prefixes directly (for example, `FOO=bar command`). PowerShell will treat values such as `=true` or `=*` as standalone commands and fail. This repository already includes a debug script you can run directly:
 
 ```bash
@@ -56,3 +62,4 @@ npm run package:win
 ```
 
 Build artifacts are written to the `release/` directory by default. This repository was initialized in a Linux/WSL environment, so whether the Windows installer can actually be produced also depends on whether the machine has cross-packaging dependencies such as `wine`.
+
