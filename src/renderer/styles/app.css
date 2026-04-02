@@ -1648,6 +1648,14 @@ select {
   margin: 0.85em 0;
 }
 
+.editor-surface hr,
+.preview-surface hr {
+  height: 0;
+  margin: 1.4em 0;
+  border: 0;
+  border-top: 1px solid color-mix(in srgb, var(--border-strong) 78%, transparent);
+}
+
 .editor-surface ul,
 .editor-surface ol,
 .preview-surface ul,
@@ -2503,15 +2511,6 @@ select {
   border-radius: 999px;
 }
 
-.footnotes-title {
-  margin-bottom: 10px;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: var(--text-soft);
-}
-
 .callout {
   position: relative;
   padding: 16px 18px 16px 20px;
@@ -2577,9 +2576,27 @@ select {
   margin: 0.45em 0;
 }
 
+.footnotes li > :first-child {
+  margin-top: 0;
+}
+
+.footnotes li > :last-child {
+  margin-bottom: 0;
+}
+
+.footnote-ref {
+  font-size: 0.78em;
+  line-height: 0;
+}
+
 .footnote-ref a,
+.footnote-backrefs,
 .footnote-backref {
   text-decoration: none;
+}
+
+.footnote-backrefs {
+  white-space: nowrap;
 }
 
 .footnote-backref {

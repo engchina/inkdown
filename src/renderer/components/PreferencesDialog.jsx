@@ -12,7 +12,8 @@ const transformRuleOptions = [
   { key: "bulletList", label: "Bullet List" },
   { key: "orderedList", label: "Ordered List" },
   { key: "taskList", label: "Task List" },
-  { key: "codeFence", label: "Code Fence" }
+  { key: "codeFence", label: "Code Fence" },
+  { key: "thematicBreak", label: "Thematic Break" }
 ];
 
 const sourceRuleOptions = [
@@ -275,6 +276,7 @@ export default function PreferencesDialog({ open, preferences, onChange, onClose
               <div><code>1.</code> + Space + Content {"->"} Ordered List</div>
               <div><code>- [ ]</code> + Space + Content {"->"} Task List</div>
               <div><code>```</code> + Enter {"->"} Code Block</div>
+              <div><code>---</code> + Enter {"->"} Horizontal Rule</div>
               <div><code>Esc</code> {"->"} Skip next transform</div>
               <div><code>\#</code> or <code>\```</code> {"->"} Literal Markdown</div>
             </div>

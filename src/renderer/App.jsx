@@ -2,7 +2,7 @@ import React, { startTransition, useDeferredValue, useEffect, useId, useMemo, us
 import { Mark, Node as TiptapNode, mergeAttributes, Extension, getMarkRange } from "@tiptap/core";
 import Heading from "@tiptap/extension-heading";
 import { NodeSelection, Plugin, PluginKey, Selection, TextSelection } from "@tiptap/pm/state";
-import { DOMParser as ProseMirrorDOMParser, DOMSerializer as ProseMirrorDOMSerializer } from "@tiptap/pm/model";
+import { DOMParser as ProseMirrorDOMParser, DOMSerializer as ProseMirrorDOMSerializer, Fragment } from "@tiptap/pm/model";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import { CellSelection, TableMap } from "@tiptap/pm/tables";
 import { liftTarget } from "@tiptap/pm/transform";
@@ -16,6 +16,7 @@ import Underline from "@tiptap/extension-underline";
 import Link from "@tiptap/extension-link";
 import Image from "@tiptap/extension-image";
 import CodeBlock from "@tiptap/extension-code-block";
+import HorizontalRule from "@tiptap/extension-horizontal-rule";
 import Placeholder from "@tiptap/extension-placeholder";
 import TaskList from "@tiptap/extension-task-list";
 import TaskItem from "@tiptap/extension-task-item";
@@ -89,7 +90,18 @@ import {
   replaceAllLiteralMatches,
   replaceCurrentLiteralMatch
 } from "./utils/sourceEditing.mjs";
-import { getDelayedHeadingTransform, getDelayedParagraphTransform, getEmptyListEnterStrategy } from "./utils/editorStructuredEditing.mjs";
+import {
+  getDelayedHeadingTransform,
+  getDelayedParagraphTransform,
+  getDelayedThematicBreakTransform,
+  getEmptyListEnterStrategy
+} from "./utils/editorStructuredEditing.mjs";
+import {
+  applyFootnoteReferences,
+  buildFootnotesElement,
+  decorateFootnoteReferences,
+  extractFootnotes
+} from "./utils/footnotes.mjs";
 import {
   findMarkRangeForSelection,
   getInlineMarkTarget,
@@ -125,7 +137,8 @@ const defaultPreferences = {
     bulletList: true,
     orderedList: true,
     taskList: true,
-    codeFence: true
+    codeFence: true,
+    thematicBreak: true
   },
   smartTransformSource: {
     tabIndent: true,
@@ -709,6 +722,12 @@ const CodeFenceEnterFallback = Extension.create({
         }
       })
     ];
+  }
+});
+
+const HorizontalRuleWithDelayedTransform = HorizontalRule.extend({
+  addInputRules() {
+    return [];
   }
 });
 
@@ -1561,14 +1580,6 @@ function isFileInsideRoot(filePath, rootPath) {
   return normalizedFile === normalizedRoot || normalizedFile.startsWith(`${normalizedRoot}/`);
 }
 
-function sanitizeDomIdFragment(value) {
-  return String(value || "")
-    .trim()
-    .toLowerCase()
-    .replace(/[^\p{Letter}\p{Number}_-]+/gu, "-")
-    .replace(/^-+|-+$/g, "") || "note";
-}
-
 function slugifyHeading(text, slugCounts) {
   const baseSlug =
     String(text || "")
@@ -1775,77 +1786,6 @@ function serializeEditorStateToMarkdown(state, existingRawFrontMatter = "") {
   return serializeEditorHtmlToMarkdown(serializeEditorStateToHtml(serializableState), existingRawFrontMatter);
 }
 
-function extractFootnotes(markdown) {
-  const lines = String(markdown || "").split(/\r?\n/);
-  const bodyLines = [];
-  const definitions = new Map();
-  let inFence = false;
-
-  for (let index = 0; index < lines.length; index += 1) {
-    const line = lines[index];
-    if (/^```/.test(line)) {
-      inFence = !inFence;
-      bodyLines.push(line);
-      continue;
-    }
-
-    if (!inFence) {
-      const definitionMatch = /^\[\^([^\]]+)\]:\s*(.*)$/.exec(line);
-      if (definitionMatch) {
-        const id = definitionMatch[1].trim();
-        const definitionLines = [definitionMatch[2]];
-        let nextIndex = index + 1;
-        while (nextIndex < lines.length) {
-          const nextLine = lines[nextIndex];
-          if (/^(?:\s{2,}|\t)/.test(nextLine)) {
-            definitionLines.push(nextLine.replace(/^(?:\t| {1,4})/, ""));
-            nextIndex += 1;
-            continue;
-          }
-          if (nextLine.trim() === "" && nextIndex + 1 < lines.length && /^(?:\s{2,}|\t)/.test(lines[nextIndex + 1])) {
-            definitionLines.push("");
-            nextIndex += 1;
-            continue;
-          }
-          break;
-        }
-        definitions.set(id, definitionLines.join("\n").trim());
-        index = nextIndex - 1;
-        continue;
-      }
-    }
-
-    bodyLines.push(line);
-  }
-
-  return {
-    body: bodyLines.join("\n").trimEnd(),
-    definitions
-  };
-}
-
-function applyFootnoteReferences(markdown, definitions) {
-  const numbering = new Map();
-  const order = [];
-  const body = replaceOutsideCodeSpans(markdown, (segment) =>
-    segment.replace(/\[\^([^\]]+)\]/g, (match, rawId) => {
-      const id = String(rawId || "").trim();
-      if (!definitions.has(id)) {
-        return match;
-      }
-      if (!numbering.has(id)) {
-        numbering.set(id, order.length + 1);
-        order.push(id);
-      }
-      const number = numbering.get(id);
-      const domId = sanitizeDomIdFragment(id);
-      return `<sup class="footnote-ref" id="fnref-${domId}"><a href="#fn-${domId}">${number}</a></sup>`;
-    })
-  );
-
-  return { body, order, numbering };
-}
-
 function preprocessMarkdownSyntax(markdown, options = {}) {
   const { enableExtendedInlineSyntax = false } = options;
   const lines = String(markdown || "").split(/\r?\n/);
@@ -1991,28 +1931,6 @@ function renderMarkdownFragment(markdown, currentFilePath, resolveAsset) {
   return container.innerHTML;
 }
 
-function buildFootnotesElement(definitions, order, currentFilePath, resolveAsset) {
-  if (!order.length) {
-    return null;
-  }
-
-  const section = document.createElement("section");
-  section.className = "footnotes";
-  section.innerHTML = '<div class="footnotes-title">Footnotes</div>';
-
-  const list = document.createElement("ol");
-  order.forEach((id) => {
-    const domId = sanitizeDomIdFragment(id);
-    const item = document.createElement("li");
-    item.id = `fn-${domId}`;
-    item.innerHTML = `${renderMarkdownFragment(definitions.get(id) || "", currentFilePath, resolveAsset)} <a class="footnote-backref" href="#fnref-${domId}">↩</a>`;
-    list.appendChild(item);
-  });
-  section.appendChild(list);
-
-  return section;
-}
-
 function decorateRenderedHtml(container, outline, options = {}) {
   const {
     enableCallouts = false,
@@ -2050,11 +1968,18 @@ function decorateRenderedHtml(container, outline, options = {}) {
   }
 
   if (footnotes?.order?.length && resolveAsset) {
-    const footnotesElement = buildFootnotesElement(footnotes.definitions, footnotes.order, currentFilePath, resolveAsset);
+    const footnotesElement = buildFootnotesElement(
+      footnotes.definitions,
+      footnotes.order,
+      footnotes.references,
+      (markdown) => renderMarkdownFragment(markdown, currentFilePath, resolveAsset)
+    );
     if (footnotesElement) {
       container.appendChild(footnotesElement);
     }
   }
+
+  decorateFootnoteReferences(container);
 
   sanitizePreviewContainer(container, {
     ...sanitizeOptions,
@@ -2183,9 +2108,10 @@ function renderMarkdownForPreview(
 ) {
   const { body: withoutFrontMatter } = extractYamlFrontMatter(markdown);
   const { body: withoutFootnotes, definitions } = extractFootnotes(withoutFrontMatter);
-  const { body, order } = applyFootnoteReferences(
+  const { body, order, references } = applyFootnoteReferences(
     preprocessMarkdownSyntax(withoutFootnotes, { enableExtendedInlineSyntax: true }),
-    definitions
+    definitions,
+    replaceOutsideCodeSpans
   );
   const container = resolveImageSources(
     previewMarked.parse(body),
@@ -2194,7 +2120,7 @@ function renderMarkdownForPreview(
   );
   return decorateRenderedHtml(container, outline, {
     enableCallouts: true,
-    footnotes: { definitions, order },
+    footnotes: { definitions, order, references },
     currentFilePath,
     resolveAsset,
     sanitizeOptions,
@@ -2315,7 +2241,6 @@ function buildStandaloneHtml(title, bodyHtml, theme) {
       .toc-item.level-2 { padding-left: 12px; }
       .toc-item.level-3 { padding-left: 24px; }
       .toc-item.level-4, .toc-item.level-5, .toc-item.level-6 { padding-left: 36px; }
-      .footnotes-title { margin-bottom: 10px; font-size: 12px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: ${theme === "midnight" ? "#b8c7d9" : "#69553f"}; }
       .callout { position: relative; margin: 0.9em 0; padding: 12px 15px 12px 18px; border: 1px solid rgba(160, 160, 160, 0.24); border-radius: 16px; background: rgba(255, 255, 255, 0.6); font-weight: 500; }
       .callout::before { content: ""; position: absolute; inset: 10px auto 10px 0; width: 4px; border-radius: 999px; background: #9a5a26; }
       .callout-title { margin-bottom: 6px; font-size: 13px; font-weight: 700; color: inherit; }
@@ -2325,7 +2250,12 @@ function buildStandaloneHtml(title, bodyHtml, theme) {
       .callout-warning::before { background: #d97706; }
       .callout-caution::before { background: #dc2626; }
       .footnotes { margin-top: 20px; padding-top: 16px; border-top: 1px solid rgba(160, 160, 160, 0.24); }
-      .footnote-backref { margin-left: 6px; text-decoration: none; }
+      .footnotes li > :first-child { margin-top: 0; }
+      .footnotes li > :last-child { margin-bottom: 0; }
+      .footnote-ref { font-size: 0.78em; line-height: 0; }
+      .footnote-backrefs { white-space: nowrap; text-decoration: none; }
+      .footnote-ref a, .footnote-backref { text-decoration: none; }
+      .footnote-backref { margin-left: 6px; }
       .mermaid { margin: 0.95rem 0; }
     </style>
   </head>
@@ -3528,6 +3458,39 @@ export default function App() {
     return true;
   }
 
+  function applyEditorDelayedThematicBreakTransform(view) {
+    const transformRules = preferencesRef.current.smartTransformRules || {};
+    if (!(transformRules.thematicBreak ?? true)) {
+      return false;
+    }
+
+    const selection = view.state.selection;
+    if (!selection.empty) {
+      return false;
+    }
+
+    const { $from } = selection;
+    const parent = $from.parent;
+    if (!parent?.isTextblock || parent.type.name !== "paragraph" || $from.parentOffset !== parent.textContent.length) {
+      return false;
+    }
+
+    const thematicBreakShortcut = getDelayedThematicBreakTransform(parent.textContent, true);
+    if (!thematicBreakShortcut) {
+      return false;
+    }
+
+    void thematicBreakShortcut;
+    const applied = convertParagraphToHorizontalRule(view);
+    if (!applied) {
+      return false;
+    }
+
+    flashActiveEditorBlock();
+    setHint("Horizontal rule.");
+    return true;
+  }
+
   function isEditorSelectionInsideList(selection) {
     const names = [];
     for (let depth = selection.$from.depth; depth > 0; depth -= 1) {
@@ -3614,6 +3577,35 @@ export default function App() {
     const blockTo = $from.after();
     const tr = state.tr.replaceWith(blockFrom, blockTo, codeBlockType.create({ language }));
     tr.setSelection(TextSelection.create(tr.doc, blockFrom + 1));
+    dispatch(tr.scrollIntoView());
+    return true;
+  }
+
+  function convertParagraphToHorizontalRule(view) {
+    const { state, dispatch } = view;
+    const { selection, schema } = state;
+    if (!selection.empty) {
+      return false;
+    }
+
+    const { $from } = selection;
+    if ($from.parent.type.name !== "paragraph") {
+      return false;
+    }
+
+    const horizontalRuleType = schema.nodes.horizontalRule;
+    const paragraphType = schema.nodes.paragraph;
+    if (!horizontalRuleType || !paragraphType) {
+      return false;
+    }
+
+    const blockFrom = $from.before();
+    const blockTo = $from.after();
+    const horizontalRuleNode = horizontalRuleType.create();
+    const paragraphNode = paragraphType.create();
+    const tr = state.tr.replaceWith(blockFrom, blockTo, Fragment.fromArray([horizontalRuleNode, paragraphNode]));
+    const paragraphPos = blockFrom + horizontalRuleNode.nodeSize;
+    tr.setSelection(TextSelection.create(tr.doc, paragraphPos + 1));
     dispatch(tr.scrollIntoView());
     return true;
   }
@@ -3864,6 +3856,11 @@ export default function App() {
       return true;
     }
 
+    if (event.key === "Enter" && applyEditorDelayedThematicBreakTransform(view)) {
+      event.preventDefault();
+      return true;
+    }
+
     const escapedFenceMatch = /^\\((?:```|~~~)([A-Za-z0-9_-]+)?)$/.exec(beforeCursor);
     if (event.key === "Enter" && escapedFenceMatch) {
       event.preventDefault();
@@ -3898,6 +3895,7 @@ export default function App() {
         StarterKit.configure({
           heading: false,
           codeBlock: false,
+          horizontalRule: false,
           bold: false,
           italic: false,
           strike: false,
@@ -3912,6 +3910,7 @@ export default function App() {
         TokenCode,
         Underline,
         CodeBlockWithLanguage,
+        HorizontalRuleWithDelayedTransform,
         Highlight,
         Subscript,
         Superscript,

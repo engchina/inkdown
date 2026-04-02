@@ -50,3 +50,23 @@ export function getDelayedHeadingTransform(line = "", caretAtEnd = false) {
   };
 }
 
+export function getDelayedThematicBreakTransform(line = "", caretAtEnd = false) {
+  if (!caretAtEnd) {
+    return null;
+  }
+
+  const match = /^\s*([*_ -]+)\s*$/.exec(line);
+  if (!match) {
+    return null;
+  }
+
+  const compact = match[1].replace(/\s+/g, "");
+  if (!/^(?:---+|\*\*\*+|___+)$/.test(compact)) {
+    return null;
+  }
+
+  return {
+    marker: compact.slice(0, 3)
+  };
+}
+

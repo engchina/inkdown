@@ -9,7 +9,8 @@ const sections = [
       "(-, *, or +) + Space + Content -> Bullet List",
       "1. + Space + Content -> Ordered List",
       "- [ ] + Space + Content -> Task List",
-      "``` + Enter -> Code Block"
+      "``` + Enter -> Code Block",
+      "--- + Enter -> Horizontal Rule"
     ]
   },
   {
