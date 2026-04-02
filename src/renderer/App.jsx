@@ -77,7 +77,7 @@ import {
   replaceAllLiteralMatches,
   replaceCurrentLiteralMatch
 } from "./utils/sourceEditing.mjs";
-import { getEmptyListEnterStrategy } from "./utils/editorStructuredEditing.mjs";
+import { getDelayedHeadingTransform, getDelayedParagraphTransform, getEmptyListEnterStrategy } from "./utils/editorStructuredEditing.mjs";
 import { findMarkRangeForSelection, getInlineMarkTarget, selectionTouchesMarkRange } from "./utils/markSyntaxEditing.mjs";
 
 const editorMarked = new Marked({ gfm: true, breaks: true });
@@ -3018,54 +3018,101 @@ export default function App() {
   }
 
   function applyEditorParagraphSpaceShortcut(view, beforeCursor, rangeFrom, rangeTo) {
-    const transformRules = preferencesRef.current.smartTransformRules || {};
-
     const escapedSpacePrefix = /^\\(#{1,6}|>|[-*+]|\d+\.|[-*+]\s\[(?: |x|X)\])$/.exec(beforeCursor);
     if (escapedSpacePrefix) {
-      applyEditorMarkdownShortcut(rangeFrom, rangeTo, (chain) => chain.insertContent(`${escapedSpacePrefix[1]} `).run());
+      const applied = applyEditorMarkdownShortcut(rangeFrom, rangeTo, (chain) => chain.insertContent(`${escapedSpacePrefix[1]} `).run());
+      if (!applied) {
+        return false;
+      }
       setHint("Inserted literal Markdown marker.");
-      return true;
-    }
-
-    const headingShortcut = /^(#{1,6})$/.exec(beforeCursor);
-    if ((transformRules.heading ?? true) && headingShortcut) {
-      const level = headingShortcut[1].length;
-      applyHeadingShortcut(rangeFrom, rangeTo, level);
-      flashActiveEditorBlock();
-      setHint(`Heading ${level}.`);
-      return true;
-    }
-
-    if ((transformRules.taskList ?? true) && /^[-*+]\s\[(?: |x|X)\]$/.test(beforeCursor)) {
-      applyEditorMarkdownShortcut(rangeFrom, rangeTo, (chain) => chain.toggleTaskList().run());
-      flashActiveEditorBlock();
-      setHint("Task list. Backspace on empty item exits the list.");
-      return true;
-    }
-
-    if ((transformRules.blockquote ?? true) && beforeCursor === ">") {
-      applyEditorMarkdownShortcut(rangeFrom, rangeTo, (chain) => chain.toggleBlockquote().run());
-      flashActiveEditorBlock();
-      setHint("Blockquote.");
-      return true;
-    }
-
-    if ((transformRules.bulletList ?? true) && /^[-*+]$/.test(beforeCursor)) {
-      applyEditorMarkdownShortcut(rangeFrom, rangeTo, (chain) => chain.toggleBulletList().run());
-      flashActiveEditorBlock();
-      setHint("Bullet list.");
-      return true;
-    }
-
-    if ((transformRules.orderedList ?? true) && /^\d+\.$/.test(beforeCursor)) {
-      applyEditorMarkdownShortcut(rangeFrom, rangeTo, (chain) => chain.toggleOrderedList().run());
-      flashActiveEditorBlock();
-      setHint("Ordered list.");
       return true;
     }
 
     void view;
     return false;
+  }
+
+  function applyEditorDelayedParagraphTransform(beforeCursor, rangeFrom, rangeTo, text) {
+    const transformRules = preferencesRef.current.smartTransformRules || {};
+    const shortcut = getDelayedParagraphTransform(beforeCursor, text);
+    if (!shortcut) {
+      return false;
+    }
+
+    const command =
+      shortcut.kind === "taskList"
+        ? (chain) => chain.toggleTaskList().insertContent(text).run()
+        : shortcut.kind === "blockquote"
+          ? (chain) => chain.toggleBlockquote().insertContent(text).run()
+          : shortcut.kind === "bulletList"
+            ? (chain) => chain.toggleBulletList().insertContent(text).run()
+            : (chain) => chain.toggleOrderedList().insertContent(text).run();
+
+    const enabled =
+      shortcut.kind === "taskList"
+        ? transformRules.taskList ?? true
+        : shortcut.kind === "blockquote"
+          ? transformRules.blockquote ?? true
+          : shortcut.kind === "bulletList"
+            ? transformRules.bulletList ?? true
+            : transformRules.orderedList ?? true;
+
+    if (!enabled) {
+      return false;
+    }
+
+    const applied = applyEditorMarkdownShortcut(rangeFrom, rangeTo, command);
+    if (!applied) {
+      return false;
+    }
+
+    flashActiveEditorBlock();
+    setHint(
+      shortcut.kind === "taskList"
+        ? "Task list. Backspace on empty item exits the list."
+        : shortcut.kind === "blockquote"
+          ? "Blockquote."
+          : shortcut.kind === "bulletList"
+            ? "Bullet list."
+            : "Ordered list."
+    );
+    return true;
+  }
+
+  function applyEditorDelayedHeadingTransform(view) {
+    const transformRules = preferencesRef.current.smartTransformRules || {};
+    if (!(transformRules.heading ?? true)) {
+      return false;
+    }
+
+    const selection = view.state.selection;
+    if (!selection.empty) {
+      return false;
+    }
+
+    const { $from } = selection;
+    const parent = $from.parent;
+    if (!parent?.isTextblock || parent.type.name !== "paragraph" || $from.parentOffset !== parent.textContent.length) {
+      return false;
+    }
+
+    const headingShortcut = getDelayedHeadingTransform(parent.textContent, true);
+    if (!headingShortcut) {
+      return false;
+    }
+
+    const rangeFrom = selection.from - parent.textContent.length;
+    const applied = applyEditorMarkdownShortcut(rangeFrom, selection.from, (chain) =>
+      chain.toggleHeading({ level: headingShortcut.level }).insertContent(headingShortcut.title).run()
+    );
+    if (!applied) {
+      return false;
+    }
+
+    flashActiveEditorBlock();
+    setHint(`Heading ${headingShortcut.level}.`);
+    insertParagraphAfterCurrentBlock(view);
+    return true;
   }
 
   function isEditorSelectionInsideList(selection) {
@@ -3290,11 +3337,15 @@ export default function App() {
       return true;
     }
 
-    if (text !== " " || parent.type.name !== "paragraph") {
+    if (parent.type.name !== "paragraph") {
       return false;
     }
 
-    return applyEditorParagraphSpaceShortcut(view, beforeCursor, shortcutFrom, selection.from);
+    if (text === " ") {
+      return applyEditorParagraphSpaceShortcut(view, beforeCursor, shortcutFrom, selection.from);
+    }
+
+    return applyEditorDelayedParagraphTransform(beforeCursor, shortcutFrom, selection.from, text);
   }
 
   function handleEditorSmartMarkdown(view, event) {
@@ -3337,6 +3388,12 @@ export default function App() {
         return true;
       }
     }
+
+    if (event.key === "Enter" && applyEditorDelayedHeadingTransform(view)) {
+      event.preventDefault();
+      return true;
+    }
+
     const escapedFenceMatch = /^\\((?:```|~~~)([A-Za-z0-9_-]+)?)$/.exec(beforeCursor);
     if (event.key === "Enter" && escapedFenceMatch) {
       event.preventDefault();

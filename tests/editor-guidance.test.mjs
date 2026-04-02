@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
+import { getDelayedHeadingTransform } from "../src/renderer/utils/editorStructuredEditing.mjs";
 
 const appSource = await fs.readFile(new URL("../src/renderer/App.jsx", import.meta.url), "utf8");
 const stylesSource = await fs.readFile(new URL("../src/renderer/styles/app.css", import.meta.url), "utf8");
@@ -25,9 +26,13 @@ test("styles keep shared toolbar emphasis states", () => {
 });
 
 test("smart heading transform and slash commands support heading levels four through six", () => {
-  assert.match(appSource, /function applyEditorParagraphSpaceShortcut\(view, beforeCursor, rangeFrom, rangeTo\)/);
-  assert.match(appSource, /const headingShortcut = \/\^\(#\{1,6\}\)\$\/\.exec\(beforeCursor\)/);
-  assert.match(appSource, /applyHeadingShortcut\(rangeFrom, rangeTo, level\)/);
+  assert.match(appSource, /function applyEditorDelayedHeadingTransform\(view\)/);
+  assert.match(appSource, /getDelayedHeadingTransform\(parent\.textContent, true\)/);
+  assert.match(appSource, /toggleHeading\(\{ level: headingShortcut\.level \}\)\.insertContent\(headingShortcut\.title\)\.run\(\)/);
+  assert.deepEqual(getDelayedHeadingTransform("#### Title", true), { level: 4, title: "Title" });
+  assert.deepEqual(getDelayedHeadingTransform("##### Title", true), { level: 5, title: "Title" });
+  assert.deepEqual(getDelayedHeadingTransform("###### Title", true), { level: 6, title: "Title" });
+  assert.equal(getDelayedHeadingTransform("## Title", false), null);
   assert.match(appSource, /id: "heading-4"/);
   assert.match(appSource, /id: "heading-5"/);
   assert.match(appSource, /id: "heading-6"/);
