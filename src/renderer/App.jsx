@@ -1,7 +1,7 @@
 import React, { startTransition, useDeferredValue, useEffect, useId, useMemo, useRef, useState } from "react";
 import { Mark, Node as TiptapNode, mergeAttributes, Extension, getMarkRange } from "@tiptap/core";
 import Heading from "@tiptap/extension-heading";
-import { NodeSelection, Plugin, PluginKey, Selection, TextSelection } from "@tiptap/pm/state";
+import { AllSelection, NodeSelection, Plugin, PluginKey, Selection, TextSelection } from "@tiptap/pm/state";
 import { DOMParser as ProseMirrorDOMParser, DOMSerializer as ProseMirrorDOMSerializer, Fragment } from "@tiptap/pm/model";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import { CellSelection, TableMap } from "@tiptap/pm/tables";
@@ -2006,7 +2006,7 @@ function decorateRenderedHtml(container, outline, options = {}) {
     decorateCalloutBlockquotes(container);
   }
 
-  if (footnotes?.order?.length && resolveAsset) {
+  if (footnotes?.order?.length) {
     const footnotesElement = buildFootnotesElement(
       footnotes.definitions,
       footnotes.order,
@@ -2115,29 +2115,63 @@ function serializeEditorSelectionForClipboard(view) {
   return { html, text, markdown };
 }
 
-function handleEditorClipboardEvent(view, event, cut = false) {
-  const data = event.clipboardData;
-  if (!data) {
-    return false;
+async function embedLocalImagesInClipboardContent(html, markdownText) {
+  const temp = document.createElement("div");
+  temp.innerHTML = html;
+  const images = Array.from(temp.querySelectorAll('img[src^="inkdown-asset://"]'));
+  if (images.length === 0) {
+    return { html, markdown: markdownText };
   }
 
+  const mdSrcToDataUrl = new Map();
+
+  await Promise.all(
+    images.map(async (img) => {
+      const assetSrc = img.getAttribute("src") || "";
+      const mdSrc = img.getAttribute("data-md-src") || "";
+      try {
+        const url = new URL(assetSrc);
+        const filePath = decodeURIComponent(url.searchParams.get("path") || "");
+        if (!filePath) return;
+        const result = await window.editorApi.readFileAsBase64(filePath);
+        if (result && result.dataUrl) {
+          img.setAttribute("src", result.dataUrl);
+          if (mdSrc) {
+            mdSrcToDataUrl.set(mdSrc, result.dataUrl);
+          }
+        }
+      } catch {}
+    })
+  );
+
+  let markdownWithImages = markdownText;
+  for (const [mdSrc, dataUrl] of mdSrcToDataUrl) {
+    const escaped = mdSrc.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    markdownWithImages = markdownWithImages.replace(new RegExp(escaped, "g"), dataUrl);
+  }
+
+  return { html: temp.innerHTML, markdown: markdownWithImages };
+}
+
+async function writeClipboardFromSerialized(view, serialized, cut) {
+  const { html, text, markdown } = serialized;
+  const { html: finalHtml, markdown: finalMarkdown } = await embedLocalImagesInClipboardContent(html, markdown || text);
+  await window.editorApi.writeClipboard({ html: finalHtml, text: finalMarkdown });
+  if (cut) {
+    view.dispatch(view.state.tr.deleteSelection().scrollIntoView().setMeta("uiEvent", "cut"));
+  }
+}
+
+function handleEditorClipboardEvent(view, event, cut = false) {
+  if (!event.clipboardData) {
+    return false;
+  }
   const serialized = serializeEditorSelectionForClipboard(view);
   if (!serialized) {
     return false;
   }
-
-  const { html, text, markdown } = serialized;
   event.preventDefault();
-  data.clearData();
-  data.setData("text/html", html);
-  data.setData("text/plain", markdown || text);
-  try {
-    data.setData("text/markdown", markdown || text);
-  } catch {}
-
-  if (cut) {
-    view.dispatch(view.state.tr.deleteSelection().scrollIntoView().setMeta("uiEvent", "cut"));
-  }
+  void writeClipboardFromSerialized(view, serialized, cut);
   return true;
 }
 
@@ -4151,7 +4185,7 @@ export default function App() {
             markEditorAsActive();
             if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "a") {
               event.preventDefault();
-              runEditorCommand((chain) => chain.selectAll().run(), { preserveScroll: false });
+              view.dispatch(view.state.tr.setSelection(new AllSelection(view.state.doc)));
               return true;
             }
             if (slashMenuStateRef.current.open) {

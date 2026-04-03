@@ -143,6 +143,8 @@ contextBridge.exposeInMainWorld("editorApi", {
     const absolutePath = resolveAbsoluteAssetPath(documentPath, assetPath);
     return absolutePath ? toAssetUrl(absolutePath) : "";
   },
+  readFileAsBase64: (filePath) => ipcRenderer.invoke("file:read-as-base64", filePath),
+  writeClipboard: (payload) => ipcRenderer.invoke("clipboard:write", payload),
   resolveMarkdownAssetForExport: (documentPath, assetPath) => {
     if (!assetPath || isExternalSource(assetPath)) {
       return assetPath;

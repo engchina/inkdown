@@ -2311,8 +2311,12 @@ select {
   pointer-events: none;
 }
 
+.source-pane.pane-active .source-editor-shell,
+.preview-pane.pane-active .preview-surface {
+  border-color: color-mix(in srgb, var(--accent) 26%, var(--border));
+}
+
 .source-pane.pane-active .source-editor-shell {
-  border-color: color-mix(in srgb, var(--accent) 34%, var(--border));
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 14%, transparent);
 }
 
@@ -2408,7 +2412,6 @@ select {
 }
 
 .preview-pane.pane-active .preview-surface {
-  border-color: color-mix(in srgb, var(--accent) 26%, var(--border));
   box-shadow:
     0 20px 48px -30px rgba(102, 74, 24, 0.2),
     0 0 0 1px color-mix(in srgb, var(--accent) 10%, transparent),

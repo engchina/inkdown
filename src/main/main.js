@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, dialog, ipcMain, net, protocol, shell } = require("electron");
+const { app, BrowserWindow, Menu, dialog, ipcMain, net, protocol, shell, clipboard } = require("electron");
 const path = require("node:path");
 const fs = require("node:fs/promises");
 const { fileURLToPath, pathToFileURL } = require("node:url");
@@ -1064,6 +1064,25 @@ ipcMain.handle("file:persist-image-buffer", async (event, payload) => {
   } catch (error) {
     return { error: buildIoErrorMessage("insert pasted image", error) };
   }
+});
+
+ipcMain.handle("file:read-as-base64", async (event, filePath) => {
+  requireTrustedIpcEvent(event);
+  try {
+    const buffer = await fs.readFile(filePath);
+    const ext = path.extname(filePath).toLowerCase().slice(1);
+    const mimeMap = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp", svg: "image/svg+xml", bmp: "image/bmp", ico: "image/x-icon" };
+    const mime = mimeMap[ext] || "image/png";
+    return { dataUrl: `data:${mime};base64,${buffer.toString("base64")}` };
+  } catch (error) {
+    return { error: error.message };
+  }
+});
+
+ipcMain.handle("clipboard:write", (event, payload) => {
+  requireTrustedIpcEvent(event);
+  clipboard.write({ html: payload.html || "", text: payload.text || "" });
+  return { ok: true };
 });
 
 ipcMain.handle("preferences:load", async (event) => {

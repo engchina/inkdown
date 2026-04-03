@@ -206,13 +206,14 @@ export function sanitizePreviewContainer(container, options = {}) {
       }
 
       const isLinkHref = tagName === "a" && (name === "href" || name === "xlink:href");
+      const isMediaTag = tagName === "img" || tagName === "audio" || tagName === "video" || tagName === "source";
       const urlOptions = {
-        allowHttpUrls: true,
+        allowHttpUrls: isLinkHref || !isMediaTag || Boolean(options.allowInsecureRemoteMedia),
         allowHttpsUrls: true,
         allowMailtoUrls: isLinkHref,
         allowTelUrls: isLinkHref,
         allowAssetUrls: true,
-        allowBlobUrls: tagName === "img" || tagName === "audio" || tagName === "video" || tagName === "source",
+        allowBlobUrls: isMediaTag,
         allowDataImageUrls: tagName === "img" || tagName === "source",
         allowFileUrls: Boolean(options.allowFileUrls)
       };
