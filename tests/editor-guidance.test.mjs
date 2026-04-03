@@ -24,6 +24,11 @@ test("editor context still describes current block and routes through toolbar st
   assert.match(appSource, /kind: "toc", label: "Table of contents"/);
 });
 
+test("editor and preview keep markdown soft breaks distinct from hard breaks", () => {
+  assert.ok(appSource.includes('const editorMarked = new Marked({ gfm: true, breaks: false });'));
+  assert.ok(appSource.includes('const previewMarked = new Marked({ gfm: true, breaks: false });'));
+});
+
 test("styles keep shared toolbar emphasis states", () => {
   assert.match(stylesSource, /\.toolbar-section\.active \{/);
   assert.match(stylesSource, /\.toolbar-section\.active \.toolbar-section-label \{/);
@@ -87,7 +92,7 @@ test("selected editor images expose an inline editable markdown block", () => {
   assert.match(appSource, /updateAttributes\(nextAttrs\)/);
   assert.match(appSource, /selectedImage\?\.attrs\?\.alt \|\| alt/);
   assert.match(appSource, /title: selectedImage\?\.attrs\?\.title \|\| null/);
-  assert.match(appSource, /resolveAsset: \(assetPath\) => window\.editorApi\.resolveMarkdownAsset\(filePathRef\.current, assetPath\)/);
+  assert.match(appSource, /resolveAsset: \(assetPath\) => resolveMarkdownImageAsset\(filePathRef\.current, assetPath, extractYamlFrontMatter\(markdownText\)\.data, window\.editorApi\.resolveMarkdownAsset\)/);
   assert.match(appSource, /setTextSelection\(linkDialogState\.linkRange\)[\s\S]*setLink\(\{ href, title: normalizedTitle \|\| null \}\)\.run\(\)/);
   assert.match(appSource, /setTextSelection\(linkDialogState\.linkRange\)[\s\S]*unsetLink\(\)[\s\S]*\.run\(\)/);
   assert.match(appSource, /const HeadingWithAnchors = Heading\.extend\(\{/);
@@ -115,8 +120,10 @@ test("table of contents tokens render as dedicated editor nodes", () => {
   assert.match(appSource, /onSelectItem\?\.\(item\)/);
   assert.match(appSource, /window\.addEventListener\(OUTLINE_SYNC_EVENT, sync\);/);
   assert.match(appSource, /window\.removeEventListener\(OUTLINE_SYNC_EVENT, sync\);/);
-  assert.match(appSource, /if \(parent\.type\.name === "paragraph" && \$from\.depth === 1\)/);
-  assert.match(appSource, /if \(isTableOfContentsToken\(nextText\)\)/);
+  assert.match(appSource, /function convertParagraphToTableOfContents\(view\)/);
+  assert.match(appSource, /if \(parent\.type\.name !== "paragraph" \|\| \$from\.depth !== 1 \|\| \$from\.parentOffset !== parent\.textContent\.length\) \{/);
+  assert.match(appSource, /if \(!isTableOfContentsToken\(parent\.textContent\)\) \{/);
+  assert.match(appSource, /if \(event\.key === "Enter" && convertParagraphToTableOfContents\(view\)\) \{/);
   assert.match(appSource, /view\.state\.schema\.nodes\.tableOfContents/);
   assert.match(appSource, /TableOfContentsNode\.configure\(\{\s*getOutline: \(\) => outlineRef\.current,\s*onSelectItem: \(item\) => jumpToEditorHeadingFromToc\(item\)/s);
   assert.match(appSource, /function jumpToEditorHeadingFromToc\(item\)/);
@@ -136,4 +143,10 @@ test("table of contents tokens render as dedicated editor nodes", () => {
   assert.match(appSource, /function syncOutlineState\(nextOutline\) \{[\s\S]*?window\.dispatchEvent\(new CustomEvent\(OUTLINE_SYNC_EVENT\)\);[\s\S]*?\}/);
   assert.match(appSource, /const nextOutline = extractOutlineFromMarkdown\(nextMarkdown\);\s+syncOutlineState\(nextOutline\);\s+startTransition\(\(\) => \{\s+setMarkdownText\(nextMarkdown\);/s);
 });
+
+
+
+
+
+
 

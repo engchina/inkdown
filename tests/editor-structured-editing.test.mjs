@@ -49,6 +49,10 @@ test("delayed paragraph transforms wait for content after the markdown marker", 
   assert.equal(getDelayedParagraphTransform("- ", " "), null);
 });
 
+test("blockquote smart transforms wrap instead of toggling so nested quotes remain possible", () => {
+  assert.ok(appSource.includes('? (chain) => chain.wrapIn("blockquote").insertContent(text).run()'));
+});
+
 test("thematic break transforms wait for Enter on a pure marker line", () => {
   assert.deepEqual(getDelayedThematicBreakTransform("---", true), { marker: "---" });
   assert.deepEqual(getDelayedThematicBreakTransform("---   ", true), { marker: "---" });
@@ -73,3 +77,4 @@ test("editor handles thematic break smart transforms on Enter", () => {
   assert.match(appSource, /const HorizontalRuleWithDelayedTransform = HorizontalRule\.extend\(\{\s*addInputRules\(\) \{\s*return \[\];\s*\}\s*\}\);/s);
   assert.match(appSource, /StarterKit\.configure\(\{[\s\S]*?horizontalRule: false,/);
 });
+

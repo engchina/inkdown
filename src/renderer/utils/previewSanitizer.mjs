@@ -207,7 +207,7 @@ export function sanitizePreviewContainer(container, options = {}) {
 
       const isLinkHref = tagName === "a" && (name === "href" || name === "xlink:href");
       const urlOptions = {
-        allowHttpUrls: isLinkHref || Boolean(options.allowInsecureRemoteMedia),
+        allowHttpUrls: true,
         allowHttpsUrls: true,
         allowMailtoUrls: isLinkHref,
         allowTelUrls: isLinkHref,

@@ -79,6 +79,35 @@ test("footnote references get stable numbering and unique back reference targets
   assert.match(body, /href="#fn-same"/);
 });
 
+test("inline footnotes get numbered, rendered, and added to the footnote list", () => {
+  withDom((documentRef) => {
+    const markdown = "Inline footnote.^[Here is the *inline* footnote.]";
+    const { body: withoutFootnotes, definitions } = extractFootnotes(markdown);
+    const { body, order, references, definitions: resolvedDefinitions } = applyFootnoteReferences(
+      withoutFootnotes,
+      definitions,
+      (value, transform) => transform(value)
+    );
+
+    assert.equal(order.length, 1);
+    assert.match(body, /class="footnote-ref"/);
+
+    const container = documentRef.createElement("div");
+    container.innerHTML = `<p>${body}</p>`;
+    const footnotes = buildFootnotesElement(
+      resolvedDefinitions,
+      order,
+      references,
+      (value) => `<p>${value.replace(/\*([^*]+)\*/g, "<em>$1</em>")}</p>`,
+      documentRef
+    );
+    container.appendChild(footnotes);
+    decorateFootnoteReferences(container);
+
+    assert.match(container.querySelector(".footnotes li").innerHTML, /<em>inline<\/em>/);
+    assert.equal(container.querySelector(".footnote-ref a")?.getAttribute("title"), "Here is the inline footnote.");
+  });
+});
 test("footnote rendering appends backrefs and hover text without an extra title block", () => {
   withDom((documentRef) => {
     const markdown = [
@@ -116,3 +145,6 @@ test("footnote rendering appends backrefs and hover text without an extra title 
     assert.equal(referenceLinks[1].getAttribute("href"), "#fn-fn1");
   });
 });
+
+
+

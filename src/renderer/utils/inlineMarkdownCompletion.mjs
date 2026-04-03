@@ -128,9 +128,17 @@ function isCleanBoundaryMatch(text, start, end, match) {
 
   const before = text[start - 1] || "";
   const after = text[end] || "";
+  const inner = match.text.slice(delimiter.token.length, match.text.length - delimiter.token.length);
+  if (before === "\\" || inner.endsWith("\\")) {
+    return false;
+  }
+  if (delimiter.char === "_") {
+    if ((before && /[A-Za-z0-9]/.test(before)) || (after && /[A-Za-z0-9]/.test(after))) {
+      return false;
+    }
+  }
   return before !== delimiter.char && after !== delimiter.char;
 }
-
 export function getCompletedInlineMarkdownMatch(value) {
   const match = findTrailingCompletedMatch(value);
   return isCleanBoundaryMatch(String(value || ""), match?.start ?? -1, match?.end ?? -1, match) ? match : null;
@@ -148,9 +156,17 @@ export function isWholeTextCompletedInlineMarkdown(value) {
   }
 
   const inlineTokens = tokens[0]?.tokens || [];
-  return inlineTokens.length === 1 && inlineTokens[0]?.raw === text;
-}
+  if (inlineTokens.length !== 1 || inlineTokens[0]?.raw !== text) {
+    return false;
+  }
 
+  if (["em", "strong", "codespan", "del", "link"].includes(inlineTokens[0]?.type)) {
+    return true;
+  }
+
+  const completed = getCompletedInlineMarkdownMatch(text);
+  return Boolean(completed && completed.start === 0 && completed.end === text.length && ["highlight", "subscript", "superscript"].includes(completed.type));
+}
 export function getCompletedInlineMarkdownMatchAroundCursor(value, cursorOffset) {
   const text = String(value || "");
   const cursor = Math.max(0, Math.min(Number(cursorOffset) || 0, text.length));
@@ -211,3 +227,7 @@ export function shouldDeferInlineMarkdownRender(beforeCursor, insertedText, afte
   void afterCursor;
   return Boolean(getCompletedInlineMarkdownMatch(prefix));
 }
+
+
+
+

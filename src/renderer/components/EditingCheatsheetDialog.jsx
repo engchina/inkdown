@@ -10,7 +10,8 @@ const sections = [
       "1. + Space + Content -> Ordered List",
       "- [ ] + Space + Content -> Task List",
       "``` + Enter -> Code Block",
-      "--- + Enter -> Horizontal Rule"
+      "*** or --- + Enter -> Horizontal Rule",
+      "Shift+Enter -> Line Break"
     ]
   },
   {
@@ -18,6 +19,7 @@ const sections = [
     items: [
       "Tab / Shift+Tab indent or outdent selected lines",
       "Enter continues lists and blockquotes",
+      "Shift+Enter inserts a Markdown hard break",
       "Auto pair symbols when typing inline markdown"
     ]
   },
@@ -105,3 +107,4 @@ export default function EditingCheatsheetDialog({ open, onClose }) {
     </div>
   );
 }
+
