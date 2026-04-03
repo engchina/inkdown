@@ -200,8 +200,9 @@
 }
 
 :root[data-theme="midnight"] .paper::before {
-  border-bottom-color: rgba(90, 150, 251, 0.10);
-  background: linear-gradient(180deg, rgba(90, 150, 251, 0.05) 0%, transparent 100%);
+  background:
+    linear-gradient(90deg, transparent 0%, rgba(90, 150, 251, 0.08) 18%, rgba(130, 165, 220, 0.22) 50%, rgba(90, 150, 251, 0.08) 82%, transparent 100%);
+  opacity: 0.9;
 }
 
 :root[data-theme="midnight"] .paper::after {
@@ -1483,7 +1484,7 @@ select {
   position: relative;
   max-width: var(--paper-width);
   margin: 0 auto;
-  padding: 42px 56px 70px;
+  padding: 32px 56px 70px;
   border: 1px solid var(--border-strong);
   border-radius: 24px;
   background:
@@ -1498,22 +1499,28 @@ select {
 .paper::before {
   content: "";
   position: absolute;
-  inset: 18px 22px auto;
-  height: 18px;
-  border-bottom: 1px solid color-mix(in srgb, var(--accent) 12%, transparent);
-  background: linear-gradient(180deg, color-mix(in srgb, var(--accent-soft) 34%, transparent) 0%, transparent 100%);
+  top: 16px;
+  left: 50%;
+  width: clamp(120px, 22%, 220px);
+  height: 6px;
+  transform: translateX(-50%);
+  border-radius: 999px;
+  background:
+    linear-gradient(90deg, transparent 0%, color-mix(in srgb, var(--accent-soft) 20%, transparent) 16%, color-mix(in srgb, rgba(255, 255, 255, 0.78) 62%, transparent) 50%, color-mix(in srgb, var(--accent-soft) 20%, transparent) 84%, transparent 100%);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.34);
+  opacity: 0.72;
   pointer-events: none;
 }
 
 .paper::after {
   content: "";
   position: absolute;
-  inset: 28px 30px;
+  inset: 24px 30px 28px;
   border-radius: 18px;
   border: 1px solid color-mix(in srgb, var(--border) 28%, transparent);
   mask: linear-gradient(#000, transparent 22%, transparent 78%, #000);
   pointer-events: none;
-  opacity: 0.48;
+  opacity: 0.36;
 }
 
 .editor-pane.pane-active .paper {
@@ -2269,6 +2276,12 @@ select {
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 12%, transparent), var(--shadow-md);
 }
 
+.preview-pane.pane-active {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+
 .source-editor-shell {
   flex: 0 0 auto;
   display: grid;
@@ -2298,9 +2311,7 @@ select {
   pointer-events: none;
 }
 
-.source-pane.pane-active .source-editor-shell,
-
-.preview-pane.pane-active .preview-surface {
+.source-pane.pane-active .source-editor-shell {
   border-color: color-mix(in srgb, var(--accent) 34%, var(--border));
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 14%, transparent);
 }
@@ -2386,22 +2397,22 @@ select {
   width: 100%;
   max-width: var(--paper-width);
   margin: 0 auto;
-  padding: 34px 40px 70px;
+  padding: 28px 52px 72px;
   border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
   border-radius: 24px;
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.3) 0%, transparent 16%),
-    linear-gradient(180deg, color-mix(in srgb, var(--panel-strong) 96%, var(--mix-base)) 0%, color-mix(in srgb, #faf5ea 74%, var(--panel-strong)) 100%);
-  box-shadow: var(--shadow-md), inset 0 1px 0 rgba(255, 255, 255, 0.16);
+    linear-gradient(180deg, rgba(255, 255, 255, 0.22) 0%, transparent 14%),
+    linear-gradient(180deg, color-mix(in srgb, var(--panel-strong) 97%, var(--mix-base)) 0%, color-mix(in srgb, #fcf7ee 82%, var(--panel-strong)) 100%);
+  box-shadow: 0 18px 42px -28px rgba(102, 74, 24, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.14);
   transition: border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
 }
 
-.preview-pane .preview-surface::before {
-  content: "";
-  display: block;
-  height: 1px;
-  margin-bottom: 22px;
-  background: linear-gradient(90deg, transparent 0%, color-mix(in srgb, var(--border) 74%, transparent) 18%, color-mix(in srgb, var(--border) 74%, transparent) 82%, transparent 100%);
+.preview-pane.pane-active .preview-surface {
+  border-color: color-mix(in srgb, var(--accent) 26%, var(--border));
+  box-shadow:
+    0 20px 48px -30px rgba(102, 74, 24, 0.2),
+    0 0 0 1px color-mix(in srgb, var(--accent) 10%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.14);
 }
 
 .table-of-contents {
@@ -3683,7 +3694,7 @@ select {
   }
 
   .paper {
-    padding: 32px 24px 46px;
+    padding: 28px 24px 46px;
     border-radius: 20px;
   }
 
