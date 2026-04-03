@@ -62,6 +62,18 @@ test("editor markdown serializer keeps triple emphasis without backslash escapes
   });
 });
 
+test("editor markdown serializer preserves strikethrough delimiters", () => {
+  withDom(() => {
+    const markdown = serializeEditorHtmlToMarkdown('<p><del data-md-open-token="~~" data-md-close-token="~~">Mistaken text.</del></p>');
+    assert.equal(markdown.trim(), "~~Mistaken text.~~");
+  });
+});
+test("editor markdown serializer preserves underscore strong delimiters", () => {
+  withDom(() => {
+    const markdown = serializeEditorHtmlToMarkdown('<p><strong data-md-open-token="__" data-md-close-token="__">abc</strong></p>');
+    assert.equal(markdown.trim(), "__abc__");
+  });
+});
 test("editor markdown serializer keeps nested emphasis inside links", () => {
   withDom(() => {
     const markdown = serializeEditorHtmlToMarkdown(
@@ -88,3 +100,12 @@ test("editor markdown serializer preserves raw inline links typed as plain text"
     assert.doesNotMatch(markdown, /\\\[/);
   });
 });
+
+test("editor markdown serializer preserves hard break markdown tokens", () => {
+  withDom(() => {
+    const markdown = serializeEditorHtmlToMarkdown("<p>line 1<br>line 2</p>");
+    assert.equal(markdown, "line 1  \nline 2");
+  });
+});
+
+

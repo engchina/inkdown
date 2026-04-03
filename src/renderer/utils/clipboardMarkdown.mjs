@@ -218,7 +218,10 @@ export function createMarkdownTurndown() {
           .find((value) => value.startsWith("language-"))
           ?.replace(/^language-/, "") ||
         "";
-      const value = code?.textContent?.replace(/\n$/, "") || "";
+      const value = code?.textContent?.replace(/\\n$/, "") || "";
+      if (language === "math") {
+        return `\n\n$$\n${value}\n$$\n\n`;
+      }
       return `\n\n\`\`\`${language}\n${value}\n\`\`\`\n\n`;
     }
   });
@@ -335,3 +338,8 @@ export function hasStructuredClipboardHtml(html, plainText = "") {
   const normalizedPlainText = String(plainText || "").replace(/\s+/g, " ").trim();
   return normalizedHtmlText !== normalizedPlainText;
 }
+
+
+
+
+

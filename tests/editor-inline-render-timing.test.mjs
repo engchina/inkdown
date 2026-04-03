@@ -60,6 +60,28 @@ test("inline completion detection recognizes links and code spans", () => {
   assert.equal(prefixEndsWithCompletedInlineMarkdown("[abc](https://example.com"), false);
 });
 
+test("inline completion detection recognizes strikethrough and ignores escaped literal tildes", () => {
+  assert.deepEqual(getCompletedInlineMarkdownMatch("~~Mistaken text.~~"), {
+    type: "strike",
+    text: "~~Mistaken text.~~",
+    start: 0,
+    end: 18
+  });
+  assert.equal(getCompletedInlineMarkdownMatch("~~Mistaken text.~"), null);
+  assert.equal(getCompletedInlineMarkdownMatch("\\~~literal strikethrough\\~~"), null);
+  assert.equal(prefixEndsWithCompletedInlineMarkdown("\\~~literal strikethrough\\~~"), false);
+});
+test("inline completion detection also ignores double underscores inside words and escaped strong delimiters", () => {
+  assert.equal(getCompletedInlineMarkdownMatchAroundCursor("wow__great__stuff", 7), null);
+  assert.equal(getCompletedInlineMarkdownMatch("\\*\\*this text is surrounded by literal asterisks\\*\\*"), null);
+  assert.equal(prefixEndsWithCompletedInlineMarkdown("\\*\\*this text is surrounded by literal asterisks\\*\\*"), false);
+});
+test("inline completion detection ignores underscores inside words and escaped literal delimiters", () => {
+  assert.equal(getCompletedInlineMarkdownMatchAroundCursor("wow_great_stuff", 6), null);
+  assert.equal(getCompletedInlineMarkdownMatchAroundCursor("do_this_and_do_that_and_another_thing.", 16), null);
+  assert.equal(getCompletedInlineMarkdownMatch("\\*this text is surrounded by literal asterisks\\*"), null);
+  assert.equal(prefixEndsWithCompletedInlineMarkdown("\\*this text is surrounded by literal asterisks\\*"), false);
+});
 test("inline completion detection also recognizes completed syntax around the caret", () => {
   assert.deepEqual(getCompletedInlineMarkdownMatchAroundCursor("`a`", 2), {
     type: "code",
@@ -171,6 +193,11 @@ test("inline range replacement preserves trailing caret position across supporte
     );
   }
 });
+
+
+
+
+
 
 
 

@@ -15,6 +15,8 @@ const HELP_LINKS = {
   website: "https://github.com/engchina"
 };
 
+const REMOTE_MEDIA_PREFS_VERSION = 2;
+
 const state = {
   currentFilePath: null,
   isDirty: false,
@@ -64,7 +66,8 @@ function getDefaultPreferences() {
       autoPair: true,
       literalEscape: true
     },
-    allowInsecureRemoteMedia: false,
+    remoteMediaPrefsVersion: REMOTE_MEDIA_PREFS_VERSION,
+    allowInsecureRemoteMedia: true,
     workspaceRoot: null,
     recentFiles: [],
     paletteUsage: {},
@@ -125,10 +128,16 @@ function isMarkdownFilePath(filePath) {
 async function loadPreferences() {
   try {
     const raw = await fs.readFile(getPreferencesPath(), "utf8");
+    const loaded = JSON.parse(raw);
     const prefs = {
       ...getDefaultPreferences(),
-      ...JSON.parse(raw)
+      ...loaded
     };
+    if ((loaded?.remoteMediaPrefsVersion ?? 0) < REMOTE_MEDIA_PREFS_VERSION) {
+      prefs.allowInsecureRemoteMedia = true;
+      prefs.remoteMediaPrefsVersion = REMOTE_MEDIA_PREFS_VERSION;
+      await savePreferences(prefs);
+    }
     return prefs;
   } catch {
     return getDefaultPreferences();
@@ -595,6 +604,21 @@ function rebuildMenu(window) {
           label: "Heading 3",
           accelerator: "CmdOrCtrl+3",
           click: () => emitMenuAction(window, { type: "apply-format", format: "heading-3" })
+        },
+        {
+          label: "Heading 4",
+          accelerator: "CmdOrCtrl+4",
+          click: () => emitMenuAction(window, { type: "apply-format", format: "heading-4" })
+        },
+        {
+          label: "Heading 5",
+          accelerator: "CmdOrCtrl+5",
+          click: () => emitMenuAction(window, { type: "apply-format", format: "heading-5" })
+        },
+        {
+          label: "Heading 6",
+          accelerator: "CmdOrCtrl+6",
+          click: () => emitMenuAction(window, { type: "apply-format", format: "heading-6" })
         },
         { type: "separator" },
         {
@@ -1092,3 +1116,4 @@ ipcMain.on("app:get-path", (event, name) => {
   requireTrustedIpcEvent(event);
   event.returnValue = app.getPath(name);
 });
+

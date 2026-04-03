@@ -172,6 +172,30 @@ export default function Toolbar({
           </ToolButton>
           <ToolButton
             disabled={!editor}
+            title="Heading 4"
+            active={editor?.isActive("heading", { level: 4 })}
+            onClick={() => onApplyFormat("heading-4")}
+          >
+            H4
+          </ToolButton>
+          <ToolButton
+            disabled={!editor}
+            title="Heading 5"
+            active={editor?.isActive("heading", { level: 5 })}
+            onClick={() => onApplyFormat("heading-5")}
+          >
+            H5
+          </ToolButton>
+          <ToolButton
+            disabled={!editor}
+            title="Heading 6"
+            active={editor?.isActive("heading", { level: 6 })}
+            onClick={() => onApplyFormat("heading-6")}
+          >
+            H6
+          </ToolButton>
+          <ToolButton
+            disabled={!editor}
             title="Blockquote"
             active={editor?.isActive("blockquote")}
             onClick={() => onApplyFormat("blockquote")}

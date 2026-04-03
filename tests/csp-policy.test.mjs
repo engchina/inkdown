@@ -23,9 +23,9 @@ test("index.html no longer depends on remote Google Fonts", () => {
   assert.doesNotMatch(indexHtml, /fonts\.gstatic\.com/);
 });
 
-test("remote media preference stays secure by default in renderer and main defaults", () => {
-  assert.match(appSource, /allowInsecureRemoteMedia: false/);
-  assert.match(mainSource, /allowInsecureRemoteMedia: false/);
+test("remote media preference allows HTTP media by default in renderer and main defaults", () => {
+  assert.match(appSource, /allowInsecureRemoteMedia: true/);
+  assert.match(mainSource, /allowInsecureRemoteMedia: true/);
 });
 
 test("renderer threads remote media policy through preview and export paths", () => {
@@ -44,3 +44,6 @@ test("preload resolves file urls without depending on node:url conversion helper
   assert.doesNotMatch(preloadSource, /pathToFileURL/);
   assert.doesNotMatch(preloadSource, /fileURLToPath/);
 });
+
+
+

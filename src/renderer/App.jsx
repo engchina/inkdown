@@ -56,6 +56,7 @@ import { resolveOutlineNavigationSurface, getCenteredSourceScrollTop, getOutline
 import { escapeHtml, sanitizePreviewContainer } from "./utils/previewSanitizer.mjs";
 import { preservePreviewLiteralWhitespace } from "./utils/previewWhitespace.mjs";
 import { activatePreviewLink, findPreviewAnchorTarget } from "./utils/previewLinks.mjs";
+import { resolveTyporaRootUrlAsset } from "./utils/imageRoots.mjs";
 import {
   convertClipboardHtmlToMarkdown,
   hasStructuredClipboardHtml,
@@ -72,12 +73,16 @@ import { isTableOfContentsToken } from "./utils/tableOfContents.mjs";
 import {
   buildRemovedMarkdownLinkSelection,
   buildLinkedSourceSelection,
+  buildSourceHardBreakInsertion,
   buildSourceInsertion,
   buildSourceAutoPairEdit,
   buildToggledPrefixedSourceLines,
   buildToggledWrappedSourceSelection,
   buildExpandedMarkdownTableSelection,
+  buildMarkdownTableCreationFromHeader,
+  getMarkdownBlockquoteContinuation,
   getMarkdownLineContinuation,
+  parseMarkdownTableHeaderCells,
   buildUpdatedMarkdownImageSelection,
   buildMarkdownImageSyntax,
   buildUpdatedMarkdownLinkSelection,
@@ -109,9 +114,10 @@ import {
   selectionTouchesMarkRange
 } from "./utils/markSyntaxEditing.mjs";
 
-const editorMarked = new Marked({ gfm: true, breaks: true });
-const previewMarked = new Marked({ gfm: true, breaks: true });
+const editorMarked = new Marked({ gfm: true, breaks: false });
+const previewMarked = new Marked({ gfm: true, breaks: false });
 const OUTLINE_SYNC_EVENT = "inkdown:outline-sync";
+const REMOTE_MEDIA_PREFS_VERSION = 1;
 
 previewMarked.use(
   markedKatex({
@@ -146,7 +152,8 @@ const defaultPreferences = {
     autoPair: true,
     literalEscape: true
   },
-  allowInsecureRemoteMedia: false,
+  remoteMediaPrefsVersion: REMOTE_MEDIA_PREFS_VERSION,
+  allowInsecureRemoteMedia: true,
   workspaceRoot: null,
   recentFiles: [],
   paletteUsage: {},
@@ -175,6 +182,7 @@ const codeLanguageOptions = [
   { value: "yaml", label: "YAML" },
   { value: "sql", label: "SQL" },
   { value: "python", label: "Python" },
+  { value: "math", label: "Math" },
   { value: "mermaid", label: "Mermaid" }
 ];
 
@@ -189,8 +197,9 @@ const codeLanguageTemplates = {
   bash: "echo \"Hello, world!\"",
   yaml: "title: Inkdown\nstatus: draft",
   sql: "select *\nfrom notes;",
-  python: "def main():\n    print('Hello, world!')",
-  md: "# Title\n\nBody",
+  python: "def main():\\n    print('Hello, world!')",
+  math: "\\\\int_0^1 x^2 \\\\, dx = \\\\frac{1}{3}",
+  md: "# Title\\n\\nBody",
   mermaid: "graph TD\n  A[Start] --> B[Finish]"
 };
 
@@ -460,6 +469,9 @@ function CodeBlockNodeView({ editor, getPos, node, updateAttributes }) {
       if (activeValue === "html") {
         return { kind: "info", label: "HTML preview" };
       }
+      if (activeValue === "math") {
+        return { kind: "info", label: "Math preview" };
+      }
     } catch (error) {
       return { kind: "invalid", label: String(error.message || error) };
     }
@@ -504,7 +516,7 @@ function CodeBlockNodeView({ editor, getPos, node, updateAttributes }) {
   }, [activeValue, mermaidPreviewId, mermaidRefreshKey, node.textContent]);
 
   useEffect(() => {
-    if (!["md", "markdown", "html"].includes(activeValue)) {
+    if (!["md", "markdown", "html", "math"].includes(activeValue)) {
       setAuxPreviewHtml("");
       return undefined;
     }
@@ -517,7 +529,10 @@ function CodeBlockNodeView({ editor, getPos, node, updateAttributes }) {
         }
         return;
       }
-      const rendered = renderMarkdownForPreview(node.textContent || "", null, []);
+      const rendered =
+        activeValue === "math"
+          ? renderMarkdownForPreview(`$$\n${node.textContent || ""}\n$$`, null, [])
+          : renderMarkdownForPreview(node.textContent || "", null, []);
       const html = await renderPreviewHtml(rendered, document.documentElement.dataset.theme || "paper");
       if (!canceled) {
         setAuxPreviewHtml(html);
@@ -665,7 +680,7 @@ function CodeBlockNodeView({ editor, getPos, node, updateAttributes }) {
             </pre>
           </div>
           {activeValue === "mermaid" ? <div id={mermaidPreviewId} className="code-block-mermaid-preview" contentEditable={false} /> : null}
-          {["md", "markdown"].includes(activeValue) && auxPreviewHtml ? (
+          {["md", "markdown", "math"].includes(activeValue) && auxPreviewHtml ? (
             <div className="code-block-aux-preview preview-surface" dangerouslySetInnerHTML={{ __html: auxPreviewHtml }} />
           ) : null}
           {activeValue === "html" && auxPreviewHtml ? (
@@ -705,7 +720,7 @@ const CodeFenceEnterFallback = Extension.create({
           if (!prevNode) return null;
 
           const prevText = prevNode.textContent;
-          const codeFenceMatch = /^(?:```|~~~)([A-Za-z0-9_-]+)?$/.exec(prevText);
+          const codeFenceMatch = /^(?:```|~~~)([^\s`~]+)?$/.exec(prevText);
           if (!codeFenceMatch) return null;
 
           const cbType = codeBlockType();
@@ -1613,19 +1628,26 @@ function extractYamlFrontMatter(markdown) {
   const value = String(markdown || "");
   const match = /^(---\r?\n[\s\S]*?\r?\n(?:---|\.\.\.))(\r?\n+|$)/.exec(value);
   if (!match) {
-    return { raw: "", content: "", body: value };
+    return { raw: "", content: "", body: value, data: {} };
   }
   const raw = `${match[1]}${match[2] || "\n\n"}`;
   const content = match[1]
     .replace(/^---\r?\n/, "")
     .replace(/\r?\n(?:---|\.\.\.)$/, "");
+  let data = {};
+  try {
+    const parsed = yaml.load(content);
+    if (parsed && typeof parsed === "object") {
+      data = parsed;
+    }
+  } catch {}
   return {
     raw,
     content,
-    body: value.slice(raw.length)
+    body: value.slice(raw.length),
+    data
   };
 }
-
 function prependFrontMatter(rawFrontMatter, markdownBody) {
   const body = String(markdownBody || "").trimStart();
   if (!rawFrontMatter) {
@@ -1793,6 +1815,7 @@ function preprocessMarkdownSyntax(markdown, options = {}) {
   let normalLines = [];
   let fenceLines = [];
   let inFence = false;
+  let fenceDelimiter = "";
   let fenceLanguage = "";
 
   const normalizeMathSyntax = (value) =>
@@ -1814,18 +1837,19 @@ function preprocessMarkdownSyntax(markdown, options = {}) {
   };
 
   lines.forEach((line) => {
-    const fenceMatch = /^```(\w+)?/.exec(line);
+    const fenceMatch = /^(?<delimiter>`{3}|~{3})(?<language>[^\s`~]+)?\s*$/.exec(line);
     if (!inFence && fenceMatch) {
       flushNormal();
       inFence = true;
-      fenceLanguage = (fenceMatch[1] || "").toLowerCase();
+      fenceDelimiter = fenceMatch.groups?.delimiter || "```";
+      fenceLanguage = (fenceMatch.groups?.language || "").toLowerCase();
       fenceLines = [line];
       return;
     }
 
     if (inFence) {
       fenceLines.push(line);
-      if (/^```/.test(line)) {
+      if (new RegExp(`^${fenceDelimiter}\\s*$`).test(line)) {
         if (fenceLanguage === "math") {
           const content = fenceLines.slice(1, -1).join("\n").trim();
           parts.push(`$$\n${content}\n$$`);
@@ -1833,6 +1857,7 @@ function preprocessMarkdownSyntax(markdown, options = {}) {
           parts.push(fenceLines.join("\n"));
         }
         inFence = false;
+        fenceDelimiter = "";
         fenceLanguage = "";
         fenceLines = [];
       }
@@ -1855,12 +1880,20 @@ function extractOutlineFromMarkdown(markdown) {
   const lines = String(markdown || "").split(/\r?\n/);
   const slugCounts = new Map();
   let inFence = false;
+  let fenceDelimiter = "";
   return lines
     .map((line, index) => {
-      if (/^```/.test(line)) {
-        inFence = !inFence;
+      const fenceMatch = /^(?<delimiter>`{3}|~{3})(?:[^\s`~]+)?\s*$/.exec(line);
+      if (!inFence && fenceMatch) {
+        inFence = true;
+        fenceDelimiter = fenceMatch.groups?.delimiter || "```";
+        return null;
       }
       if (inFence) {
+        if (new RegExp(`^${fenceDelimiter}\\s*$`).test(line)) {
+          inFence = false;
+          fenceDelimiter = "";
+        }
         return null;
       }
       const match = /^(#{1,6})\s+(.*)$/.exec(line);
@@ -1874,6 +1907,12 @@ function extractOutlineFromMarkdown(markdown) {
     .filter(Boolean);
 }
 
+
+function resolveMarkdownImageAsset(documentPath, assetPath, frontMatterData = null, resolveAsset = window.editorApi.resolveMarkdownAsset) {
+  const typoraRootUrl = frontMatterData && typeof frontMatterData === "object" ? frontMatterData["typora-root-url"] : null;
+  const rootedAssetPath = resolveTyporaRootUrlAsset(assetPath, typoraRootUrl);
+  return resolveAsset(documentPath, rootedAssetPath);
+}
 function buildTableOfContentsHtml(outline) {
   const items = outline.length
     ? outline
@@ -1883,7 +1922,7 @@ function buildTableOfContentsHtml(outline) {
   return `<nav class="table-of-contents" data-toc-token="true"><div class="toc-title">Table of Contents</div>${items}</nav>`;
 }
 
-function resolveImageSources(html, currentFilePath, resolveAsset) {
+function resolveImageSources(html, currentFilePath, resolveAsset, frontMatterData = null) {
   const temp = document.createElement("div");
   temp.innerHTML = html;
   temp.querySelectorAll("img").forEach((image) => {
@@ -1893,7 +1932,7 @@ function resolveImageSources(html, currentFilePath, resolveAsset) {
     }
     const markdownSource = image.getAttribute("data-md-src") || source;
     image.setAttribute("data-md-src", markdownSource);
-    image.setAttribute("src", resolveAsset(currentFilePath, markdownSource));
+    image.setAttribute("src", resolveMarkdownImageAsset(currentFilePath, markdownSource, frontMatterData, resolveAsset));
   });
   return temp;
 }
@@ -1994,28 +2033,31 @@ function decorateRenderedHtml(container, outline, options = {}) {
 }
 
 function renderMarkdownForEditor(markdown, currentFilePath, outline) {
-  const { body } = extractYamlFrontMatter(markdown);
+  const { body, data } = extractYamlFrontMatter(markdown);
+  const editorMarkdown = preprocessMarkdownSyntax(body, { enableExtendedInlineSyntax: true }).replace(/(^|\n)\$\$\s*\n([\s\S]*?)\n\$\$(?=\n|$)/g, "$1```math\n$2\n```");
   const container = resolveImageSources(
-    editorMarked.parse(preprocessMarkdownSyntax(body, { enableExtendedInlineSyntax: true })),
+    editorMarked.parse(editorMarkdown),
     currentFilePath,
-    window.editorApi.resolveMarkdownAsset
+    window.editorApi.resolveMarkdownAsset,
+    data
   );
   annotateInlineMarkdownTokens(container, body);
   return decorateRenderedHtml(container, outline, { enableCallouts: true });
 }
 
 function renderMarkdownSnippetForEditor(markdown, currentFilePath) {
-  const { body } = extractYamlFrontMatter(markdown);
+  const { body, data } = extractYamlFrontMatter(markdown);
   const snippetOutline = extractOutlineFromMarkdown(body);
+  const editorMarkdown = preprocessMarkdownSyntax(body, { enableExtendedInlineSyntax: true }).replace(/(^|\n)\$\$\s*\n([\s\S]*?)\n\$\$(?=\n|$)/g, "$1```math\n$2\n```");
   const container = resolveImageSources(
-    editorMarked.parse(preprocessMarkdownSyntax(body, { enableExtendedInlineSyntax: true })),
+    editorMarked.parse(editorMarkdown),
     currentFilePath,
-    window.editorApi.resolveMarkdownAsset
+    window.editorApi.resolveMarkdownAsset,
+    data
   );
   annotateInlineMarkdownTokens(container, body);
   return decorateRenderedHtml(container, snippetOutline, { enableCallouts: true });
 }
-
 function escapeMarkdownImageAlt(value) {
   return String(value || "").replace(/\\/g, "\\\\").replace(/\[/g, "\\[").replace(/\]/g, "\\]");
 }
@@ -2106,9 +2148,9 @@ function renderMarkdownForPreview(
   resolveAsset = window.editorApi.resolveMarkdownAsset,
   sanitizeOptions = {}
 ) {
-  const { body: withoutFrontMatter } = extractYamlFrontMatter(markdown);
+  const { body: withoutFrontMatter, data: frontMatterData } = extractYamlFrontMatter(markdown);
   const { body: withoutFootnotes, definitions } = extractFootnotes(withoutFrontMatter);
-  const { body, order, references } = applyFootnoteReferences(
+  const { body, order, references, definitions: resolvedDefinitions } = applyFootnoteReferences(
     preprocessMarkdownSyntax(withoutFootnotes, { enableExtendedInlineSyntax: true }),
     definitions,
     replaceOutsideCodeSpans
@@ -2120,7 +2162,7 @@ function renderMarkdownForPreview(
   );
   return decorateRenderedHtml(container, outline, {
     enableCallouts: true,
-    footnotes: { definitions, order, references },
+    footnotes: { definitions: resolvedDefinitions, order, references },
     currentFilePath,
     resolveAsset,
     sanitizeOptions,
@@ -2341,6 +2383,54 @@ function buildParagraphNode(schema, text) {
   return schema.nodes.paragraph.create(null, text ? schema.text(text) : null);
 }
 
+function buildTableCellParagraph(schema, text = "") {
+  const content = text ? parseInlineMarkdownFragment(schema, text) : null;
+  return schema.nodes.paragraph.create(null, content && content.size > 0 ? content : null);
+}
+
+function buildMarkdownTableNode(schema, headerCells = []) {
+  const tableType = schema.nodes.table;
+  const rowType = schema.nodes.tableRow;
+  const headerType = schema.nodes.tableHeader;
+  const cellType = schema.nodes.tableCell;
+  if (!tableType || !rowType || !headerType || !cellType || headerCells.length < 2) {
+    return null;
+  }
+
+  const headerRow = rowType.create(
+    null,
+    headerCells.map((cell) => headerType.create({ textAlign: null }, buildTableCellParagraph(schema, cell)))
+  );
+  const bodyRow = rowType.create(
+    null,
+    headerCells.map(() => cellType.create({ textAlign: null }, buildTableCellParagraph(schema)))
+  );
+
+  return tableType.create(null, [headerRow, bodyRow]);
+}
+
+function convertParagraphToMarkdownTable(view, headerCells) {
+  const { state, dispatch } = view;
+  const { selection, schema } = state;
+  if (!selection.empty || selection.$from.parent.type.name !== "paragraph") {
+    return false;
+  }
+
+  const tableNode = buildMarkdownTableNode(schema, headerCells);
+  if (!tableNode) {
+    return false;
+  }
+
+  const blockFrom = selection.$from.before();
+  const blockTo = selection.$from.after();
+  let tr = state.tr.replaceWith(blockFrom, blockTo, tableNode);
+  const headerRowSize = tableNode.firstChild?.nodeSize || 0;
+  const selectionPos = Math.min(blockFrom + headerRowSize + 3, tr.doc.content.size);
+  const nextSelection = Selection.findFrom(tr.doc.resolve(selectionPos), 1, true) || Selection.near(tr.doc.resolve(selectionPos), 1);
+  tr = tr.setSelection(nextSelection);
+  dispatch(tr.scrollIntoView());
+  return true;
+}
 function normalizeCurrentEmptyTextblockToParagraph(view) {
   const { state, dispatch } = view;
   const { selection, schema } = state;
@@ -3374,7 +3464,7 @@ export default function App() {
       shortcut.kind === "taskList"
         ? (chain) => chain.toggleTaskList().insertContent(text).run()
         : shortcut.kind === "blockquote"
-          ? (chain) => chain.toggleBlockquote().insertContent(text).run()
+          ? (chain) => chain.wrapIn("blockquote").insertContent(text).run()
           : shortcut.kind === "bulletList"
             ? (chain) => chain.toggleBulletList().insertContent(text).run()
             : (chain) => chain.toggleOrderedList().insertContent(text).run();
@@ -3581,6 +3671,31 @@ export default function App() {
     return true;
   }
 
+
+  function convertParagraphToMathBlock(view) {
+    const { state, dispatch } = view;
+    const { selection, schema } = state;
+    if (!selection.empty) {
+      return false;
+    }
+
+    const { $from } = selection;
+    if ($from.parent.type.name !== "paragraph") {
+      return false;
+    }
+
+    const codeBlockType = schema.nodes.codeBlock;
+    if (!codeBlockType) {
+      return false;
+    }
+
+    const blockFrom = $from.before();
+    const blockTo = $from.after();
+    const tr = state.tr.replaceWith(blockFrom, blockTo, codeBlockType.create({ language: "math" }));
+    tr.setSelection(TextSelection.create(tr.doc, blockFrom + 1));
+    dispatch(tr.scrollIntoView());
+    return true;
+  }
   function convertParagraphToHorizontalRule(view) {
     const { state, dispatch } = view;
     const { selection, schema } = state;
@@ -3706,6 +3821,51 @@ export default function App() {
     return false;
   }
 
+  function convertParagraphToTableOfContents(view) {
+    const { state } = view;
+    const selection = state.selection;
+    if (!selection.empty) {
+      return false;
+    }
+
+    const { $from } = selection;
+    const parent = $from.parent;
+    if (parent.type.name !== "paragraph" || $from.depth !== 1 || $from.parentOffset !== parent.textContent.length) {
+      return false;
+    }
+
+    if (!isTableOfContentsToken(parent.textContent)) {
+      return false;
+    }
+
+    const tableOfContentsType = view.state.schema.nodes.tableOfContents;
+    const paragraphType = view.state.schema.nodes.paragraph;
+    if (!tableOfContentsType) {
+      return false;
+    }
+
+    const paragraphStart = $from.before();
+    const paragraphEnd = paragraphStart + parent.nodeSize;
+    const tr = view.state.tr.replaceWith(paragraphStart, paragraphEnd, tableOfContentsType.create());
+    const tocPos = tr.mapping.map(paragraphStart);
+    const tocNode = tr.doc.nodeAt(tocPos);
+    const nextCursorPos = tocPos + (tocNode?.nodeSize || 1);
+    let nextSelection = Selection.findFrom(tr.doc.resolve(Math.min(nextCursorPos, tr.doc.content.size)), 1, true);
+
+    if (!nextSelection && paragraphType) {
+      tr.insert(nextCursorPos, paragraphType.create());
+      nextSelection = Selection.findFrom(tr.doc.resolve(Math.min(nextCursorPos + 1, tr.doc.content.size)), 1, true);
+    }
+
+    if (nextSelection) {
+      tr.setSelection(nextSelection);
+    }
+
+    view.dispatch(tr.scrollIntoView());
+    setHint("Table of contents.");
+    return true;
+  }
+
   function handleEditorSmartTextInput(view, from, to, text) {
     if (editorComposingRef.current || view.composing) {
       return false;
@@ -3734,38 +3894,6 @@ export default function App() {
     const beforeCursor = parent.textContent.slice(0, $from.parentOffset);
     const afterCursor = parent.textContent.slice($from.parentOffset);
     const shortcutFrom = selection.from - beforeCursor.length;
-
-    if (parent.type.name === "paragraph" && $from.depth === 1) {
-      const nextText = `${beforeCursor}${text}${afterCursor}`;
-      if (isTableOfContentsToken(nextText)) {
-        const tableOfContentsType = view.state.schema.nodes.tableOfContents;
-        const paragraphType = view.state.schema.nodes.paragraph;
-        if (!tableOfContentsType) {
-          return false;
-        }
-
-        const paragraphStart = $from.before();
-        const paragraphEnd = paragraphStart + parent.nodeSize;
-        const tr = view.state.tr.replaceWith(paragraphStart, paragraphEnd, tableOfContentsType.create());
-        const tocPos = tr.mapping.map(paragraphStart);
-        const tocNode = tr.doc.nodeAt(tocPos);
-        const nextCursorPos = tocPos + (tocNode?.nodeSize || 1);
-        let nextSelection = Selection.findFrom(tr.doc.resolve(Math.min(nextCursorPos, tr.doc.content.size)), 1, true);
-
-        if (!nextSelection && paragraphType) {
-          tr.insert(nextCursorPos, paragraphType.create());
-          nextSelection = Selection.findFrom(tr.doc.resolve(Math.min(nextCursorPos + 1, tr.doc.content.size)), 1, true);
-        }
-
-        if (nextSelection) {
-          tr.setSelection(nextSelection);
-        }
-
-        view.dispatch(tr.scrollIntoView());
-        setHint("Table of contents.");
-        return true;
-      }
-    }
 
     if (text === "`") {
       if (/`+$/.test(beforeCursor)) {
@@ -3809,7 +3937,6 @@ export default function App() {
 
     return applyEditorDelayedParagraphTransform(beforeCursor, shortcutFrom, selection.from, text);
   }
-
   function handleEditorSmartMarkdown(view, event) {
     if (editorComposingRef.current || view.composing || isComposingInputEvent(event)) {
       return false;
@@ -3861,7 +3988,25 @@ export default function App() {
       return true;
     }
 
-    const escapedFenceMatch = /^\\((?:```|~~~)([A-Za-z0-9_-]+)?)$/.exec(beforeCursor);
+    if (event.key === "Enter" && convertParagraphToTableOfContents(view)) {
+      event.preventDefault();
+      return true;
+    }
+
+    if (event.key === "Enter" && $from.parentOffset === parent.textContent.length) {
+      const tableHeaders = parseMarkdownTableHeaderCells(parent.textContent);
+      if (tableHeaders) {
+        const applied = convertParagraphToMarkdownTable(view, tableHeaders);
+        if (!applied) {
+          return false;
+        }
+        event.preventDefault();
+        flashActiveEditorBlock();
+        setHint(`Table with ${tableHeaders.length} columns.`);
+        return true;
+      }
+    }
+    const escapedFenceMatch = /^\\((?:```|~~~)([^\s`~]+)?)$/.exec(beforeCursor);
     if (event.key === "Enter" && escapedFenceMatch) {
       event.preventDefault();
       applyEditorMarkdownShortcut(shortcutFrom, selection.from, (chain) => chain.insertContent(`${escapedFenceMatch[1]}\n`).run());
@@ -3869,7 +4014,19 @@ export default function App() {
       return true;
     }
 
-    const codeFenceMatch = /^(?:```|~~~)([A-Za-z0-9_-]+)?$/.exec(beforeCursor);
+    const mathBlockMatch = /^\$\$/.exec(beforeCursor);
+    if (event.key === "Enter" && mathBlockMatch) {
+      const applied = convertParagraphToMathBlock(view);
+      if (!applied) {
+        return false;
+      }
+      event.preventDefault();
+      flashActiveEditorBlock();
+      setHint("Math block. Backspace on empty block returns to paragraph.");
+      return true;
+    }
+
+    const codeFenceMatch = /^(?:```|~~~)([^\s`~]+)?$/.exec(beforeCursor);
     if ((transformRules.codeFence ?? true) && event.key === "Enter" && codeFenceMatch) {
       const applied = convertFenceParagraphToCodeBlock(view, codeFenceMatch[1] || null);
       if (!applied) {
@@ -3918,7 +4075,7 @@ export default function App() {
         MarkdownImage.configure({
           inline: false,
           allowBase64: true,
-          resolveAsset: (assetPath) => window.editorApi.resolveMarkdownAsset(filePathRef.current, assetPath)
+          resolveAsset: (assetPath) => resolveMarkdownImageAsset(filePathRef.current, assetPath, extractYamlFrontMatter(markdownText).data, window.editorApi.resolveMarkdownAsset)
         }),
         TableOfContentsNode.configure({
           getOutline: () => outlineRef.current,
@@ -3972,6 +4129,10 @@ export default function App() {
               return false;
             }
 
+            if (!(event.metaKey || event.ctrlKey)) {
+              return false;
+            }
+
             event.preventDefault();
             event.stopPropagation();
             const href = target.getAttribute("href") || "";
@@ -3988,6 +4149,11 @@ export default function App() {
           },
           keydown: (view, event) => {
             markEditorAsActive();
+            if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "a") {
+              event.preventDefault();
+              runEditorCommand((chain) => chain.selectAll().run(), { preserveScroll: false });
+              return true;
+            }
             if (slashMenuStateRef.current.open) {
               if (event.key === "ArrowDown") {
                 event.preventDefault();
@@ -5528,7 +5694,7 @@ export default function App() {
     const before = markdownText.slice(0, selectionStart);
     const after = markdownText.slice(selectionEnd);
 
-    const continuation = getMarkdownLineContinuation(line);
+    const continuation = getMarkdownBlockquoteContinuation(markdownText, selectionStart) || getMarkdownLineContinuation(line);
     if (continuation?.mode === "replace-line") {
       const nextText = `${markdownText.slice(0, lineStart)}${continuation.text}${markdownText.slice(lineEnd)}`;
       applySourceTextUpdate(nextText, lineStart + continuation.text.length);
@@ -5602,12 +5768,48 @@ export default function App() {
       return;
     }
 
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "a") {
+      const textarea = sourceRef.current;
+      if (!textarea) {
+        return;
+      }
+      event.preventDefault();
+      textarea.focus();
+      textarea.setSelectionRange(0, textarea.value.length);
+      setSourceSelectionState({ start: 0, end: textarea.value.length });
+      return;
+    }
+
     const sourceRules = preferencesRef.current.smartTransformSource || {};
+
+    if (event.key === "Enter" && event.shiftKey) {
+      const textarea = sourceRef.current;
+      if (!textarea) {
+        return;
+      }
+      const update = buildSourceHardBreakInsertion(markdownText, textarea.selectionStart ?? 0, textarea.selectionEnd ?? textarea.selectionStart ?? 0);
+      event.preventDefault();
+      applySourceTextUpdate(update.text, update.selectionStart, update.selectionEnd);
+      return;
+    }
 
     if (event.key === "Tab" && (sourceRules.tabIndent ?? true)) {
       event.preventDefault();
       indentSourceSelection(event.shiftKey);
       return;
+    }
+
+    if (event.key === "Enter") {
+      const textarea = sourceRef.current;
+      if (textarea) {
+        const tableCreation = buildMarkdownTableCreationFromHeader(markdownText, textarea.selectionStart ?? 0, textarea.selectionEnd ?? textarea.selectionStart ?? 0);
+        if (tableCreation) {
+          event.preventDefault();
+          applySourceTextUpdate(tableCreation.text, tableCreation.selectionStart, tableCreation.selectionEnd);
+          setStatus("Created table");
+          return;
+        }
+      }
     }
 
     if (event.key === "Enter" && (sourceRules.continueList ?? true)) {
@@ -5903,42 +6105,42 @@ export default function App() {
           togglePrefixedSourceLines("# ", {
             isApplied: (line) => /^#\s+/.test(line),
             strip: (line) => line.replace(/^#\s+/, ""),
-            normalize: (line) => line.replace(/^#{1,}\s*/, "")
+            normalize: (line) => line.replace(/^#{1,6}(?:\s+|$)/, "")
           });
           break;
         case "heading-2":
           togglePrefixedSourceLines("## ", {
             isApplied: (line) => /^##\s+/.test(line),
             strip: (line) => line.replace(/^##\s+/, ""),
-            normalize: (line) => line.replace(/^#{1,}\s*/, "")
+            normalize: (line) => line.replace(/^#{1,6}(?:\s+|$)/, "")
           });
           break;
         case "heading-3":
           togglePrefixedSourceLines("### ", {
             isApplied: (line) => /^###\s+/.test(line),
             strip: (line) => line.replace(/^###\s+/, ""),
-            normalize: (line) => line.replace(/^#{1,}\s*/, "")
+            normalize: (line) => line.replace(/^#{1,6}(?:\s+|$)/, "")
           });
           break;
         case "heading-4":
           togglePrefixedSourceLines("#### ", {
             isApplied: (line) => /^####\s+/.test(line),
             strip: (line) => line.replace(/^####\s+/, ""),
-            normalize: (line) => line.replace(/^#{1,}\s*/, "")
+            normalize: (line) => line.replace(/^#{1,6}(?:\s+|$)/, "")
           });
           break;
         case "heading-5":
           togglePrefixedSourceLines("##### ", {
             isApplied: (line) => /^#####\s+/.test(line),
             strip: (line) => line.replace(/^#####\s+/, ""),
-            normalize: (line) => line.replace(/^#{1,}\s*/, "")
+            normalize: (line) => line.replace(/^#{1,6}(?:\s+|$)/, "")
           });
           break;
         case "heading-6":
           togglePrefixedSourceLines("###### ", {
             isApplied: (line) => /^######\s+/.test(line),
             strip: (line) => line.replace(/^######\s+/, ""),
-            normalize: (line) => line.replace(/^#{1,}\s*/, "")
+            normalize: (line) => line.replace(/^#{1,6}(?:\s+|$)/, "")
           });
           break;
         case "bullet-list":
@@ -6290,4 +6492,38 @@ export default function App() {
     </div>
   );
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 

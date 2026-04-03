@@ -64,39 +64,49 @@ export function extractFootnotes(markdown) {
   const bodyLines = [];
   const definitions = new Map();
   let inFence = false;
+  let fenceDelimiter = "";
 
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index];
-    if (/^```/.test(line)) {
-      inFence = !inFence;
+    const fenceMatch = /^(?<delimiter>`{3}|~{3})(?:[^\s`~]+)?\s*$/.exec(line);
+    if (!inFence && fenceMatch) {
+      inFence = true;
+      fenceDelimiter = fenceMatch.groups?.delimiter || "```";
       bodyLines.push(line);
       continue;
     }
 
-    if (!inFence) {
-      const definitionMatch = /^\[\^([^\]]+)\]:\s*(.*)$/.exec(line);
-      if (definitionMatch) {
-        const id = definitionMatch[1].trim();
-        const definitionLines = [definitionMatch[2]];
-        let nextIndex = index + 1;
-        while (nextIndex < lines.length) {
-          const nextLine = lines[nextIndex];
-          if (/^(?:\s{2,}|\t)/.test(nextLine)) {
-            definitionLines.push(nextLine.replace(/^(?:\t| {1,4})/, ""));
-            nextIndex += 1;
-            continue;
-          }
-          if (nextLine.trim() === "" && nextIndex + 1 < lines.length && /^(?:\s{2,}|\t)/.test(lines[nextIndex + 1])) {
-            definitionLines.push("");
-            nextIndex += 1;
-            continue;
-          }
-          break;
-        }
-        definitions.set(id, definitionLines.join("\n").trim());
-        index = nextIndex - 1;
-        continue;
+    if (inFence) {
+      bodyLines.push(line);
+      if (new RegExp(`^${fenceDelimiter}\\s*$`).test(line)) {
+        inFence = false;
+        fenceDelimiter = "";
       }
+      continue;
+    }
+
+    const definitionMatch = /^\[\^([^\]]+)\]:\s*(.*)$/.exec(line);
+    if (definitionMatch) {
+      const id = definitionMatch[1].trim();
+      const definitionLines = [definitionMatch[2]];
+      let nextIndex = index + 1;
+      while (nextIndex < lines.length) {
+        const nextLine = lines[nextIndex];
+        if (/^(?:\s{2,}|\t)/.test(nextLine)) {
+          definitionLines.push(nextLine.replace(/^(?:\t| {1,4})/, ""));
+          nextIndex += 1;
+          continue;
+        }
+        if (nextLine.trim() === "" && nextIndex + 1 < lines.length && /^(?:\s{2,}|\t)/.test(lines[nextIndex + 1])) {
+          definitionLines.push("");
+          nextIndex += 1;
+          continue;
+        }
+        break;
+      }
+      definitions.set(id, definitionLines.join("\n").trim());
+      index = nextIndex - 1;
+      continue;
     }
 
     bodyLines.push(line);
@@ -112,10 +122,20 @@ export function applyFootnoteReferences(markdown, definitions, replaceOutsideCod
   const numbering = new Map();
   const order = [];
   const references = new Map();
+  const resolvedDefinitions = new Map(definitions || []);
+  let inlineIndex = 0;
+
   const body = replaceOutsideCodeSpans(String(markdown || ""), (segment) =>
-    segment.replace(/\[\^([^\]]+)\]/g, (match, rawId) => {
-      const id = String(rawId || "").trim();
-      if (!definitions.has(id)) {
+    segment.replace(/\^\[((?:\\.|[^\\\]])+)\]|\[\^([^\]]+)\]/g, (match, inlineText, rawId) => {
+      const inlineContent = inlineText ? String(inlineText).replace(/\\(.)/g, "$1") : "";
+      const id = inlineText ? `inline-${++inlineIndex}` : String(rawId || "").trim();
+      if (!id) {
+        return match;
+      }
+      if (inlineText) {
+        resolvedDefinitions.set(id, inlineContent);
+      }
+      if (!resolvedDefinitions.has(id)) {
         return match;
       }
       if (!numbering.has(id)) {
@@ -134,9 +154,8 @@ export function applyFootnoteReferences(markdown, definitions, replaceOutsideCod
     })
   );
 
-  return { body, order, numbering, references };
+  return { body, order, numbering, references, definitions: resolvedDefinitions };
 }
-
 export function buildFootnotesElement(definitions, order, references, renderFragment, documentRef = document) {
   if (!order?.length) {
     return null;
@@ -178,3 +197,4 @@ export function decorateFootnoteReferences(container) {
     });
   });
 }
+

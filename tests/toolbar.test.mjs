@@ -20,6 +20,15 @@ test("format toolbar carries the core insertion actions inline", () => {
   assert.match(toolbarSource, /title="Horizontal Rule"/);
 });
 
+test("format toolbar exposes heading levels one through six inline", () => {
+  assert.match(toolbarSource, /title="Heading 1"/);
+  assert.match(toolbarSource, /title="Heading 2"/);
+  assert.match(toolbarSource, /title="Heading 3"/);
+  assert.match(toolbarSource, /title="Heading 4"/);
+  assert.match(toolbarSource, /title="Heading 5"/);
+  assert.match(toolbarSource, /title="Heading 6"/);
+});
+
 test("format toolbar groups commands by writing task", () => {
   assert.match(toolbarSource, /<ToolbarSection title="Text"/);
   assert.match(toolbarSource, /<ToolbarSection title="Blocks"/);

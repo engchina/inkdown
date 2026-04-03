@@ -1,3 +1,19 @@
+export function buildSourceHardBreakInsertion(markdown, selectionStart, selectionEnd) {
+  const text = String(markdown ?? "");
+  const start = Math.max(0, Math.min(selectionStart ?? 0, text.length));
+  const end = Math.max(start, Math.min(selectionEnd ?? start, text.length));
+  const before = text.slice(0, start);
+  const after = text.slice(end);
+  const insertion = "  \n";
+  const caret = before.length + insertion.length;
+
+  return {
+    text: `${before}${insertion}${after}`,
+    selectionStart: caret,
+    selectionEnd: caret
+  };
+}
+
 export function buildSourceInsertion(markdown, selectionStart, selectionEnd, content, options = {}) {
   const text = String(markdown ?? "");
   const start = Math.max(0, Math.min(selectionStart ?? 0, text.length));
@@ -185,8 +201,28 @@ export function buildLinkedSourceSelection(markdown, selectionStart, selectionEn
   };
 }
 
-function formatMarkdownDestination(value) {
+
+function hasUrlScheme(value) {
+  return /^[a-z][a-z\d+.-]*:/i.test(String(value || "").trim());
+}
+
+function isEmailLike(value) {
+  return /^[A-Za-z0-9.!#$%&'*+/=?^_\x7F{|}~-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/.test(String(value || "").trim());
+}
+
+function normalizeMarkdownLinkUrl(value, { autolink = false } = {}) {
   const normalized = String(value || "").trim();
+  if (!normalized) {
+    return "";
+  }
+  if (isEmailLike(normalized) && !hasUrlScheme(normalized)) {
+    return autolink ? normalized : `mailto:${normalized}`;
+  }
+  return normalized;
+}
+
+function formatMarkdownDestination(value) {
+  const normalized = normalizeMarkdownLinkUrl(value);
   if (!normalized) {
     return "";
   }
@@ -239,7 +275,7 @@ function buildMarkdownReferenceUsage(text, referenceLabel, implicit = false) {
 }
 
 function buildMarkdownAutolink(url) {
-  return `<${String(url || "").trim()}>`;
+  return `<${normalizeMarkdownLinkUrl(url, { autolink: true })}>`;
 }
 
 function trimBareUrlCandidate(value) {
@@ -321,7 +357,7 @@ export function findMarkdownLinkAtSelection(markdown, selectionStart, selectionE
     };
   }
 
-  const autolinkPattern = /<(https?:\/\/[^>\r\n]+)>/gi;
+  const autolinkPattern = /<(https?:\/\/[^>\r\n]+|mailto:[^>\r\n]+|[A-Za-z0-9.!#$%&'*+/=?^_\x7F{|}~-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})>/gi;
 
   for (const match of source.matchAll(autolinkPattern)) {
     const matchStart = match.index ?? 0;
@@ -330,13 +366,14 @@ export function findMarkdownLinkAtSelection(markdown, selectionStart, selectionE
       continue;
     }
 
-    const url = match[1] || "";
+    const rawAutolink = match[1] || "";
+    const emailText = rawAutolink.startsWith("mailto:") ? rawAutolink.slice(7) : rawAutolink;
     return {
       kind: "autolink",
       start: matchStart,
       end: matchEnd,
-      text: url,
-      url,
+      text: emailText,
+      url: emailText,
       title: "",
       textStart: matchStart + 1,
       textEnd: matchEnd - 1
@@ -344,7 +381,7 @@ export function findMarkdownLinkAtSelection(markdown, selectionStart, selectionE
   }
 
 
-  const bareUrlPattern = /https?:\/\/[^\s<>"']+/gi;
+  const bareUrlPattern = /(?:https?:\/\/[^\s<>"']+|www\.[^\s<>"']+)/gi;
 
   for (const match of source.matchAll(bareUrlPattern)) {
     const matchStart = match.index ?? 0;
@@ -631,6 +668,68 @@ function getMarkdownTableColumnCount(line) {
     .length;
 }
 
+export function parseMarkdownTableHeaderCells(line = "") {
+  const normalized = String(line || "").trim();
+  if (!normalized.startsWith("|") || !normalized.endsWith("|") || /^[:\-|\s]+$/.test(normalized)) {
+    return null;
+  }
+
+  const cells = normalized
+    .replace(/^\|/, "")
+    .replace(/\|$/, "")
+    .split("|")
+    .map((cell) => cell.trim());
+
+  if (cells.length < 2 || cells.every((cell) => cell === "")) {
+    return null;
+  }
+
+  return cells;
+}
+
+export function buildMarkdownTableCreationFromHeader(markdown, selectionStart, selectionEnd = selectionStart) {
+  const source = String(markdown ?? "");
+  const start = Math.max(0, Math.min(selectionStart ?? 0, source.length));
+  const end = Math.max(start, Math.min(selectionEnd ?? start, source.length));
+  if (start !== end) {
+    return null;
+  }
+
+  const lines = splitLinesWithOffsets(source);
+  const currentIndex = lines.findIndex(({ start: lineStart, end: lineEnd }) => start >= lineStart && start <= lineEnd);
+  if (currentIndex === -1) {
+    return null;
+  }
+
+  const current = lines[currentIndex];
+  if (start !== current.end) {
+    return null;
+  }
+
+  const cells = parseMarkdownTableHeaderCells(current.line);
+  if (!cells) {
+    return null;
+  }
+
+  const nextLine = lines[currentIndex + 1]?.line || "";
+  if (isMarkdownTableDividerLine(nextLine)) {
+    return null;
+  }
+
+  const divider = `| ${cells.map(() => "---").join(" | ")} |`;
+  const body = `| ${cells.map(() => "").join(" | ")} |`;
+  const insertion = `
+${divider}
+${body}`;
+  const nextText = `${source.slice(0, current.end)}${insertion}${source.slice(current.end)}`;
+  const selectionRowStart = current.end + divider.length + 3;
+
+  return {
+    text: nextText,
+    selectionStart: selectionRowStart,
+    selectionEnd: selectionRowStart
+  };
+}
 export function findMarkdownTableAtSelection(markdown, selectionStart) {
   const lines = splitLinesWithOffsets(markdown);
   const cursor = Math.max(0, Math.min(selectionStart ?? 0, String(markdown ?? "").length));
@@ -741,6 +840,41 @@ export function buildPrefixedSourceLines(markdown, selectionStart, selectionEnd,
     selectionStart: lineStart,
     selectionEnd: lineStart + nextTarget.length
   };
+}
+
+export function getMarkdownBlockquoteContinuation(markdown = "", selectionStart = 0) {
+  const source = String(markdown ?? "");
+  const cursor = Math.max(0, Math.min(selectionStart ?? 0, source.length));
+  const lineStart = source.lastIndexOf("\n", Math.max(0, cursor - 1)) + 1;
+  const nextNewline = source.indexOf("\n", cursor);
+  const lineEnd = nextNewline === -1 ? source.length : nextNewline;
+  const line = source.slice(lineStart, lineEnd);
+  const quoteMatch = /^(\s*)(?:((?:>\s*)+))(.*)$/.exec(line);
+  if (!quoteMatch) {
+    return null;
+  }
+
+  const indent = quoteMatch[1] || "";
+  const marker = quoteMatch[2] || "";
+  const content = quoteMatch[3] || "";
+  const prefix = `${indent}${marker}`.replace(/\s*$/, " ");
+  if (content.trim()) {
+    return { kind: "blockquote", mode: "insert", text: `\n${prefix}` };
+  }
+
+  const prevLineEnd = Math.max(0, lineStart - 1);
+  const prevLineStart = source.lastIndexOf("\n", Math.max(0, prevLineEnd - 1)) + 1;
+  const prevLine = source.slice(prevLineStart, prevLineEnd);
+  const prevQuoteMatch = /^(\s*)(?:((?:>\s*)+))(.*)$/.exec(prevLine);
+  if (prevQuoteMatch) {
+    const prevPrefix = `${prevQuoteMatch[1] || ""}${prevQuoteMatch[2] || ""}`.replace(/\s*$/, " ");
+    const prevContent = prevQuoteMatch[3] || "";
+    if (prevPrefix === prefix && !prevContent.trim()) {
+      return { kind: "blockquote", mode: "replace-line", text: indent };
+    }
+  }
+
+  return { kind: "blockquote", mode: "insert", text: `\n${prefix}` };
 }
 
 export function getMarkdownLineContinuation(line = "") {
@@ -878,6 +1012,11 @@ export function replaceAllLiteralMatches(markdown, query, replaceValue) {
     replacedCount
   };
 }
+
+
+
+
+
 
 
 

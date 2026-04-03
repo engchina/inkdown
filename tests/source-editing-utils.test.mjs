@@ -4,8 +4,12 @@ import {
   buildSourceAutoPairEdit,
   buildExpandedMarkdownTableSelection,
   buildLinkedSourceSelection,
+  buildMarkdownTableCreationFromHeader,
+  getMarkdownBlockquoteContinuation,
+  parseMarkdownTableHeaderCells,
   buildRemovedMarkdownLinkSelection,
   buildRemovedMarkdownImageSelection,
+  buildSourceHardBreakInsertion,
   buildSourceInsertion,
   buildPrefixedSourceLines,
   getMarkdownLineContinuation,
@@ -22,6 +26,13 @@ import {
   replaceAllLiteralMatches,
   replaceCurrentLiteralMatch
 } from "../src/renderer/utils/sourceEditing.mjs";
+
+test("buildSourceHardBreakInsertion inserts a canonical markdown hard break", () => {
+  const result = buildSourceHardBreakInsertion("Alpha", 5, 5);
+  assert.equal(result.text, "Alpha  \n");
+  assert.equal(result.selectionStart, 8);
+  assert.equal(result.selectionEnd, 8);
+});
 
 test("buildSourceInsertion keeps the caret after inserted block content", () => {
   const result = buildSourceInsertion("Alpha\nBeta", 6, 10, "---", { block: true });
@@ -255,6 +266,19 @@ test("buildUpdatedMarkdownLinkSelection preserves existing titles and formats sp
 });
 
 
+test("findMarkdownLinkAtSelection recognizes angle-bracket email autolinks", () => {
+  const result = findMarkdownLinkAtSelection("See <i@typora.io> now", 7, 7);
+  assert.deepEqual(result, {
+    kind: "autolink",
+    start: 4,
+    end: 17,
+    text: "i@typora.io",
+    url: "i@typora.io",
+    title: "",
+    textStart: 5,
+    textEnd: 16
+  });
+});
 test("findMarkdownLinkAtSelection recognizes angle-bracket autolinks", () => {
   const result = findMarkdownLinkAtSelection("See <https://example.com/docs> now", 8, 8);
   assert.deepEqual(result, {
@@ -312,6 +336,47 @@ test("buildUpdatedMarkdownLinkSelection preserves bare url syntax when only the 
   assert.equal(result.selectionEnd, 29);
 });
 
+test("buildUpdatedMarkdownLinkSelection preserves email autolink syntax when only the address changes", () => {
+  const result = buildUpdatedMarkdownLinkSelection("See <i@typora.io> now", 7, 7, {
+    url: "j@typora.io"
+  });
+  assert.equal(result.text, "See <j@typora.io> now");
+  assert.equal(result.selectionStart, 5);
+  assert.equal(result.selectionEnd, 16);
+});
+
+test("buildUpdatedMarkdownLinkSelection converts email autolinks to labeled mailto links when text changes", () => {
+  const result = buildUpdatedMarkdownLinkSelection("See <i@typora.io> now", 7, 7, {
+    text: "Mail me",
+    url: "j@typora.io"
+  });
+  assert.equal(result.text, "See [Mail me](mailto:j@typora.io) now");
+  assert.equal(result.selectionStart, 5);
+  assert.equal(result.selectionEnd, 12);
+});
+
+test("findMarkdownLinkAtSelection recognizes bare www links", () => {
+  const result = findMarkdownLinkAtSelection("See www.google.com now", 8, 8);
+  assert.deepEqual(result, {
+    kind: "bare",
+    start: 4,
+    end: 18,
+    text: "www.google.com",
+    url: "www.google.com",
+    title: "",
+    textStart: 4,
+    textEnd: 18
+  });
+});
+
+test("buildUpdatedMarkdownLinkSelection preserves bare www syntax when only the url changes", () => {
+  const result = buildUpdatedMarkdownLinkSelection("See www.google.com now", 8, 8, {
+    url: "www.openai.com"
+  });
+  assert.equal(result.text, "See www.openai.com now");
+  assert.equal(result.selectionStart, 4);
+  assert.equal(result.selectionEnd, 18);
+});
 test("buildUpdatedMarkdownLinkSelection converts bare urls to labeled links when text changes", () => {
   const result = buildUpdatedMarkdownLinkSelection("See https://example.com/docs now", 10, 10, {
     text: "Guide",
@@ -445,6 +510,17 @@ test("buildRemovedMarkdownImageSelection removes the current markdown image and 
   assert.equal(result.selectionEnd, 14);
 });
 
+test("parseMarkdownTableHeaderCells recognizes canonical typora-style header rows", () => {
+  assert.deepEqual(parseMarkdownTableHeaderCells("| First Header | Second Header |"), ["First Header", "Second Header"]);
+  assert.equal(parseMarkdownTableHeaderCells("First Header | Second Header"), null);
+});
+
+test("buildMarkdownTableCreationFromHeader expands a header row into GFM table syntax", () => {
+  const result = buildMarkdownTableCreationFromHeader("| First Header | Second Header |", 32);
+  assert.equal(result.text, "| First Header | Second Header |\n| --- | --- |\n|  |  |");
+  assert.equal(result.selectionStart, 48);
+  assert.equal(result.selectionEnd, 48);
+});
 test("findMarkdownTableAtSelection returns table metadata for a cursor inside a markdown table", () => {
   const result = findMarkdownTableAtSelection('| A | B |\n| --- | --- |\n| 1 | 2 |', 5);
   assert.deepEqual(result, {
@@ -513,6 +589,30 @@ test("getMarkdownLineContinuation preserves task markers and exits empty items c
     kind: "taskList",
     mode: "replace-line",
     text: "  "
+  });
+});
+
+test("getMarkdownBlockquoteContinuation preserves nested quote prefixes on Enter", () => {
+  assert.deepEqual(getMarkdownBlockquoteContinuation("> > nested", 10), {
+    kind: "blockquote",
+    mode: "insert",
+    text: "\n> > "
+  });
+});
+
+test("getMarkdownBlockquoteContinuation allows a blank quoted line before the next paragraph", () => {
+  assert.deepEqual(getMarkdownBlockquoteContinuation("> First\n> ", 10), {
+    kind: "blockquote",
+    mode: "insert",
+    text: "\n> "
+  });
+});
+
+test("getMarkdownBlockquoteContinuation exits after consecutive empty quoted lines", () => {
+  assert.deepEqual(getMarkdownBlockquoteContinuation("> First\n> \n> ", 13), {
+    kind: "blockquote",
+    mode: "replace-line",
+    text: ""
   });
 });
 
@@ -586,16 +686,20 @@ test("buildToggledPrefixedSourceLines normalizes deeper headings to heading one 
   assert.equal(result.selectionEnd, 7);
 });
 
-test("buildToggledPrefixedSourceLines normalizes headings without a space before applying a new level", () => {
+test("buildToggledPrefixedSourceLines preserves literal hashes when there is no canonical heading space", () => {
   const result = buildToggledPrefixedSourceLines("####title", 0, 9, "# ", {
     isApplied: (line) => /^#\s+/.test(line),
     strip: (line) => line.replace(/^#\s+/, ""),
-    normalize: (line) => line.replace(/^#{1,6}\s*/, "")
+    normalize: (line) => line.replace(/^#{1,6}(?:\s+|$)/, "")
   });
-  assert.equal(result.text, "# title");
+  assert.equal(result.text, "# ####title");
   assert.equal(result.selectionStart, 0);
-  assert.equal(result.selectionEnd, 7);
+  assert.equal(result.selectionEnd, 11);
 });
+
+
+
+
 
 
 

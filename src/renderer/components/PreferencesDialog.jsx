@@ -163,7 +163,7 @@ export default function PreferencesDialog({ open, preferences, onChange, onClose
               </label>
             </PreferencesSection>
 
-            <PreferencesSection title="Remote Media Policy" caption="Keep previews and exports safe by default.">
+            <PreferencesSection title="Remote Media Policy" caption="Choose whether HTTP images and media stay visible in preview and export.">
               <label className="pref-row">
                 <span>Allow HTTP Media</span>
                 <input
@@ -174,9 +174,9 @@ export default function PreferencesDialog({ open, preferences, onChange, onClose
               </label>
 
               <div className="preferences-help-grid compact">
-                <div>Default blocks <code>http://</code> images and media inside preview/export.</div>
+                <div>Default allows <code>http://</code> images and media inside preview/export.</div>
                 <div>Links still open explicitly through the external browser.</div>
-                <div>Enable only if your notes depend on insecure remote media hosts.</div>
+                <div>Disable this if you want preview and export to block insecure remote media.</div>
               </div>
             </PreferencesSection>
           </div>
@@ -276,7 +276,8 @@ export default function PreferencesDialog({ open, preferences, onChange, onClose
               <div><code>1.</code> + Space + Content {"->"} Ordered List</div>
               <div><code>- [ ]</code> + Space + Content {"->"} Task List</div>
               <div><code>```</code> + Enter {"->"} Code Block</div>
-              <div><code>---</code> + Enter {"->"} Horizontal Rule</div>
+              <div><code>***</code> or <code>---</code> + Enter {"->"} Horizontal Rule</div>
+              <div><code>Shift+Enter</code> {"->"} Line Break</div>
               <div><code>Esc</code> {"->"} Skip next transform</div>
               <div><code>\#</code> or <code>\```</code> {"->"} Literal Markdown</div>
             </div>
@@ -286,3 +287,4 @@ export default function PreferencesDialog({ open, preferences, onChange, onClose
     </div>
   );
 }
+
