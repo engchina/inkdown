@@ -127,6 +127,12 @@ If the answer is "no" or "not sure," the work likely needs another iteration.
 - Video embedding should preserve `<video>` HTML where supported.
 - HTML support decisions must be consistent across editor, preview, export, and clipboard paths so users do not lose content silently.
 
+## Git / Network Commands
+
+- Any `git push`, `git fetch`, `git pull`, or other remote-network git command must not be attempted inside the sandbox first.
+- Request escalated permissions immediately for remote git commands.
+- Do not retry the same remote git command in the sandbox before escalation.
+
 ## Repo Rule
 
 This file is the standing product and engineering north star for the repository. When tradeoffs are unclear, choose the option that most credibly moves Inkdown toward being an industry-leading Markdown editor.
