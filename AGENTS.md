@@ -133,6 +133,12 @@ If the answer is "no" or "not sure," the work likely needs another iteration.
 - Request escalated permissions immediately for remote git commands.
 - Do not retry the same remote git command in the sandbox before escalation.
 
+## Tool Failure Handling
+
+- If `apply_patch` or another editing tool fails at the tool or sandbox layer, do not immediately retry the same operation.
+- Switch to a different implementation path after the first tool-level failure, or ask the user if a fallback would be risky.
+- Do not report repeated failed attempts as progress when the underlying operation has not changed.
+
 ## Repo Rule
 
 This file is the standing product and engineering north star for the repository. When tradeoffs are unclear, choose the option that most credibly moves Inkdown toward being an industry-leading Markdown editor.
