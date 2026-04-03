@@ -2572,6 +2572,59 @@ select {
   background: #dc2626;
 }
 
+.editor-surface blockquote.callout,
+.preview-surface blockquote.callout {
+  min-height: 1.6em;
+  margin: calc(var(--content-block-gap-lg) + 0.2em) 0;
+  padding: 0.55em 0 0.55em 1.1em;
+  border: 0;
+  border-left: 3px solid var(--quote-border);
+  border-radius: 0 14px 14px 0;
+  background: linear-gradient(90deg, var(--quote-bg) 0%, transparent 82%);
+  box-shadow: none;
+  color: var(--quote);
+  font-weight: 500;
+}
+
+.editor-surface blockquote.callout::before,
+.preview-surface blockquote.callout::before {
+  display: none;
+}
+
+.editor-surface blockquote.callout .callout-title,
+.preview-surface blockquote.callout .callout-title {
+  display: block;
+  margin: 0.45em 0;
+  font-size: inherit;
+  font-weight: inherit;
+  color: inherit;
+}
+
+.editor-surface blockquote.callout > p:first-of-type,
+.preview-surface blockquote.callout > p:first-of-type {
+  margin-top: 0;
+}
+
+.editor-surface blockquote.callout > :last-child,
+.preview-surface blockquote.callout > :last-child {
+  margin-bottom: 0;
+}
+
+.editor-surface blockquote.callout p,
+.preview-surface blockquote.callout p {
+  margin: 0.45em 0;
+}
+
+.editor-surface blockquote.callout blockquote,
+.preview-surface blockquote.callout blockquote {
+  min-height: 0;
+  margin: 0.7em 0 0.35em;
+  padding-left: 0.9em;
+  border-left-width: 2px;
+  border-radius: 0 8px 8px 0;
+  background: none;
+}
+
 .footnotes {
   margin-top: 2.1em;
   padding-top: 1.2em;
@@ -3881,3 +3934,4 @@ select {
     width: 100%;
   }
 }
+
