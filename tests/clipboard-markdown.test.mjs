@@ -125,8 +125,16 @@ test("markdown-looking pasted text is handled before HTML conversion", () => {
 
 test("editor copy writes markdown clipboard data for external markdown-aware paste targets", () => {
   assert.match(appSource, /function serializeEditorSelectionForClipboard\(view\)/);
-  assert.match(appSource, /data\.setData\("text\/plain", markdown \|\| text\);/);
-  assert.match(appSource, /data\.setData\("text\/markdown", markdown \|\| text\);/);
+  assert.match(appSource, /async function writeClipboardFromSerialized\(view, serialized, cut\)/);
+  assert.match(appSource, /await window\.editorApi\.writeClipboard\(\{ html: finalHtml, text: finalMarkdown \}\);/);
+  assert.match(appSource, /void writeClipboardFromSerialized\(view, serialized, cut\);/);
+});
+
+test("editor copy can inline local asset images before writing clipboard payloads", () => {
+  assert.match(appSource, /async function embedLocalImagesInClipboardContent\(html, markdownText\)/);
+  assert.match(appSource, /img\[src\^="inkdown-asset:\/\/"\]/);
+  assert.match(appSource, /await window\.editorApi\.readFileAsBase64\(filePath\)/);
+  assert.match(appSource, /markdownWithImages = markdownWithImages\.replace\(new RegExp\(escaped, "g"\), dataUrl\);/);
 });
 
 test("hasStructuredClipboardHtml treats paragraph-based article wrappers as structured web content", () => {
